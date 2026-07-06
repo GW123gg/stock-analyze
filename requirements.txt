@@ -1,0 +1,45 @@
+# ── research_agent.py 의존 패키지 ──
+# 설치: pip install -r requirements.txt
+
+# 필수 (수집 기본)
+requests
+urllib3
+beautifulsoup4
+lxml                      # BeautifulSoup XML 파서(RSS)
+
+# 본문 추출 (강력 권장 — 없으면 수집 품질 급락)
+trafilatura
+markdown                  # 리포트 마크다운 → HTML 변환(메일 본문 표 렌더링용; 없으면 자체 폴백)
+
+# AI 분석/복구 (Gemini)
+google-genai
+
+# 주가/종목 데이터
+yfinance
+finance-datareader
+pykrx                     # KRX OHLCV/지수/투자자별매매. 투자자별 수급은 KRX 로그인 필요
+#  └ (선택) 종목 수급 정밀도↑: 환경변수 KRX_ID / KRX_PW 설정 시 pykrx 가 자동 인증.
+#    미설정 시 force_analysis.py 가 Naver Finance 스크래핑(수량×종가)으로 폴백.
+
+# 봇 우회 크롤링 (선택 — USE_PLAYWRIGHT=1 일 때만 필요)
+playwright
+# 설치 후: playwright install chromium
+
+# 봇 우회 크롤링 2 (선택 — SELENIUM_USE=1 일 때. 네이버 외 대부분 매체가 requests 를
+# 403 차단하는데, undetected-chromedriver(스텔스 크롬)로 본문 회수율을 크게 올린다.
+# supervisor 의 아침 collect 가 SELENIUM_USE=1 로 켠다. 로컬에 Chrome 설치 필요.)
+selenium
+undetected-chromedriver
+setuptools<81             # Python 3.12 는 distutils 제거 → uc import 에 setuptools 필요(81+ 에서 또 빠짐)
+
+# 봇 우회 크롤링 3 (비-크로뮴 — 브라우저 없이 빠르게 우회. 기본 ON, 미설치 시 graceful off)
+curl_cffi                 # 실제 Chrome 의 TLS/JA3 지문 위장(Step1.5). 'requests 403 인데 브라우저면 통과'
+#                           하는 Akamai/봇월을 크로뮴 없이 통과. 끄려면 CFFI_USE=0.
+#  └ r.jina.ai 리더 프록시(Step2.7)는 외부 무료 서비스라 설치 불필요(끄려면 READER_USE=0).
+
+# ── 메일 2중 구조 ──
+# Gmail API (1순위, HTTPS/443)
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+# SMTP(2순위)는 표준 라이브러리(smtplib)라 별도 설치 불필요

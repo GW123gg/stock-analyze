@@ -1,0 +1,39 @@
+# stock_research — 평문 시크릿/운영 산출물 보호
+# (현재 git 저장소가 아니지만, 나중에 git init 하더라도 키가 커밋되지 않도록 미리 차단)
+
+# 평문 키/계정 (절대 커밋 금지)
+*.txt
+!requirements.txt
+*.full
+gmail_credentials.json
+gmail_token.json
+
+# 런타임/산출물
+output/
+logs/
+collection_check/
+cache/
+precollect/
+retro_reports/
+_backup/
+_retired/
+__pycache__/
+*.pyc
+*.flag
+*.lock
+supervisor_state.json
+supervisor_heartbeat.txt
+sent_index.json
+sent_index.json.bak_*
+krx_tickers.json
+
+# 생성 데이터(수집기/파이프라인 산출물) — 코드 저장소엔 불필요
+*.json
+*.csv
+scorecard.md
+retro_feedback.md
+
+# 에디터/도구
+.claude/
+.vscode/
+.idea/

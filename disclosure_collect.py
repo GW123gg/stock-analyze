@@ -151,12 +151,7 @@ def fetch_disclosures(key, corp, code, name, days):
             "recent": recent, "checked": len(items)}
 
 
-def _save_json_atomic(path, obj):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+from common import save_json_atomic as _save_json_atomic  # 원자적 JSON 저장(common.py 통합)
 
 
 def _today_latest_session():

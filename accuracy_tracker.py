@@ -864,12 +864,12 @@ def write_empty_scorecard(reason):
     _atomic_write(SCORECARD_PATH, "\n".join(L))
 
 
+from common import atomic_write_text as _cm_atomic_write  # common.py 통합
+
+
 def _atomic_write(path, text):
-    tmp = path + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
+        _cm_atomic_write(path, text)
         return True
     except Exception as e:
         log.warning(f"[acc] 파일 저장 실패 ({path}): {type(e).__name__}: {e}")

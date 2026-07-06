@@ -92,11 +92,7 @@ def load_config() -> dict:
     return cfg
 
 
-def _atomic_write(path: str, text: str):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+from common import atomic_write_text as _atomic_write  # 원자적 텍스트 저장(common.py 통합)
 
 
 def _atomic_copy(src: str, dest: str):

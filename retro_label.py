@@ -669,14 +669,11 @@ def build_rows():
     return rows, len(preds)
 
 
+from common import save_json_atomic as _cm_save_json  # common.py 통합
+
+
 def _save_json_atomic(path, obj):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())   # #1 전원/킬 시 빈·잘린 .tmp 방지(디스크 flush 후 rename)
-    os.replace(tmp, path)
+    _cm_save_json(path, obj, fsync=True)   # fsync: 전원/킬 시 빈·잘린 .tmp 방지(무결성 유지)
 
 
 def _save_csv(path, rows):

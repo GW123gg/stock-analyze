@@ -128,12 +128,7 @@ def load_universe():
 # =====================================================================
 # 토큰 (발급 + 캐시 재사용)
 # =====================================================================
-def _save_json_atomic(path, obj):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+from common import save_json_atomic as _save_json_atomic  # 원자적 JSON 저장(common.py 통합)
 
 
 def get_token(cfg) -> str:

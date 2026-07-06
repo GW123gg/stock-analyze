@@ -23,7 +23,7 @@ supervisor 데몬이 상주할 수 있다(현재는 온디맨드 MCP 전환 중)
 | 회고 데이터 전달 | `python retro_forward.py --push` / 피드백 회수 `--scan-back` | |
 | 세션 경로 인자 | 따옴표 없이: `--session output\2026-…` | cmd에서 `--session "경로"`는 따옴표가 인자에 포함돼 "세션 없음" 오류 |
 
-- **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json 3개는 루트에 저장**된다(정상 — 분석 지시 [5.9]/[5.10]가 루트에서 읽음). 세션에 없다고 실패 아님.
+- **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json·vkospi.json 4개는 루트에 저장**된다(정상 — 분석 지시 [5.9]/[5.10]가 루트에서 읽음). 세션에 없다고 실패 아님.
 - **신호 수집기는 '오늘 날짜 세션'을 자동 타겟**(`_today_latest_session`): collect로 오늘 세션 만든 직후, 같은 날에 실행해야 함(자정 넘기면 어긋남). 오늘 세션 없으면 루트 폴백(무용).
 - **market_caution.py는 flow/deriv/ecos 산출물을 읽으므로 신호 중 맨 마지막에 실행.**
 - KRX(pykrx)·BOK(ecos)는 **저녁·밤에 간헐 실패**(krx=0, timeout) — 스크립트는 exit 0 graceful. 데이터 완전성은 장중/아침이 최고.

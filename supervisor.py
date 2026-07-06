@@ -529,6 +529,11 @@ def run_morning_pipeline():
     _run_step("step14 deriv_collect",
               [py, os.path.join(BASE_DIR, "deriv_collect.py")], timeout=300)
 
+    # step14.5: VKOSPI(변동성지수) — 금융위 지수시세 API → 루트 vkospi.json (F1 '공포' 판별 데이터)
+    #   키(vkospi_api.txt 또는 fsc_api.txt 활용신청) 없으면 조용히 생략(graceful).
+    _run_step("step14.5 vkospi_collect",
+              [py, os.path.join(BASE_DIR, "vkospi_collect.py")], timeout=120)
+
     # step15: 시장 국면 복합 게이트 — KOSPI 5일 + 파생 PCR + 외인 risk_off + 환율 합성 → market_caution.json
     #   회고 최강 발견('추천일 시장 과열이 결과 좌우')을 운영화(F1/F6). step12~14 산출물을 읽으므로 맨 뒤.
     _run_step("step15 market_caution",

@@ -1,0 +1,113 @@
+# CODEMAP — stock_research 전체 코드 레퍼런스
+
+> **용도**: 어떤 모델(opus/sonnet/haiku)이든 이 파일만 읽으면 "어느 파일이 무슨 일을 하고, 무엇을 읽고 쓰는지"를
+> 재탐색 없이 아는 것. 규칙·함정은 `CLAUDE.md`(필독), 운영 절차는 `..\stock_research_mcp\코워크_통합지시_최종.md`.
+> ⚠️ 여기 요약과 실제 코드가 다르면 **코드가 진실** — 수정 시 이 파일도 갱신하라.
+
+## 시스템 한눈에
+
+```
+[02:00 precollect] → [06:30 collect(세션 생성)] → [신호 수집기 13종] → [Cowork 분석: commands.txt→deep→03_final_report+predictions]
+       → [발송: report-done→watch_and_send 또는 mail --method appscript] → [recommend_track]
+[03:30 회고] retro_label → retro_forward --push → (회고 Cowork) → --scan-back → retro_feedback.md → 다음 아침 [0.5] 자기보정
+[채점] accuracy_tracker(scorecard.md, 매일) · gen_scorecard(예측채점_리포트.md, 회고용)
+오케스트레이터: supervisor(데몬) 또는 온디맨드 MCP(현재 기본) — 개별 스크립트는 양쪽에서 동일하게 동작
+```
+
+**세션 폴더**(`output\YYYY-MM-DD_HHMMSS\`): 00_precollect.md · 01_broad_collection.md · INSTRUCTIONS.md · commands.txt ·
+02_deep_collection.md · 03_final_report.md/.html · predictions.json · force_scores/market_context/fsc_prices/flow_data/
+overheat/fundamentals/disclosures/kis_data/short.json · *.flag. 발송 후 `_archive\`로 이동.
+**루트 저장 신호**(세션 아님): deriv_sentiment · ecos_macro · market_caution · vkospi + 뉴스 6종(news_rss/gdelt/media_rss/naver_stock_news/yahoo_news/analyst_reco).
+
+## 1. 오케스트레이션·감시
+
+| 파일 | 역할 | 핵심 |
+|---|---|---|
+| `supervisor.py` (55KB) | 24h 데몬: 02:00 precollect→03:30 retro→06:30 morning(step0~16)→발송 감시 | run_morning_pipeline·one_cycle(30s)·heartbeat·RUN_NOW.flag. CLI `--interval`·`--morning-time`. 시각은 파일 상수 수정 시 25초 내 반영 |
+| `watchdog.py` | supervisor 프리즈(살아있으나 멈춤) 감지→재기동. 작업스케줄러 5분마다 | supervisor.lock PID+heartbeat 검사. 락 없으면 콜드스타트(start_supervisor_visible.bat) |
+| `watch_and_analyze.py` | COLLECT_DONE 감시→force_analysis 실행→**세션에 force_scores.json 저장** | ★force_scores 만들 땐 이것(`--once`) — force_analysis 직접 실행은 저장 안 함 |
+| `watch_and_send.py` | REPORT_DONE 감시→**Apps Script 발송**→sent_index 중복방지→세션 _archive 이동 | `--once`=1회. appscript_config.txt(URL+secret)+mail_config.txt(to). post_to_appscript/_strip_non_bmp는 research_agent appscript 발송이 재사용 |
+| `recover.py` | 상태 진단→빠진 단계 복구(세션없음→api_collect, force없음→force_analysis) | 수동 진입점. 인자 없음 |
+| `check/start/stop_supervisor.bat` | 상태점검 5항목 / 보이는 콘솔로 기동 / lock PID 기반 강제종료 | stop은 온디맨드 전환 시 데몬 종료용 |
+| `run_morning_auto.bat` | (구) 아침 자동수집 체인 — count_articles stdout 정수로 폴백 판정 | ⚠️ count_articles 삭제/통합 금지 사유 |
+
+## 2. 메인 에이전트
+
+**`research_agent.py` (175KB — 전체 읽기 금지, 필요한 함수만 grep)**
+- 역할: 뉴스 광역수집(collect: 구글RSS+네이버+Gemini, 세션 생성) · 심층수집(deep --session: commands.txt 실행) ·
+  발송(mail) · 발송신호(report-done: REPORT_DONE.flag+**render_report_html**) · archive · auto.
+- 발송: `send_email` 디스패처 = api(gmail_credentials.json)/smtp(app_password)/**appscript**(유일 설정됨)/auto(api→smtp→appscript 폴백).
+  `render_report_html(sess)`=헤더배너+predictions 대시보드+**전일등락률표(_prev_day_change_md)**+본문+세력강도설명 → 03_final_report.html.
+  cmd_mail도 render_report_html 사용(데몬과 동일 품질).
+- 세션 탐색: `latest_session_dir()`은 `_`로 시작하는 폴더(_archive/_designtest) 제외.
+- 함정: Selenium 전역(_SELENIUM_DRIVER 등)·USE_PLAYWRIGHT=0 dead 함수·_fallback_md_to_html은 의도적(CLAUDE.md 지뢰).
+
+## 3. 신호 수집기 (13종 — 실행 순서·위치는 MCP 지시 표)
+
+| 파일 | 산출(위치) | 데이터원(키) | 비고 |
+|---|---|---|---|
+| `force_analysis.py` (40KB) | stdout JSON — **저장은 watch_and_analyze가** | pykrx(krx_account.txt)→Naver 폴백 | 세력강도 -100~+100(수급/거래량/모멘텀/OBV 4축). CLI `--ticker --market --json` |
+| `market_collect.py` (37KB) | market_context.json(세션) | yfinance+pykrx+FDR | 인터마켓 10종·섹터RS 14·breadth·flows·regime·**kr_index(KOSPI/KOSDAQ 5일)** |
+| `fsc_collect.py` | fsc_prices.json(세션) | 금융위 주식시세 API(fsc_api.txt)→FDR 폴백 | 공식 종가=회고 채점 기준. source 필드로 출처 기록 |
+| `flow_collect.py` | flow_data.json(세션) | pykrx(KRX 로그인) | 외인/기관/개인 5d·20d+연속순매도+risk_off. 인자 없이=수집. `get_flow_asof`를 retro_label이 재사용 |
+| `overheat_collect.py` | overheat.json(세션) | FDR 1년 일봉 | 이격도·연속상승·52주고가·RSI·OBV다이버전스·ret_20d |
+| `dart_collect.py` (26KB) | fundamentals.json(세션)+cache | DART(dart_api.txt)→yfinance 폴백 | 4년 재무 GPM/OPM/FCF 추세, 장투 게이트 |
+| `disclosure_collect.py` | disclosures.json(세션) | DART 공시 | 증자/CB/자사주/대주주 오버행 분류. retro_label이 classify 재사용 |
+| `kis_collect.py` | kis_data.json(세션)+토큰캐시 | KIS(kis_api.txt)→yfinance 폴백 | 투자자별 순매수·외인보유율 |
+| `short_collect.py` | short.json(세션) | pykrx | 공매도 잔고비중·10d 증감(T+1~2 지연 — `get_short_asof`는 당일 제외) |
+| `deriv_collect.py` | deriv_sentiment.json(**루트**) | pykrx(KRX) | KOSPI200 PCR+개별 풋콜. flow_collect import로 세션 워밍업 필수 |
+| `ecos_collect.py` | ecos_macro.json(**루트**) | 한국은행 ECOS(ecos_api.txt) | 기준금리·환율 5일. 플레이스홀더 키 거부. 저녁 타임아웃 잦음 |
+| `vkospi_collect.py` | vkospi.json(**루트**) | 금융위 지수시세(vkospi_api.txt→fsc 키 폴백) | VKOSPI 수준/5일변화/60d백분위/공포라벨 — F1 입력. 키 활용신청 필요 |
+| `market_caution.py` | market_caution.json(**루트**) | 위 산출물 합성(deriv/flow/ecos+FDR) | 국면 종합게이트 0~100·regime_kind·allow_market_up_call. ★신호 중 맨 마지막 실행 |
+
+## 4. 뉴스 수집기 (전부 루트 저장, Cowork가 [5.8]에서 직접 실행)
+
+| 파일 | 산출 | 특징 |
+|---|---|---|
+| `news_rss_collect.py` | news_rss.json | 구글뉴스 RSS(국문·무키). `--keywords --n --lang` |
+| `gdelt_collect.py` | gdelt_news.json | 글로벌(무키). 5.3초 rate-limit 자동준수 |
+| `media_rss_collect.py` | media_rss.json | 연합·한경·매경 등 직접 RSS(media_rss_feeds.txt) |
+| `naver_stock_news.py` | naver_stock_news.json | 네이버금융 종목별(모바일 JSON API) |
+| `yahoo_news.py` | yahoo_news.json | 야후 영문 RSS(.KS→.KQ 폴백, 셀레늄 없음) |
+| `analyst_reco.py` | analyst_reco.json | 증권사 컨센서스(투자의견·목표가) |
+| `fetch_html.py` | --out 파일 | 막힌 기사 HTML(curl_cffi TLS위장→requests→`--selenium` 타이머 40s) |
+| `apify_key.py` | (모듈) | Apify 토큰 로테이션 로더(다계정·402 폴백) — 현재 무료 수집기로 대체됨 |
+
+## 5. 수집 보조·후처리
+
+| 파일 | 역할 |
+|---|---|
+| `precollect.py` | 02:00 1차 뉴스수집(precollect\<날짜>\, 세션/flag 안 만듦) → `--merge`로 아침 세션에 00_precollect.md 합침 |
+| `api_collect.py` | RSS 차단 시 Gemini+Naver 폴백 수집(`--session`으로 기존 세션 보강) |
+| `morning_postprocess.py` | 수집 빈약 판정(기사수 임계). exit 0=충분/2=폴백필요/3=세션없음. supervisor step2가 `--check-only` |
+| `count_articles.py` | 01_broad 기사수 stdout 정수 — ⚠️.bat이 파싱, 삭제·import 통합 금지 |
+| `collection_report.py` | 수집점검 txt(collection_check\) — 메일 첨부용 1차/2차 txt |
+| `rebuild_consolidated.py` | cowork_instructions+mock가이드 → cowork_지시사항_통합본.md 재생성(통합본은 생성물, 직접 수정 금지) |
+
+## 6. 회고·채점 (자기개선 루프)
+
+| 파일 | 역할 | 입출력 |
+|---|---|---|
+| `accuracy_tracker.py` (35KB) | 만기 예측 채점→**scorecard.md**(아침 [0.5] 자기보정 입력). 멱등 | predictions(활성+아카이브)+FDR → accuracy_log.json+scorecard.md(루트) |
+| `retro_label.py` (41KB) | 회고 학습 데이터셋(피처 pre_*+라벨 ret_h/days_to_peak 등). fsync 저장 | → retro_dataset.json/csv(루트). flow/short의 asof 함수·disclosure classify 재사용. 룩어헤드 금지 설계 |
+| `retro_archive_parse.py` | 6/18 이전 md 리포트 표 파싱→예측 형식(_src_kind='archive') | retro_label이 import |
+| `retro_forward.py` | 회고 Cowork 브리지: `--push`(inbox 적재+지시사항 원본 복사)·`--scan-back`(outbox→retro_feedback.md 회수) | retro_config.txt(enabled/folder=stock_retro) |
+| `retro_manual_refresh.py` | 수동 회고 데이터 갱신(stock_retro_manual용) | |
+| `recommend_track.py` | 발송된 추천→recommended_history.json+recommended_universe.txt(fsc/flow가 watch풀과 합산)+회고폴더 복사 | 발송 성공 후 실행 |
+| `prediction_scorecard\gen_scorecard.py` | 종목별·지수별 맞춤/틀림 채점(회고 §근거) — 진입일=세션시각 기반(아침=당일/저녁=익일) | → 예측채점_리포트.md |
+| `mock_forward.py` | REPORT_DONE 리포트를 모의투자 Cowork 전달폴더로 복사(mock_forward_config.txt enabled=1일 때) | latest.json+중복방지 인덱스 |
+
+## 7. 공통·설정·데이터 파일
+
+- **`common.py`** — `save_json_atomic(ensure_ascii/indent/fsync/ensure_dir)`·`atomic_write_text`. **새 저장 코드는 반드시 이걸 사용**(12곳 복붙을 통합한 것). 부작용 없는 순수함수만 추가 가능.
+- **키 파일**(루트 *.txt — 내용 출력·커밋 금지): dart/fsc/kis/naver/ecos/gdelt/apify/vkospi_api.txt·gemini_keys·krx_account·mail_config(.full)·appscript_config. 각 로더는 제공자별 검증이 달라 통합 금지.
+- **설정**: watch_tickers.txt(58종 유니버스)·media_rss_feeds.txt·retro_config.txt·mock_forward_config.txt.
+- **상태**(생성물): supervisor.lock/heartbeat/state·sent_index.json·daily_status.json·accuracy_log.json·recommended_*.
+- **지시 md**: cowork_instructions.md(아침 분석 판단 — source of truth)·회고분석_지시사항.md(회고 원본, stock_retro로 복사됨)·retro_feedback.md(회고→아침 폐루프)·scorecard.md(채점 결과).
+
+## 8. 다른 폴더와의 관계
+
+- `..\stock_research_mcp\` — 온디맨드 Cowork 지시(통합최종본=진입점). 코드는 전부 이 폴더 것을 실행.
+- `..\stock_retro\` — 회고 Cowork 데이터 폴더(inbox/outbox). retro_forward가 push/scan-back.
+- `..\auto stock\` — 자동매매 봇. `bot\research_feed.py`가 이 폴더 output을 **읽기만** 함(CODEMAP은 그쪽 폴더에).
+- `..\stock_backtest\` — 과거시점 백테스트 RL 루프(price_cache·bt_loop·policy.md). 이 폴더 코드를 import하나 라이브 미변경.

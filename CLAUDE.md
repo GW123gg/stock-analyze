@@ -6,7 +6,7 @@ supervisor 데몬이 상주할 수 있다(현재는 온디맨드 MCP 전환 중)
 
 ## ★ 절대 규칙 (위반 금지)
 
-1. **비밀 파일 내용 출력·전송·커밋 금지**: `*_api.txt`(dart/fsc/kis/naver/gemini/ecos/gdelt/apify)·`gemini_keys.txt`·`mail_config.txt(.full)`·`appscript_config.txt`·`krx_account.txt`·`gmail_credentials.json`. 존재 확인은 크기만. `.gitignore`가 `*.txt` 전체를 차단하니 **git add -f 금지**, 커밋 전 `git status`로 비밀 미포함 확인.
+1. **비밀 파일 내용 출력·전송·커밋 금지**: `*_api.txt`(dart/fsc/mirae/naver/gemini/ecos/gdelt/apify)·`gemini_keys.txt`·`mail_config.txt(.full)`·`appscript_config.txt`·`krx_account.txt`·`gmail_credentials.json`. 존재 확인은 크기만. `.gitignore`가 `*.txt` 전체를 차단하니 **git add -f 금지**, 커밋 전 `git status`로 비밀 미포함 확인.
 2. **콘솔에 4바이트 이모지 출력 금지**(cp949 크래시). 리포트·메일 본문도 이모지 금지, 기호는 BMP(▲▼)만. 파일 IO는 UTF-8, JSON은 `ensure_ascii=False`.
 3. **supervisor/데몬을 임의로 재시작·종료하지 마라**(사용자 확인 필요). 종료는 `stop_supervisor.bat`(lock PID 기반)로만.
 4. **`output/_archive`·`_designtest`·`_retired`·다른 날짜 세션을 분석·수정하지 마라.**

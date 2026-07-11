@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-kis_collect.py — 한국투자증권(KIS) Open API 수급/시세 수집기 (프레임워크)
+mirae_collect.py — 미래에셋증권(미래에셋) Open API 수급/시세 수집기 (프레임워크)
 
-[현재 상태]  KIS 키가 있으면 KIS 로 수급+시세를 수집한다. 키가 없거나 토큰 발급에 실패하면
+[현재 상태]  미래에셋 키가 있으면 미래에셋 로 수급+시세를 수집한다. 키가 없거나 토큰 발급에 실패하면
             'yfinance 폴백'으로 시세(현재가·52주·PER/PBR·거래량)를 모은다. (외국인/기관/개인
-            '수급'은 KIS/KRX 전용이라 yfinance 로는 못 받는다 → 수급은 force_scores.json 참조.)
-            나중에 키를 kis_api.txt 에 붙여넣으면(메모장) '바로' KIS 로 전환된다(재시작 불필요).
+            '수급'은 미래에셋/KRX 전용이라 yfinance 로는 못 받는다 → 수급은 force_scores.json 참조.)
+            나중에 키를 mirae_api.txt 에 붙여넣으면(메모장) '바로' 미래에셋 로 전환된다(재시작 불필요).
 
-[목적]  watch_tickers 풀에 대해 KIS REST API 로 다음을 수집해 오늘자 세션 폴더에
-        kis_data.json 으로 저장한다. 분석(Cowork)이 수급/되돌림 판단에 활용한다.
+[목적]  watch_tickers 풀에 대해 미래에셋 REST API 로 다음을 수집해 오늘자 세션 폴더에
+        mirae_data.json 으로 저장한다. 분석(Cowork)이 수급/되돌림 판단에 활용한다.
   - 수급(종목별 투자자 매매동향): 외국인/기관/개인 '일별 순매수' 추이
       → endpoint /uapi/domestic-stock/v1/quotations/inquire-investor  (tr_id FHKST01010900)
   - 시세(현재가): 종가/등락률/거래량 + 외국인 보유율(hts_frgn_ehrt)
@@ -17,17 +17,17 @@ kis_collect.py — 한국투자증권(KIS) Open API 수급/시세 수집기 (프
   ※ '여러 자료'로 쉽게 확장 가능하도록 ENDPOINTS 표 + _req() 헬퍼로 구조화했다(아래 [확장]).
 
 [인증]  POST /oauth2/tokenP {grant_type:client_credentials, appkey, appsecret} → access_token
-        토큰은 약 24시간 유효 + 발급 rate-limit 이 있어 cache/kis_token.json 에 캐시·재사용한다.
+        토큰은 약 24시간 유효 + 발급 rate-limit 이 있어 cache/mirae_token.json 에 캐시·재사용한다.
 
 [설계 원칙]  dart_collect/market_collect 와 동일: 독립 실행, 기존 파일 무수정, 종목별 try/except,
-  콘솔 print ASCII 태그([kis])만(이모지 금지), UTF-8 IO, json ensure_ascii=False, 원자적 저장.
+  콘솔 print ASCII 태그([mirae])만(이모지 금지), UTF-8 IO, json ensure_ascii=False, 원자적 저장.
   부분 실패해도 exit 0(파이프라인 무중단). 키 없으면 즉시·정상 종료.
 
 [사용법]
-  python kis_collect.py                     # watch_tickers 전체 → 오늘 세션/kis_data.json
-  python kis_collect.py --tickers 005930    # 특정 종목(테스트)
-  python kis_collect.py --limit 5 --out x.json
-  python kis_collect.py --check             # 키/토큰 발급만 점검(데이터 수집 안 함)
+  python mirae_collect.py                     # watch_tickers 전체 → 오늘 세션/mirae_data.json
+  python mirae_collect.py --tickers 005930    # 특정 종목(테스트)
+  python mirae_collect.py --limit 5 --out x.json
+  python mirae_collect.py --check             # 키/토큰 발급만 점검(데이터 수집 안 함)
 
 [확장 — '여러 자료' 추가 방법]
   ENDPOINTS 에 (path, tr_id) 를 추가하고, 그 응답을 파싱하는 fetch_* 함수를 만들어
@@ -46,23 +46,30 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
 CACHE_DIR = os.path.join(HERE, "cache")
 TICKERS_FILE = os.path.join(HERE, "watch_tickers.txt")
-KIS_KEY_FILE = os.path.join(HERE, "kis_api.txt")
-TOKEN_CACHE = os.path.join(CACHE_DIR, "kis_token.json")
+MIRAE_KEY_FILE = os.path.join(HERE, "mirae_api.txt")
+TOKEN_CACHE = os.path.join(CACHE_DIR, "mirae_token.json")
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
-log = logging.getLogger("kis")
+log = logging.getLogger("mirae")
 
 HTTP_TIMEOUT = 15
-MAX_WORKERS = 4          # KIS 호출 rate-limit(초당 제한) 고려해 보수적으로
+MAX_WORKERS = 4          # 미래에셋 호출 rate-limit(초당 제한) 고려해 보수적으로
 INVESTOR_DAYS = 10       # 투자자 매매동향 최근 N일만 보관
 
-DOMAIN = {"real": "https://openapi.koreainvestment.com:9443",
-          "mock": "https://openapivts.koreainvestment.com:29443"}
+# ★★ 미래에셋 API 미발급 — 구조만 준비 상태 ★★
+# 아래 DOMAIN/ENDPOINTS/fetch_* 는 (구)KIS REST 형식의 '참조 골격'이다(미래에셋 명세 아님).
+# 미래에셋 Open API 발급 후: (1) DOMAIN 호스트, (2) ENDPOINTS 경로·tr_id,
+# (3) fetch_price/fetch_investor 의 응답 필드(stck_prpr 등)를 미래에셋 공식 명세로 교체하고
+# 아래 MIRAE_API_READY=True 로 바꿔라. 그 전까지 가드가 브로커 호출을 차단하고 yfinance 폴백만 쓴다.
+MIRAE_API_READY = False
 
-# (path, tr_id) — '여러 자료' 확장 시 여기에 추가
+DOMAIN = {"real": "https://REPLACE-WITH-MIRAE-API-HOST",
+          "mock": "https://REPLACE-WITH-MIRAE-API-HOST"}
+
+# (path, tr_id) — 미래에셋 명세로 교체 필요. '여러 자료' 확장 시 여기에 추가
 ENDPOINTS = {
-    "price":    ("/uapi/domestic-stock/v1/quotations/inquire-price",    "FHKST01010100"),
-    "investor": ("/uapi/domestic-stock/v1/quotations/inquire-investor", "FHKST01010900"),
+    "price":    ("/REPLACE-WITH-MIRAE-PRICE-PATH",    "REPLACE-TR-ID"),
+    "investor": ("/REPLACE-WITH-MIRAE-INVESTOR-PATH", "REPLACE-TR-ID"),
 }
 
 try:
@@ -80,23 +87,23 @@ except Exception:
 # 설정 / 종목풀
 # =====================================================================
 def load_config() -> dict:
-    """kis_api.txt → {mode, appkey, appsecret, account}. 키 없으면 appkey=''. """
+    """mirae_api.txt → {mode, appkey, appsecret, account}. 키 없으면 appkey=''. """
     cfg = {"mode": "real", "appkey": "", "appsecret": "", "account": ""}
-    if not os.path.isfile(KIS_KEY_FILE):
+    if not os.path.isfile(MIRAE_KEY_FILE):
         return cfg
     try:
-        with open(KIS_KEY_FILE, encoding="utf-8") as f:
+        with open(MIRAE_KEY_FILE, encoding="utf-8") as f:
             for raw in f:
                 line = raw.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
                 k = k.strip().lower()
-                v = v.strip().strip('"').strip("'")
+                v = v.split("#", 1)[0].strip().strip('"').strip("'")  # 인라인 주석 제거
                 if k in cfg:
                     cfg[k] = v
     except Exception as e:
-        log.warning("[kis] 설정 읽기 실패: %s", e)
+        log.warning("[mirae] 설정 읽기 실패: %s", e)
     if cfg["mode"] not in DOMAIN:
         cfg["mode"] = "real"
     return cfg
@@ -121,7 +128,7 @@ def load_universe():
                     name = line.split("#", 1)[1].strip() if "#" in line else ""
                     out.append((code, name))
     except Exception as e:
-        log.warning("[kis] watch_tickers 읽기 실패: %s", e)
+        log.warning("[mirae] watch_tickers 읽기 실패: %s", e)
     return out
 
 
@@ -132,7 +139,7 @@ from common import save_json_atomic as _save_json_atomic  # 원자적 JSON 저�
 
 
 def get_token(cfg) -> str:
-    """access_token 반환(없으면 ''). 캐시가 유효하면 재사용(KIS 발급 rate-limit 회피)."""
+    """access_token 반환(없으면 ''). 캐시가 유효하면 재사용(미래에셋 발급 rate-limit 회피)."""
     if not (requests and has_key(cfg)):
         return ""
     # 1) 캐시
@@ -154,7 +161,7 @@ def get_token(cfg) -> str:
         j = r.json()
         tok = j.get("access_token")
         if not tok:
-            log.warning("[kis] 토큰 발급 실패: %s", str(j)[:200])
+            log.warning("[mirae] 토큰 발급 실패: %s", str(j)[:200])
             return ""
         exp = time.time() + int(j.get("expires_in", 86400))
         try:
@@ -164,7 +171,7 @@ def get_token(cfg) -> str:
             pass
         return tok
     except Exception as e:
-        log.warning("[kis] 토큰 발급 예외: %s: %s", type(e).__name__, e)
+        log.warning("[mirae] 토큰 발급 예외: %s: %s", type(e).__name__, e)
         return ""
 
 
@@ -262,10 +269,10 @@ def fetch_yf(code) -> dict:
     return {}
 
 
-def process_one(cfg, token, code, name, use_kis) -> dict:
+def process_one(cfg, token, code, name, use_mirae) -> dict:
     rec = {"ticker": code, "name": name}
-    if use_kis:
-        rec["source"] = "kis"
+    if use_mirae:
+        rec["source"] = "mirae"
         try:
             rec["price"] = fetch_price(cfg, token, code)
         except Exception as e:
@@ -306,14 +313,14 @@ def _resolve_out(explicit):
     if explicit:
         return os.path.abspath(explicit)
     sess = _today_latest_session()
-    return os.path.join(sess, "kis_data.json") if sess else os.path.join(HERE, "kis_data.json")
+    return os.path.join(sess, "mirae_data.json") if sess else os.path.join(HERE, "mirae_data.json")
 
 
 # =====================================================================
 # 메인
 # =====================================================================
 def main():
-    ap = argparse.ArgumentParser(description="KIS 수급/시세 수집 → kis_data.json (키 없으면 무동작)")
+    ap = argparse.ArgumentParser(description="미래에셋 수급/시세 수집 → mirae_data.json (키 없으면 무동작)")
     ap.add_argument("--tickers", default="")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--out", default="")
@@ -321,30 +328,33 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config()
-    token, use_kis = "", False
-    if has_key(cfg) and requests is not None:
+    token, use_mirae = "", False
+    if not MIRAE_API_READY:
+        log.info("[mirae] 미래에셋 API 미발급(MIRAE_API_READY=False) → yfinance 폴백(시세). "
+                 "발급 후 DOMAIN/ENDPOINTS/fetch_* 를 미래에셋 명세로 채우고 플래그를 True 로.")
+    elif has_key(cfg) and requests is not None:
         token = get_token(cfg)
         if token:
-            use_kis = True
-            log.info("[kis] 토큰 OK (mode=%s) → KIS 수집", cfg["mode"])
+            use_mirae = True
+            log.info("[mirae] 토큰 OK (mode=%s) → 미래에셋 수집", cfg["mode"])
         else:
-            log.warning("[kis] 키는 있으나 토큰 발급 실패 → yfinance 폴백(시세)")
+            log.warning("[mirae] 키는 있으나 토큰 발급 실패 → yfinance 폴백(시세)")
     else:
-        log.info("[kis] KIS 키 없음 → yfinance 폴백(시세). "
-                 "외국인/기관/개인 '수급'은 KIS/KRX 전용이라 폴백 불가 → force_scores.json 참조.")
+        log.info("[mirae] 미래에셋 키 없음 → yfinance 폴백(시세). "
+                 "외국인/기관/개인 '수급'은 미래에셋/KRX 전용이라 폴백 불가 → force_scores.json 참조.")
 
-    if not use_kis and not YF_OK:
-        log.warning("[kis] KIS 미사용 + yfinance 미설치 — 수집 불가. 빈 산출물 저장.")
+    if not use_mirae and not YF_OK:
+        log.warning("[mirae] 미래에셋 미사용 + yfinance 미설치 — 수집 불가. 빈 산출물 저장.")
         try:
             _save_json_atomic(_resolve_out(args.out),
                               {"generated_at": datetime.now().isoformat(timespec="seconds"),
                                "key_present": has_key(cfg), "source": "none", "tickers": [],
-                               "notes": ["KIS 키 없음 + yfinance 미설치"]})
+                               "notes": ["미래에셋 키 없음 + yfinance 미설치"]})
         except Exception:
             pass
         return 0
     if args.check:
-        log.info("[kis] --check: %s", "KIS 인증 OK" if use_kis else "KIS 미사용 → yfinance 폴백 가능")
+        log.info("[mirae] --check: %s", "미래에셋 인증 OK" if use_mirae else "미래에셋 미사용 → yfinance 폴백 가능")
         return 0
 
     universe = load_universe()
@@ -355,10 +365,10 @@ def main():
     if args.limit > 0:
         universe = universe[:args.limit]
 
-    log.info("[kis] 수집 시작 — 종목 %d개 / 소스: %s", len(universe), "KIS" if use_kis else "yfinance")
+    log.info("[mirae] 수집 시작 — 종목 %d개 / 소스: %s", len(universe), "미래에셋" if use_mirae else "yfinance")
     results = {}
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-        futs = {ex.submit(process_one, cfg, token, c, n, use_kis): c for c, n in universe}
+        futs = {ex.submit(process_one, cfg, token, c, n, use_mirae): c for c, n in universe}
         done = 0
         for fut in as_completed(futs):
             done += 1
@@ -366,28 +376,28 @@ def main():
                 r = fut.result()
                 results[r["ticker"]] = r
             except Exception as e:
-                log.warning("[kis] 처리 예외: %s", e)
+                log.warning("[mirae] 처리 예외: %s", e)
             if done % 10 == 0:
-                log.info("[kis] %d/%d", done, len(universe))
+                log.info("[mirae] %d/%d", done, len(universe))
 
     ordered = [results[c] for c, _ in universe if c in results]
-    src = "kis" if use_kis else "yfinance"
+    src = "mirae" if use_mirae else "yfinance"
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "key_present": has_key(cfg), "source": src, "mode": cfg["mode"],
         "universe": len(universe),
-        "what": ("KIS 수급(외국인/기관/개인 일별 순매수) + 시세" if use_kis
+        "what": ("미래에셋 수급(외국인/기관/개인 일별 순매수) + 시세" if use_mirae
                  else "yfinance 폴백 시세(현재가·52주·PER/PBR·거래량). 수급은 미제공 → force_scores.json 참조."),
-        "supply_note": "외국인/기관/개인 일별 수급은 KIS/KRX 전용. yfinance 폴백 시 investor 는 비며, 수급은 force_scores.json 으로 본다.",
+        "supply_note": "외국인/기관/개인 일별 수급은 미래에셋/KRX 전용. yfinance 폴백 시 investor 는 비며, 수급은 force_scores.json 으로 본다.",
         "tickers": ordered,
-        "disclaimer": "KIS Open API / yfinance 데이터. 투자자문이 아니다.",
+        "disclaimer": "미래에셋 Open API / yfinance 데이터. 투자자문이 아니다.",
     }
     try:
         out_path = _resolve_out(args.out)
         _save_json_atomic(out_path, payload)
-        log.info("[kis] 저장 완료: %s", out_path)
+        log.info("[mirae] 저장 완료: %s", out_path)
     except Exception as e:
-        log.warning("[kis] 저장 실패: %s", e)
+        log.warning("[mirae] 저장 실패: %s", e)
     return 0
 
 
@@ -397,5 +407,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception as e:
-        log.warning("[kis] 치명적 예외(무시): %s: %s", type(e).__name__, e)
+        log.warning("[mirae] 치명적 예외(무시): %s: %s", type(e).__name__, e)
         sys.exit(0)

@@ -340,7 +340,7 @@ COLLECT_DONE 확인 후 세션폴더에 보통 다음이 있다:
         overhang_score + overhang_flags(증자/메자닌(CB·BW)/자사주처분/대주주변동/감자).
         → 증자·전환사채·자사주 처분 플래그가 있으면 '예정된 매물(희석/출회)'로 보고 확신도 하향,
           코멘트에 그 공시(종류·날짜)를 명시. (자사주 '취득(흡수)'은 반대로 긍정 신호.)
-  (3) kis_data.json — KIS(한투) 수급(kis_api.txt 키 있을 때만; 키 없으면 yfinance 시세 폴백):
+  (3) mirae_data.json — 미래에셋 수급(mirae_api.txt 키 있을 때만; 키 없으면 yfinance 시세 폴백):
         외국인/기관/개인 '일별 순매수' 추이 + 외국인 보유율. force_scores 수급을 교차검증.
         (폴백 시 investor 비어있음 → 수급은 force_scores.json 으로 본다.)
         → 외국인·기관이 '순매도 전환'이면 분배 신호로 보고 차익실현 위험에 가중.

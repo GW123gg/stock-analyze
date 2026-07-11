@@ -16,7 +16,7 @@
 
 **세션 폴더**(`output\YYYY-MM-DD_HHMMSS\`): 00_precollect.md · 01_broad_collection.md · INSTRUCTIONS.md · commands.txt ·
 02_deep_collection.md · 03_final_report.md/.html · predictions.json · force_scores/market_context/fsc_prices/flow_data/
-overheat/fundamentals/disclosures/kis_data/short.json · *.flag. 발송 후 `_archive\`로 이동.
+overheat/fundamentals/disclosures/mirae_data/short.json · *.flag. 발송 후 `_archive\`로 이동.
 **루트 저장 신호**(세션 아님): deriv_sentiment · ecos_macro · market_caution · vkospi + 뉴스 6종(news_rss/gdelt/media_rss/naver_stock_news/yahoo_news/analyst_reco).
 
 ## 1. 오케스트레이션·감시
@@ -53,7 +53,7 @@ overheat/fundamentals/disclosures/kis_data/short.json · *.flag. 발송 후 `_ar
 | `overheat_collect.py` | overheat.json(세션) | FDR 1년 일봉 | 이격도·연속상승·52주고가·RSI·OBV다이버전스·ret_20d |
 | `dart_collect.py` (26KB) | fundamentals.json(세션)+cache | DART(dart_api.txt)→yfinance 폴백 | 4년 재무 GPM/OPM/FCF 추세, 장투 게이트 |
 | `disclosure_collect.py` | disclosures.json(세션) | DART 공시 | 증자/CB/자사주/대주주 오버행 분류. retro_label이 classify 재사용 |
-| `kis_collect.py` | kis_data.json(세션)+토큰캐시 | KIS(kis_api.txt)→yfinance 폴백 | 투자자별 순매수·외인보유율 |
+| `mirae_collect.py` | mirae_data.json(세션)+토큰캐시 | 미래에셋(mirae_api.txt)→yfinance 폴백 | 투자자별 순매수·외인보유율 |
 | `short_collect.py` | short.json(세션) | pykrx | 공매도 잔고비중·10d 증감(T+1~2 지연 — `get_short_asof`는 당일 제외) |
 | `deriv_collect.py` | deriv_sentiment.json(**루트**) | pykrx(KRX) | KOSPI200 PCR+개별 풋콜. flow_collect import로 세션 워밍업 필수 |
 | `ecos_collect.py` | ecos_macro.json(**루트**) | 한국은행 ECOS(ecos_api.txt) | 기준금리·환율 5일. 플레이스홀더 키 거부. 저녁 타임아웃 잦음 |
@@ -100,7 +100,7 @@ overheat/fundamentals/disclosures/kis_data/short.json · *.flag. 발송 후 `_ar
 ## 7. 공통·설정·데이터 파일
 
 - **`common.py`** — `save_json_atomic(ensure_ascii/indent/fsync/ensure_dir)`·`atomic_write_text`. **새 저장 코드는 반드시 이걸 사용**(12곳 복붙을 통합한 것). 부작용 없는 순수함수만 추가 가능.
-- **키 파일**(루트 *.txt — 내용 출력·커밋 금지): dart/fsc/kis/naver/ecos/gdelt/apify/vkospi_api.txt·gemini_keys·krx_account·mail_config(.full)·appscript_config. 각 로더는 제공자별 검증이 달라 통합 금지.
+- **키 파일**(루트 *.txt — 내용 출력·커밋 금지): dart/fsc/mirae/naver/ecos/gdelt/apify/vkospi_api.txt·gemini_keys·krx_account·mail_config(.full)·appscript_config. 각 로더는 제공자별 검증이 달라 통합 금지.
 - **설정**: watch_tickers.txt(58종 유니버스)·media_rss_feeds.txt·retro_config.txt·mock_forward_config.txt.
 - **상태**(생성물): supervisor.lock/heartbeat/state·sent_index.json·daily_status.json·accuracy_log.json·recommended_*.
 - **지시 md**: cowork_instructions.md(아침 분석 판단 — source of truth)·회고분석_지시사항.md(회고 원본, stock_retro로 복사됨)·retro_feedback.md(회고→아침 폐루프)·scorecard.md(채점 결과).

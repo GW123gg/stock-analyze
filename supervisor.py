@@ -496,10 +496,10 @@ def run_morning_pipeline():
     _run_step("step8 disclosure",
               [py, os.path.join(BASE_DIR, "disclosure_collect.py")], timeout=600)
 
-    # step9: KIS(한투) 수급/시세 → 세션폴더 kis_data.json
-    #   외국인/기관/개인 일별 순매수 + 현재가·외국인보유율. kis_api.txt 키 있을 때만(없으면 무동작).
-    _run_step("step9 kis_collect",
-              [py, os.path.join(BASE_DIR, "kis_collect.py")], timeout=600)
+    # step9: 미래에셋 수급/시세 → 세션폴더 mirae_data.json
+    #   외국인/기관/개인 일별 순매수 + 현재가·외국인보유율. mirae_api.txt 키 있을 때만(없으면 무동작).
+    _run_step("step9 mirae_collect",
+              [py, os.path.join(BASE_DIR, "mirae_collect.py")], timeout=600)
 
     # step10: 공매도 잔고/추세 → 세션폴더 short.json (KRX, krx_account.txt 로그인 시)
     #   공매도 잔고 비중·증감 = 하락 베팅·되돌림 압력. 차익실현 위험 보강([3-차익실현]).

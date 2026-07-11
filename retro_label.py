@@ -6,7 +6,7 @@ retro_label.py ─ 회고분석(PART C) 학습 데이터셋 빌더
 [목적]
   과거에 우리 분석 Cowork 가 추천한 종목(predictions.json 의 picks/shorts)이 '예상대로 왜 안
   올랐는지'를 학습하기 위한 데이터셋을 만든다. 각 추천에 대해
-    (A) 추천 시점의 피처 스냅샷 : 그날 세션의 force_scores/overheat/disclosures/short/kis_data,
+    (A) 추천 시점의 피처 스냅샷 : 그날 세션의 force_scores/overheat/disclosures/short/mirae_data,
                                   시장국면(market_context.regime)
     (B) 추천 이후 실제 결과 라벨 : 만기(horizon) 수익률, '고점까지 일수(days_to_peak)',
                                   '고점 후 되돌림폭(post_peak_drawdown)', 차익실현형 고점 플래그
@@ -351,7 +351,7 @@ FEATURE_COLS = [
     # overheat
     "overheat_score", "disparity20", "disparity60", "up_streak",
     "dist_52w_high_pct", "ret_20d_pct", "rsi14", "obv_divergence",
-    # disclosures / short / kis
+    # disclosures / short / mirae
     "overhang_score", "short_balance_ratio", "short_pressure_score", "short_trend",
     "per", "pbr", "foreign_hold_pct",
     # market-level
@@ -436,8 +436,8 @@ def load_signal_snapshot(session_dir):
         f.update({"short_balance_ratio": t.get("short_balance_ratio"),
                   "short_pressure_score": t.get("short_pressure_score"),
                   "short_trend": t.get("trend")})
-    # kis_data.json
-    ks = _by_ticker(_load_json(os.path.join(session_dir, "kis_data.json")))
+    # mirae_data.json
+    ks = _by_ticker(_load_json(os.path.join(session_dir, "mirae_data.json")))
     for code, t in ks.items():
         p = t.get("price", {}) or {}
         f = ensure(code)

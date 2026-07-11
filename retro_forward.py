@@ -102,6 +102,18 @@ def _atomic_copy(src: str, dest: str):
     os.replace(tmp, dest)
 
 
+def _verify_copy(src: str, dest: str) -> bool:
+    """복사 검증(#R4, 회고 07-06 손상 대응): 원본-사본 바이트 수·sha256 일치 확인.
+    2026-07-06 회고에 JSON 뒤잘림(24KB)·CSV 널패딩 사본이 도착한 재발 방지 — 검증 실패 시 호출부가 재복사."""
+    try:
+        if os.path.getsize(src) != os.path.getsize(dest):
+            return False
+        hs, hd = _sha256(src), _sha256(dest)
+        return (hs is not None) and (hs == hd)
+    except Exception:
+        return False
+
+
 def _validate_dataset_json(path: str):
     """retro_dataset.json 무결성: 파싱되고 len(rows)==n_rows 면 행수 반환, 아니면 None.
     파일이 없으면 None(없는 건 무결성 실패가 아니라 '없음' — 호출부에서 구분)."""
@@ -252,13 +264,25 @@ def push() -> bool:
         if not os.path.isfile(src):
             continue
         try:
-            _atomic_copy(src, os.path.join(inbox, fn))   # 반쪽 복사 방지(.tmp -> rename)
+            dest = os.path.join(inbox, fn)
+            _atomic_copy(src, dest)                      # 반쪽 복사 방지(.tmp -> rename)
+            if not _verify_copy(src, dest):              # #R4 사본 검증(잘림·널패딩 감지) + 1회 재복사
+                log(f"복사 검증 실패 {fn}(원본-사본 불일치) — 재복사 시도")
+                _atomic_copy(src, dest)
+                if not _verify_copy(src, dest):
+                    log(f"재복사도 검증 실패 {fn} — 이 파일은 전달 목록에서 제외")
+                    continue
             copied.append(fn)
         except Exception as e:
             log(f"복사 실패 {fn}: {type(e).__name__}: {e}")
 
     if not copied:
         log("전달할 데이터셋 없음(retro_label.py 를 먼저 실행) — push 스킵")
+        return False
+    # #R4: 핵심 데이터셋이 검증을 통과하지 못했으면 push 전체를 거부(이전 inbox 온전 사본 유지,
+    # RETRO_GO 미발행) — 회고가 깨진 핵심 데이터로 분석하는 일 방지.
+    if os.path.isfile(json_src) and "retro_dataset.json" not in copied:
+        log("핵심 retro_dataset.json 전달 실패 — push 중단(RETRO_GO 미발행, 이전 inbox 유지)")
         return False
 
     today = datetime.now().strftime("%Y-%m-%d")

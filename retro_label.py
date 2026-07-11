@@ -121,22 +121,78 @@ def _kospi_ret5d(base_date):
     return val
 
 
-def pre_entry_features(ticker, base_date):
+# --- 알파(지수 차감) 라벨(#R1) — KOSPI 전 구간 1회 조회 캐시 ---
+_KS11_SERIES = None
+
+
+def _ks11_series():
+    """[(date, close)] 오름차순 — 알파 라벨용 KOSPI 종가. 전 구간 1회 조회(행별 재조회 금지)."""
+    global _KS11_SERIES
+    if _KS11_SERIES is None:
+        _KS11_SERIES = []
+        if FDR_OK:
+            try:
+                df = fdr.DataReader("KS11", "2025-01-01")
+                for idx, cl in zip(df.index, df["Close"].tolist()):
+                    if cl == cl:  # NaN 제외
+                        _KS11_SERIES.append((idx.date(), float(cl)))
+            except Exception as e:
+                log.warning("[retro] KOSPI 시계열 조회 실패(알파 라벨 생략): %s", type(e).__name__)
+    return _KS11_SERIES
+
+
+def _kospi_ret_h(base_date, horizon):
+    """진입일 종가 -> T+horizon 종가의 KOSPI 수익률(%) — 알파(ret_h - kospi_ret_h) 라벨용(사후 라벨).
+    '과열추격 -9%가 종목선택 실패인가, 그 뒤 지수가 빠진 것(베타)인가'를 분리한다. 미만기/결측이면 None."""
+    if base_date is None or not horizon:
+        return None
+    ser = _ks11_series()
+    if not ser:
+        return None
+    start = next((i for i, (d, _c) in enumerate(ser) if d >= base_date), None)
+    if start is None or start + horizon >= len(ser):
+        return None
+    c0, c1 = ser[start][1], ser[start + horizon][1]
+    if not c0:
+        return None
+    return round((c1 / c0 - 1.0) * 100.0, 2)
+
+
+_PRE_FLOW_KEYS = ("pre_foreign_5d_eok", "pre_foreign_20d_eok", "pre_inst_5d_eok",
+                  "pre_indiv_5d_eok", "pre_foreign_sell_streak")
+_PRE_SHORT_KEYS = ("pre_short_balance_ratio", "pre_short_change_10d")
+
+
+def pre_entry_features(ticker, base_date, snap=None):
     """진입시점(추천일까지) 피처 — 룩어헤드 없음. '진입 전부터 큰손이 분배 중이었나'를 예측 피처로.
       pre_foreign_5d_eok/20d_eok·pre_inst_5d_eok·pre_indiv_5d_eok·pre_foreign_sell_streak(KRX 일별 수급) +
-      pre_short_balance_ratio·pre_short_change_10d(공매도 잔고) + pre_kospi_ret5d(국면)."""
+      pre_short_balance_ratio·pre_short_change_10d(공매도 잔고) + pre_kospi_ret5d(국면).
+    #C1(회고 07-06 백필 요청): 세션 스냅샷(snap=추천 아침의 flow_data/short.json 값) 우선, 없을 때만
+      pykrx 라이브(get_*_asof) 폴백 — 회고가 새벽에 돌 때 KRX 간헐실패로 전량 null 되던 문제의 근본 수정.
+      세션 파일은 추천 아침에 산출된 값이라 asof 의미가 동일(룩어헤드 없음)."""
     out = {}
     if base_date is None:
         return out
+    snap = snap or {}
+    for k in _PRE_FLOW_KEYS + _PRE_SHORT_KEYS:      # 1순위: 세션 스냅샷
+        v = snap.get("_snap_" + k)
+        if v is not None:
+            out[k] = v
     asof = base_date.strftime("%Y%m%d")
-    if FLOW_OK:
+    if FLOW_OK and any(out.get(k) is None for k in _PRE_FLOW_KEYS):   # 2순위: 라이브 폴백(빠진 키만)
         try:
-            out.update(flow.get_flow_asof(ticker, asof) or {})
+            live = flow.get_flow_asof(ticker, asof) or {}
+            for k in _PRE_FLOW_KEYS:
+                if out.get(k) is None and live.get(k) is not None:
+                    out[k] = live[k]
         except Exception:
             pass
-    if SHORT_OK:
+    if SHORT_OK and any(out.get(k) is None for k in _PRE_SHORT_KEYS):
         try:
-            out.update(short.get_short_asof(ticker, asof) or {})
+            live = short.get_short_asof(ticker, asof) or {}
+            for k in _PRE_SHORT_KEYS:
+                if out.get(k) is None and live.get(k) is not None:
+                    out[k] = live[k]
         except Exception:
             pass
     out["pre_kospi_ret5d"] = _kospi_ret5d(base_date)
@@ -230,8 +286,12 @@ def pre_tech_features(code, base_date):
 _SECTOR_MAP = None
 
 
+_SECTOR_CACHE_FILE = os.path.join(HERE, "cache", "sector_map.json")
+
+
 def _sector_of(code):
-    """code → 업종(Sector) 문자열. FDR StockListing('KRX') 1회 로드 캐시. 없으면 None."""
+    """code → 업종(Sector) 문자열. FDR StockListing('KRX') 1회 로드 캐시. 없으면 None.
+    #C1: FDR 성공 시 디스크 캐시 갱신, 실패 시(새벽 간헐실패) 지난 캐시 폴백 — sector 전량 null 방지."""
     global _SECTOR_MAP
     if _SECTOR_MAP is None:
         _SECTOR_MAP = {}
@@ -254,6 +314,17 @@ def _sector_of(code):
                                 break
             except Exception:
                 pass
+        if _SECTOR_MAP:
+            try:                                   # 성공 → 디스크 캐시 갱신(다음 실패 대비)
+                from common import save_json_atomic as _sj
+                _sj(_SECTOR_CACHE_FILE, _SECTOR_MAP)
+            except Exception:
+                pass
+        else:
+            cached = _load_json(_SECTOR_CACHE_FILE)  # 실패 → 지난 캐시 폴백
+            if isinstance(cached, dict) and cached:
+                _SECTOR_MAP = {str(k): v for k, v in cached.items()}
+                log.info("[retro] sector: FDR 실패 -> 디스크 캐시 사용(%d종목)", len(_SECTOR_MAP))
     return _SECTOR_MAP.get(str(code).zfill(6))
 
 
@@ -363,6 +434,8 @@ LABEL_COLS = [
     "ret_partial_pct", "partial_asof_date", "last_close",
     "ret_1", "ret_3", "ret_5", "ret_10", "ret_20",
     "peak_gain_pct", "days_to_peak", "post_peak_drawdown_pct", "max_drawdown_pct",
+    "days_to_trough", "post_trough_rebound_pct",   # #R2 숏 경로(익절 설계)
+    "kospi_ret_h_pct", "alpha_h_pct",              # #R1 지수차감(베타/선택 분리)
     "profit_take_flag", "hit", "settle_close",
     # 거래량(차익실현·큰손 매도 신호)
     "entry_volume", "avg_volume_20d", "peak_day_vol_ratio", "trough_day_vol_ratio",
@@ -429,13 +502,26 @@ def load_signal_snapshot(session_dir):
     dc = _by_ticker(_load_json(os.path.join(session_dir, "disclosures.json")))
     for code, t in dc.items():
         ensure(code)["overhang_score"] = t.get("overhang_score")
-    # short.json
+    # short.json (+#C1: pre_short_* 백필 스냅샷 — 회고 새벽 pykrx 재조회 실패 대비)
     sh = _by_ticker(_load_json(os.path.join(session_dir, "short.json")))
     for code, t in sh.items():
         f = ensure(code)
         f.update({"short_balance_ratio": t.get("short_balance_ratio"),
                   "short_pressure_score": t.get("short_pressure_score"),
-                  "short_trend": t.get("trend")})
+                  "short_trend": t.get("trend"),
+                  "_snap_pre_short_balance_ratio": t.get("short_balance_ratio"),
+                  "_snap_pre_short_change_10d": t.get("balance_change_10d")})
+    # flow_data.json (#C1: pre_foreign_*/pre_inst_*/pre_indiv_* 백필 스냅샷 — 추천 아침 산출물이라 asof 동일)
+    fl = _by_ticker(_load_json(os.path.join(session_dir, "flow_data.json")))
+    for code, t in fl.items():
+        f = ensure(code)
+        f.update({
+            "_snap_pre_foreign_5d_eok": t.get("foreign_net_5d_eok"),
+            "_snap_pre_foreign_20d_eok": t.get("foreign_net_20d_eok"),
+            "_snap_pre_inst_5d_eok": t.get("inst_net_5d_eok"),
+            "_snap_pre_indiv_5d_eok": t.get("indiv_net_5d_eok"),
+            "_snap_pre_foreign_sell_streak": t.get("foreign_sell_streak"),
+        })
     # mirae_data.json
     ks = _by_ticker(_load_json(os.path.join(session_dir, "mirae_data.json")))
     for code, t in ks.items():
@@ -522,6 +608,17 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
     worst_k = min(range(1, len(rets)), key=lambda k: rets[k]) if len(rets) > 1 else 0
     trough_vol = _v(start + worst_k)
 
+    # 숏 경로 라벨(#R2) — 저점까지 일수·저점 후 되돌림: 숏 익절 규칙("D+N / -X% 도달 시") 설계용.
+    # (픽에는 '눌림 후 회복' 분석용. days_to_peak/peak_gain 의 하락 대칭.)
+    trough_px = fwd[worst_k] if worst_k < len(fwd) else None
+    post_trough_rb = ((max(fwd[worst_k:]) / trough_px - 1.0) * 100.0
+                      if (trough_px and trough_px > 0) else None)
+
+    # 알파 라벨(#R1) — 같은 창의 KOSPI 수익률 차감: '종목선택 실패 vs 시장베타' 분리(만기행만).
+    kospi_rh = _kospi_ret_h(base_date, horizon) if matured else None
+    alpha_h = (round(ret_h - kospi_rh, 2)
+               if (ret_h is not None and kospi_rh is not None) else None)
+
     def _ratio(x):
         return round(x / avg_vol, 2) if (x and avg_vol and avg_vol > 0) else None
 
@@ -545,6 +642,10 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         "peak_gain_pct": round(peak_gain, 2), "days_to_peak": peak_k,
         "post_peak_drawdown_pct": round(post_peak_dd, 2) if post_peak_dd is not None else None,
         "max_drawdown_pct": round(max_dd, 2),
+        # #R2 숏 경로 / #R1 알파(지수 차감)
+        "days_to_trough": worst_k,
+        "post_trough_rebound_pct": round(post_trough_rb, 2) if post_trough_rb is not None else None,
+        "kospi_ret_h_pct": kospi_rh, "alpha_h_pct": alpha_h,
         "profit_take_flag": bool(profit_take),
         "settle_close": settle_close_v, "last_close": last_close_v,
         # 거래량
@@ -587,7 +688,8 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         else:
             row[col] = f.get(col)
     # 진입시점 피처(룩어헤드 없음) — 추천일까지의 큰손 분배/공매도/국면(진입규칙용 예측 피처)
-    pre = pre_entry_features(code, base_date)
+    # #C1: 세션 스냅샷(feats[code]의 _snap_pre_*) 우선, 없을 때만 pykrx 라이브 폴백
+    pre = pre_entry_features(code, base_date, f)
     for col in PRE_COLS:
         row[col] = pre.get(col)
     # 라벨(이후 결과)
@@ -770,6 +872,10 @@ def main():
             "avg_volume_20d": "진입 직전 ~20일 평균 거래량",
             "peak_day_vol_ratio": "고점일 거래량/평소(>1.5면 고점에 매물 집중=차익실현)",
             "trough_day_vol_ratio": "최대낙폭일 거래량/평소(>1.5면 큰손 투매)",
+            "days_to_trough": "[라벨·#R2] 저점(최대낙폭)까지 거래일 수 — 숏 익절 타이밍('D+N') 설계용. 픽엔 눌림 깊이 시점",
+            "post_trough_rebound_pct": "[라벨·#R2] 저점 이후 만기까지 최대 되돌림(%) — 숏이 익절 없이 버틸 때 반납하는 폭(스퀴즈 강도)",
+            "kospi_ret_h_pct": "[라벨·#R1] 같은 보유창(진입일 종가->T+h)의 KOSPI 수익률(%) — 시장 기여분",
+            "alpha_h_pct": "[라벨·#R1] ret_h - kospi_ret_h = 지수 차감 초과수익(%). 음수 크면 종목선택 실패, ret_h 음수인데 alpha>=0 이면 시장베타가 주범(처방: 픽 억제가 아니라 노출 축소/헤지)",
             "flow_foreign_eok": "[라벨·사후] 보유기간 동안 외국인 순매수(억원, -면 외국인 순매도=하락 압력). 진입규칙 사용 금지(룩어헤드)",
             "flow_inst_eok": "[라벨·사후] 보유기간 동안 기관 순매수(억원, -면 기관 순매도). 진입규칙 사용 금지",
             "flow_indiv_eok": "[라벨·사후] 보유기간 동안 개인 순매수(억원, +면 개인이 받아줌). 진입규칙 사용 금지",

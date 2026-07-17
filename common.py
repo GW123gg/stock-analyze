@@ -44,3 +44,83 @@ def atomic_write_text(path, text):
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(tmp, path)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# predictions.json 계약 검증 (순수함수 — 부작용·IO 없음)
+# ─────────────────────────────────────────────────────────────────────
+# 왜: timing·conviction·preprice 필수는 지금까지 '지시문'에만 있어 강제력이 없었고,
+#     회고가 6회 연속(07-01~07-12) "timing 공백으로 '단기 vs 임박' 검증 영구 불가"를 요청했다.
+#     발송 전에 코드로 막아야 회고 데이터셋 오염이 근본 차단된다(cmd_mail 이 호출).
+# 필수 필드는 kind 별로 다르다 — cowork_instructions [7.5] 스키마 원문 기준:
+#   "모든 픽에 timing·conviction·preprice·horizon_days·entry_ref 를 반드시" / "숏도 timing·conviction 필수".
+#   preprice(강함|부분|미반영)는 '선반영' 개념이라 픽 전용이고 숏 스키마엔 아예 없다.
+#   (실측: 2026-07-11·07-16 세션의 숏은 preprice 가 없는 게 계약상 정상 — 여기서 요구하면 정상 발송을 오차단한다.)
+PRED_REQUIRED_PICK = ("ticker", "timing", "conviction", "preprice", "entry_ref", "horizon_days")
+PRED_REQUIRED_SHORT = ("ticker", "timing", "conviction", "entry_ref", "horizon_days")
+PRED_TIMINGS = ("임박", "단기", "중기")
+PRED_PREPRICES = ("강함", "부분", "미반영")
+
+
+def validate_predictions(payload):
+    """predictions.json(dict) → 계약 위반 메시지 리스트(빈 리스트=통과).
+
+    검사(계약=[7.5] 스키마): picks/shorts 각 항목의 필수 필드 null/공백 금지 + 타입·범위.
+      - timing: 임박/단기/중기 중 하나 (픽·숏 공통 필수 — 회고가 6회 요청한 축)
+      - conviction: 숫자 0~1
+      - entry_ref: 양수(예측 시점 가격 — 채점 기준)
+      - horizon_days: 양의 정수
+      - preprice: 픽만 필수(강함/부분/미반영)
+    payload 가 dict 가 아니거나 picks/shorts 가 모두 비면 그 사실을 오류로 본다.
+    """
+    errs = []
+    if not isinstance(payload, dict):
+        return ["predictions.json 이 dict 가 아님(파싱 실패 또는 형식 오류)"]
+    picks = payload.get("picks") or []
+    shorts = payload.get("shorts") or []
+    # 픽·숏 0건은 '오류가 아니다' — 국면 게이트([3-차익실현](5)·F1·F8)가 롱을 전면 보류시킨
+    # 관망일에는 추천 없이 시장 방향(market_call)만 내는 게 정상이고, 그날도 메일은 나가야 한다.
+    # (여기서 막으면 게이트를 잘 지킨 날일수록 메일이 안 나가는 역설이 생긴다.)
+    if not picks and not shorts:
+        return []
+    for kind, items in (("pick", picks), ("short", shorts)):
+        for i, it in enumerate(items):
+            if not isinstance(it, dict):
+                errs.append(f"{kind}[{i}]: 항목이 dict 가 아님")
+                continue
+            tag = str(it.get("ticker") or "?")
+            required = PRED_REQUIRED_PICK if kind == "pick" else PRED_REQUIRED_SHORT
+            for k in required:
+                v = it.get(k)
+                if v is None or (isinstance(v, str) and not v.strip()):
+                    errs.append(f"{kind}[{i}] {tag}: '{k}' 누락/null")
+            t = it.get("timing")
+            if t is not None and str(t).strip() and str(t).strip() not in PRED_TIMINGS:
+                errs.append(f"{kind}[{i}] {tag}: timing '{t}' 은 임박/단기/중기 중 하나여야 함")
+            if kind == "pick":
+                pp = it.get("preprice")
+                if pp is not None and str(pp).strip() and str(pp).strip() not in PRED_PREPRICES:
+                    errs.append(f"{kind}[{i}] {tag}: preprice '{pp}' 은 강함/부분/미반영 중 하나여야 함")
+            c = it.get("conviction")
+            if c is not None:
+                try:
+                    cf = float(c)
+                    if not (0.0 <= cf <= 1.0):
+                        errs.append(f"{kind}[{i}] {tag}: conviction {c} 이 0~1 범위 밖")
+                except (TypeError, ValueError):
+                    errs.append(f"{kind}[{i}] {tag}: conviction '{c}' 이 숫자가 아님")
+            e = it.get("entry_ref")
+            if e is not None:
+                try:
+                    if float(e) <= 0:
+                        errs.append(f"{kind}[{i}] {tag}: entry_ref {e} 이 양수가 아님")
+                except (TypeError, ValueError):
+                    errs.append(f"{kind}[{i}] {tag}: entry_ref '{e}' 이 숫자가 아님")
+            h = it.get("horizon_days")
+            if h is not None:
+                try:
+                    if int(h) <= 0:
+                        errs.append(f"{kind}[{i}] {tag}: horizon_days {h} 이 양의 정수가 아님")
+                except (TypeError, ValueError):
+                    errs.append(f"{kind}[{i}] {tag}: horizon_days '{h}' 이 정수가 아님")
+    return errs

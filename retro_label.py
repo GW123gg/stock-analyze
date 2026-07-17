@@ -402,6 +402,8 @@ PRE_COLS = [
     "pre_foreign_5d_eok", "pre_foreign_20d_eok", "pre_inst_5d_eok", "pre_indiv_5d_eok",
     "pre_foreign_sell_streak", "pre_short_balance_ratio", "pre_short_change_10d", "pre_kospi_ret5d",
     "sector",
+    # #A6 유동성 정규화(메가캡 왜곡 제거) — 5일 순매수 / 20일 평균 일거래대금(배)
+    "pre_foreign_5d_ratio", "pre_indiv_5d_ratio", "pre_avg_trade_value_20d_eok",
     # 진입시점 기술피처(P1b 백필) — §3 과열/즉시고점 가설 검증용
     "pre_rsi14", "pre_up_streak", "pre_ret_20d_pct", "pre_dist_52w_high_pct", "pre_disparity20", "pre_overheat",
 ]
@@ -427,7 +429,17 @@ FEATURE_COLS = [
     "per", "pbr", "foreign_hold_pct",
     # market-level
     "regime_label", "regime_score",
+    # #S1 market-level(세션 동결 스냅샷 — 2026-07-17+ 세션만 값 있음). regime dict 에서 읽는다.
+    "pre_caution_score", "pre_regime_kind", "pre_allow_market_up",
+    "pre_pcr_oi", "pre_vkospi", "pre_vkospi_d5_chg", "pre_vkospi_pct_rank", "pre_vkospi_label",
+    "pre_base_rate", "pre_usdkrw_chg5d",
 ]
+# 위 중 '시장수준(그날 공통)' 컬럼 — _row_for 가 종목별 feats 가 아니라 regime 에서 읽어야 하는 것들.
+SNAPSHOT_MARKET_COLS = {
+    "pre_caution_score", "pre_regime_kind", "pre_allow_market_up",
+    "pre_pcr_oi", "pre_vkospi", "pre_vkospi_d5_chg", "pre_vkospi_pct_rank", "pre_vkospi_label",
+    "pre_base_rate", "pre_usdkrw_chg5d",
+}
 LABEL_COLS = [
     "matured", "label_status", "fwd_days_avail", "ret_h_pct",
     # #5 미만기 부분수익(만기 ret_h 와 분리 — 오독 방지)
@@ -436,6 +448,7 @@ LABEL_COLS = [
     "peak_gain_pct", "days_to_peak", "post_peak_drawdown_pct", "max_drawdown_pct",
     "days_to_trough", "post_trough_rebound_pct",   # #R2 숏 경로(익절 설계)
     "kospi_ret_h_pct", "alpha_h_pct",              # #R1 지수차감(베타/선택 분리)
+    "ret_if_stop8_pct", "ret_if_stop8_tp12_pct",   # #S2 손절 반사실(규칙을 지켰다면)
     "profit_take_flag", "hit", "settle_close",
     # 거래량(차익실현·큰손 매도 신호)
     "entry_volume", "avg_volume_20d", "peak_day_vol_ratio", "trough_day_vol_ratio",
@@ -535,7 +548,38 @@ def load_signal_snapshot(session_dir):
     mc = _load_json(os.path.join(session_dir, "market_context.json"))
     if isinstance(mc, dict) and isinstance(mc.get("regime"), dict):
         regime = mc["regime"]
+    # #S1(사각지대 #10): 루트 신호 4종의 세션 동결본(snapshot_signals.py 산출)을 시장수준 피처로.
+    # 아침 [6.6]F1/F8 게이트의 1차 입력(국면·PCR·거시·공포)이 회고 학습에 전혀 없던 공백을 메운다.
+    # 동결본이 없는 과거 세션은 전부 None(룩어헤드 없음 — 그날 존재하던 값만 씀).
+    regime.update(_snapshot_market_feats(session_dir))
     return feats, regime
+
+
+def _snapshot_market_feats(session_dir):
+    """세션에 동결된 루트 신호 4종 → 시장수준 pre_* 피처(없으면 {} — 과거 세션은 결측 정상)."""
+    out = {}
+    mc = _load_json(os.path.join(session_dir, "signals_snapshot_market_caution.json"))
+    if isinstance(mc, dict):
+        out["pre_caution_score"] = mc.get("market_caution_score")
+        out["pre_regime_kind"] = mc.get("regime_kind")
+        out["pre_allow_market_up"] = mc.get("allow_market_up_call")
+    dv = _load_json(os.path.join(session_dir, "signals_snapshot_deriv_sentiment.json"))
+    if isinstance(dv, dict) and isinstance(dv.get("market"), dict):
+        out["pre_pcr_oi"] = dv["market"].get("pcr_oi")
+    ec = _load_json(os.path.join(session_dir, "signals_snapshot_ecos_macro.json"))
+    if isinstance(ec, dict) and isinstance(ec.get("derived"), dict):
+        out["pre_base_rate"] = ec["derived"].get("base_rate")
+        out["pre_usdkrw_chg5d"] = ec["derived"].get("usdkrw_change_5d_pct")
+    vk = _load_json(os.path.join(session_dir, "signals_snapshot_vkospi.json"))
+    if isinstance(vk, dict):
+        # ⚠️ vkospi.json 의 latest 는 스칼라가 아니라 {value, chg_pct, d5_chg_pct} 다(vkospi_collect.py:166).
+        #    그대로 넣으면 dict 가 컬럼에 실려 CSV·집계가 깨진다 → value 만 꺼낸다.
+        lt = vk.get("latest")
+        out["pre_vkospi"] = lt.get("value") if isinstance(lt, dict) else lt
+        out["pre_vkospi_d5_chg"] = lt.get("d5_chg_pct") if isinstance(lt, dict) else None
+        out["pre_vkospi_pct_rank"] = vk.get("pct_rank_60d")
+        out["pre_vkospi_label"] = vk.get("level_label")   # '공포' 판별(F1/F8 입력)
+    return out
 
 
 def compute_labels(ticker, base_date, entry_ref, horizon):
@@ -619,6 +663,28 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
     alpha_h = (round(ret_h - kospi_rh, 2)
                if (ret_h is not None and kospi_rh is not None) else None)
 
+    # 손절 반사실 라벨(#S2, 사각지대 #5) — "규칙을 지켰다면 결과가 얼마였나".
+    # 즉시고점군 ret_h -13%를 손절선이 얼마나 줄였을지 회고가 정량 답하게 한다(경로 기반, 종가 근사).
+    # 주의: 종가 기준이라 장중 터치는 반영 못 함(보수적 = 실제보다 손절이 덜 걸림). 진입규칙 아닌 사후 라벨.
+    def _counterfactual(stop_pct, tp_pct=None):
+        """진입 후 종가경로에서 stop/tp 에 처음 닿은 날 '그날 종가'로 청산했다면의 수익률(%).
+
+        정직성: 손절선(-8%)을 그대로 반환하지 않고 **실제 그날 종가 수익률**을 반환한다.
+        갭하락으로 -12% 마감했으면 -12% 로 기록 — 이상적 -8% 체결을 가정하면 손절의 효과를
+        과대평가해 회고가 틀린 권고를 하게 된다(종가 기준이라 장중 터치는 애초에 못 잡는다).
+        """
+        if not matured:
+            return None
+        for k in range(1, horizon + 1):
+            if k >= len(rets):
+                break
+            if rets[k] <= stop_pct or (tp_pct is not None and rets[k] >= tp_pct):
+                return round(rets[k], 2)      # 이상적 체결가가 아니라 실제 종가
+        return round(rets[horizon], 2) if horizon < len(rets) else None
+
+    ret_stop8 = _counterfactual(-8.0)
+    ret_stop8_tp12 = _counterfactual(-8.0, 12.0)   # auto stock strategy_config 의 실제 룰(-8/+12)
+
     def _ratio(x):
         return round(x / avg_vol, 2) if (x and avg_vol and avg_vol > 0) else None
 
@@ -642,10 +708,11 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         "peak_gain_pct": round(peak_gain, 2), "days_to_peak": peak_k,
         "post_peak_drawdown_pct": round(post_peak_dd, 2) if post_peak_dd is not None else None,
         "max_drawdown_pct": round(max_dd, 2),
-        # #R2 숏 경로 / #R1 알파(지수 차감)
+        # #R2 숏 경로 / #R1 알파(지수 차감) / #S2 손절 반사실
         "days_to_trough": worst_k,
         "post_trough_rebound_pct": round(post_trough_rb, 2) if post_trough_rb is not None else None,
         "kospi_ret_h_pct": kospi_rh, "alpha_h_pct": alpha_h,
+        "ret_if_stop8_pct": ret_stop8, "ret_if_stop8_tp12_pct": ret_stop8_tp12,
         "profit_take_flag": bool(profit_take),
         "settle_close": settle_close_v, "last_close": last_close_v,
         # 거래량
@@ -685,6 +752,10 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
             row[col] = regime.get("label") if isinstance(regime, dict) else None
         elif col == "regime_score":
             row[col] = regime.get("score") if isinstance(regime, dict) else None
+        elif col in SNAPSHOT_MARKET_COLS:
+            # #S1 시장수준(그날 모든 픽 공통) — 세션 동결 스냅샷에서 온 값이라 regime 에서 읽는다.
+            # (종목별 feats(f) 가 아니다 — 여기서 f.get 을 쓰면 전부 None 이 되어 조용히 무효화된다.)
+            row[col] = regime.get(col) if isinstance(regime, dict) else None
         else:
             row[col] = f.get(col)
     # 진입시점 피처(룩어헤드 없음) — 추천일까지의 큰손 분배/공매도/국면(진입규칙용 예측 피처)
@@ -699,6 +770,28 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         lab = {"matured": None, "note": "missing_entry_or_horizon"}
     for col in LABEL_COLS:
         row[col] = lab.get(col)
+    # #A6(회고 07-16 요청): 외인/개인 수급을 '유동성 대비 비율'로 정규화.
+    #   메가캡(삼성전자·SK하이닉스)은 5일 외인 -84,817억·개인 +80,173억 같은 규모가 상시 찍혀
+    #   부호 기반 분배신호(foreign<0 & indiv>0)가 '거래 구조 그 자체'로 자동 참이 되어 신호가 희석된다
+    #   (회고 실측: 메가캡 6행 alpha -1.00%=신호없음 vs ex-메가캡 4행 -11.57%=신호강함).
+    #   분모 = 진입 직전 20일 평균 '일 거래대금'(억원) ≈ avg_volume_20d × entry_ref / 1e8.
+    #   → 이 비율이 있어야 '분배 합류' 규칙을 메가캡 왜곡 없이 검증·승격할 수 있다(2회 좌절한 축).
+    row["pre_avg_trade_value_20d_eok"] = None
+    for col in ("pre_foreign_5d_ratio", "pre_indiv_5d_ratio"):
+        row[col] = None
+    try:
+        _avgv, _px = lab.get("avg_volume_20d"), entry_ref
+        if _avgv and _px and _px > 0:
+            tv_eok = (float(_avgv) * float(_px)) / 1e8      # 20일 평균 일거래대금(억원)
+            if tv_eok > 0:
+                row["pre_avg_trade_value_20d_eok"] = round(tv_eok, 1)
+                for col, src in (("pre_foreign_5d_ratio", "pre_foreign_5d_eok"),
+                                 ("pre_indiv_5d_ratio", "pre_indiv_5d_eok")):
+                    v = row.get(src)
+                    if v is not None:
+                        row[col] = round(float(v) / tv_eok, 2)   # 5일 순매수 / 평균 일거래대금(배)
+    except Exception:
+        pass
     # hit: 픽=상승, 숏=하락 (만기/부분 무관하게 ret_h 기준)
     rh = lab.get("ret_h_pct")
     if rh is None:
@@ -874,6 +967,19 @@ def main():
             "trough_day_vol_ratio": "최대낙폭일 거래량/평소(>1.5면 큰손 투매)",
             "days_to_trough": "[라벨·#R2] 저점(최대낙폭)까지 거래일 수 — 숏 익절 타이밍('D+N') 설계용. 픽엔 눌림 깊이 시점",
             "post_trough_rebound_pct": "[라벨·#R2] 저점 이후 만기까지 최대 되돌림(%) — 숏이 익절 없이 버틸 때 반납하는 폭(스퀴즈 강도)",
+            "ret_if_stop8_pct": "[라벨·#S2 반사실] -8% 손절을 지켰다면의 만기수익(%). ret_h 와 비교해 '손절이 얼마나 건졌나/승자를 잃었나' 판정(종가 근사 — 장중 터치 미반영)",
+            "ret_if_stop8_tp12_pct": "[라벨·#S2 반사실] -8% 손절 + +12% 익절 룰(auto stock 실제 config)을 지켰다면의 수익(%)",
+            "pre_foreign_5d_ratio": "[진입피처·#A6] 직전 5일 외국인 순매수 / 20일 평균 일거래대금(배). 메가캡은 금액이 상시 커서 부호만 보면 신호가 희석된다 → 종목 간 비교는 이 비율로",
+            "pre_indiv_5d_ratio": "[진입피처·#A6] 직전 5일 개인 순매수 / 20일 평균 일거래대금(배)",
+            "pre_avg_trade_value_20d_eok": "[진입피처·#A6] 진입 직전 20일 평균 일거래대금(억원) — 위 비율의 분모(유동성 규모)",
+            "pre_caution_score": "[진입피처·시장] 세션 동결 market_caution 종합 국면점수(0~100, >=60 경계) — 2026-07-17+ 세션만",
+            "pre_regime_kind": "[진입피처·시장] 동결 regime_kind(공포/눌림목/과열 등)",
+            "pre_allow_market_up": "[진입피처·시장] 동결 allow_market_up_call(false=breadth 붕괴로 지수 up 콜 금지)",
+            "pre_pcr_oi": "[진입피처·시장] 동결 KOSPI200 풋콜비율(미결제 기준)",
+            "pre_vkospi": "[진입피처·시장] 동결 VKOSPI 수준(공포)",
+            "pre_vkospi_pct_rank": "[진입피처·시장] 동결 VKOSPI 60일 백분위",
+            "pre_base_rate": "[진입피처·거시] 동결 한국은행 기준금리(%)",
+            "pre_usdkrw_chg5d": "[진입피처·거시] 동결 원/달러 5일 변화율(%, +면 원화약세=외인 위험회피)",
             "kospi_ret_h_pct": "[라벨·#R1] 같은 보유창(진입일 종가->T+h)의 KOSPI 수익률(%) — 시장 기여분",
             "alpha_h_pct": "[라벨·#R1] ret_h - kospi_ret_h = 지수 차감 초과수익(%). 음수 크면 종목선택 실패, ret_h 음수인데 alpha>=0 이면 시장베타가 주범(처방: 픽 억제가 아니라 노출 축소/헤지)",
             "flow_foreign_eok": "[라벨·사후] 보유기간 동안 외국인 순매수(억원, -면 외국인 순매도=하락 압력). 진입규칙 사용 금지(룩어헤드)",

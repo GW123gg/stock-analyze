@@ -369,7 +369,7 @@ def grade_pick(pred_date, item, kind):
     kospi_ret, _ = _index_return(KOSPI_SYMBOL, base_date, horizon)
     alpha = (ret_pct - kospi_ret) if kospi_ret is not None else None
 
-    tag = str(item.get("tag") or "").strip()
+    tag = _norm_tag(item.get("tag"))
     if kind == "short":
         hit = ret_pct < 0
     else:
@@ -526,6 +526,20 @@ def grade_all(preds, logdata):
 # =====================================================================
 # 5. 집계 & scorecard.md
 # =====================================================================
+def _norm_tag(t):
+    """태그 표기 정규화: '[단기스윙]' → '단기스윙'.
+
+    accuracy_log.json 은 append-only 라, 과거에 대괄호를 포함해 기록된 엔트리가 영구히 남는다.
+    정규화하지 않으면 같은 태그가 두 그룹으로 쪼개져 표본이 갈리고 태그 통계가 왜곡된다
+    (실측 2026-07-17: '단기스윙' 52건 vs '[단기스윙]' 4건, '장전선취매' 2 vs 2 로 분할돼 있었다).
+    채점(grade_pick)과 집계(aggregate) 양쪽에 적용해 과거 기록도 병합한다(로그 파일은 무수정).
+    """
+    s = str(t or "").strip()
+    while len(s) > 2 and s.startswith("[") and s.endswith("]"):
+        s = s[1:-1].strip()
+    return s
+
+
 def _pct(numer, denom):
     if not denom:
         return None
@@ -604,7 +618,7 @@ def aggregate(entries):
             if a is not None:
                 p["alpha_sum"] += a
                 p["alpha_n"] += 1
-            tag = e.get("tag") or "(태그없음)"
+            tag = _norm_tag(e.get("tag")) or "(태그없음)"
             t = agg["by_tag"].setdefault(
                 tag, {"total": 0, "hit": 0, "ret_sum": 0.0, "ret_n": 0,
                       "alpha_sum": 0.0, "alpha_n": 0})
@@ -671,7 +685,11 @@ def build_recommendations(agg):
                 recs.append(f"시장 방향(T+{h}) 적중률 {rate:.0f}% 양호 -> 현 판단 유지.")
             break
 
-    # 태그별 성과
+    # 태그별 성과 — ★서술만, 처방 금지(회고 6회 연속 기각: 2026-06-27~07-12)
+    #   이유: 이 집계는 '최근 RECENT_DAYS 예측일' 창이라 국면(강세추격장)에 편중될 수 있고,
+    #   엔트리에 국면·출처 정보가 없어(grade_pick 스키마에 _src_kind 없음) 태그 효과를 분리할 수 없다.
+    #   실제로 회고가 완전표본으로 6회 재검한 결과 '단기스윙 부진'은 태그가 아니라 국면·출처 귀속이었고,
+    #   태그 축소 처방은 매번 기각됐다. 그래서 여기서는 수치만 보고하고 판단은 회고/[0.5]에 넘긴다.
     for tag, t in sorted(agg["by_tag"].items(), key=lambda kv: -kv[1]["total"]):
         if t["total"] < 3:
             continue
@@ -680,10 +698,13 @@ def build_recommendations(agg):
         if avg_ret is None:
             continue
         if avg_ret >= 1.0 and (rate or 0) >= 55:
-            recs.append(f"[{tag}] 평균 {avg_ret:+.1f}%, 적중 {rate:.0f}% 양호 -> 유지·비중 확대 가능.")
+            recs.append(f"[{tag}] 평균 {avg_ret:+.1f}%, 적중 {rate:.0f}% 양호(참고) "
+                        f"-> 태그 단독 비중 조정 금지, 국면·종목 근거로 판단.")
         elif avg_ret <= -1.0 or (rate is not None and rate < 40):
-            recs.append(f"[{tag}] 평균 {avg_ret:+.1f}%, 적중 {_fmt_rate(rate)} 부진 "
-                        f"-> 해당 태그 선별 강화 또는 비중 축소.")
+            recs.append(f"[{tag}] 평균 {avg_ret:+.1f}%, 적중 {_fmt_rate(rate)} 부진(참고) "
+                        f"-> ★태그 탓으로 단정·축소 금지(최근 {RECENT_DAYS}일 국면 편중 가능). "
+                        f"회고가 6회 기각한 처방이다. 원인은 retro_dataset 의 국면(pre_kospi_ret5d)·"
+                        f"출처(_src_kind)로 대조하라.")
         if len(recs) >= 4:
             break
 

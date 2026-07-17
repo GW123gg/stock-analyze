@@ -21,7 +21,10 @@ retro_forward.py ─ 회고분석(PART C) Cowork 와의 양방향 브리지
 
 [폴더 구조 (folder 기준)]
   folder/회고분석_지시사항.md   ← 호스트가 1회 복사(회고 Cowork 가 따르는 지시문)
-  folder/inbox/                 ← 호스트가 push (retro_dataset.json/csv, scorecard.md, RETRO_GO.flag, latest.json)
+  folder/inbox/                 ← 호스트가 push. 데이터셋은 **날짜가 붙은 불변 파일명**으로 드롭한다
+                                  (retro_dataset_<날짜>.json/csv, scorecard_<날짜>.md) + RETRO_GO.flag + latest.json.
+                                  회고는 latest.json 의 roles(역할→파일명)로 이번 회차 파일을 찾는다.
+                                  ※ 고정 이름 덮어쓰기는 2026-07-06·07-12 사본 손상(잘림·NUL패딩)의 원인이라 폐지.
   folder/outbox/                ← 회고 Cowork 가 작성 (회고리포트_*.md, PART_A_추가지시.md, RETRO_DONE.flag)
 
 [실행]
@@ -52,7 +55,10 @@ LOG_DIR     = os.path.join(BASE_DIR, "logs")
 CONFIG_FILE = os.path.join(BASE_DIR, "retro_config.txt")
 GUIDE_FILE  = os.path.join(BASE_DIR, "회고분석_지시사항.md")
 # 호스트가 inbox 로 밀어 넣을 데이터셋(없으면 그 파일만 건너뜀)
+# ※ 실제 드롭 파일명은 회차마다 날짜가 붙는다(#P0-1 불변 드롭): retro_dataset_2026-07-17.json
+#   회고는 inbox/latest.json 의 roles/files 로 실제 파일명을 찾는다.
 PUSH_FILES  = ["retro_dataset.json", "retro_dataset.csv", "scorecard.md"]
+KEEP_VERSIONS = 7          # 역할별 보관 회차 수(오래된 버전 자동 정리)
 # 회고 Cowork 가 outbox 에 작성하는 '기존 분석 Cowork 용 추가 지시' → 호스트가 이 이름으로 회수
 FEEDBACK_NAME = "PART_A_추가지시.md"
 FEEDBACK_DEST = os.path.join(BASE_DIR, "retro_feedback.md")
@@ -258,21 +264,34 @@ def push() -> bool:
         if n_csv is not None and n_csv != n_rows:
             log(f"경고: csv 행수({n_csv}) != json 행수({n_rows}) — json 우선이나 csv 재생성 권장")
 
-    copied = []
+    # #P0-1 버저닝 드롭(불변 파일명) — 2026-07-06·07-12 손상의 근본 대책.
+    #   두 사건 모두 '무정전 연속가동'이었고(이벤트로그 확인) 사본이 정확히 '이전 push 크기'까지
+    #   잘리거나 NUL 패딩됐다 = 옛 크기를 아는 주체(열려있는 회고 Cowork 세션의 파일 되돌림)와
+    #   호스트 push 가 같은 경로를 두고 경합했다는 뜻. 매 회차 '새 이름'으로 떨어뜨리면
+    #   되돌림 대상 자체가 없어 경합이 성립하지 않는다. 회고는 latest.json 의 files 를 보고 읽는다.
+    stamp = datetime.now().strftime("%Y-%m-%d")
+    copied, name_map = [], {}
     for fn in PUSH_FILES:
         src = os.path.join(BASE_DIR, fn)
         if not os.path.isfile(src):
             continue
+        stem, ext = os.path.splitext(fn)
+        vname = f"{stem}_{stamp}{ext}"               # 예: retro_dataset_2026-07-17.json
+        # 같은 날 두 번째 push 면 기존 파일을 덮어쓰게 되어 '불변 드롭'의 목적(경합 회피)이
+        # 하루 안에서 무효가 된다 → 시각 접미사로 새 이름을 만든다(회고가 이미 열어둔 사본은 그대로 보존).
+        if os.path.exists(os.path.join(inbox, vname)):
+            vname = f"{stem}_{stamp}_{datetime.now().strftime('%H%M%S')}{ext}"
         try:
-            dest = os.path.join(inbox, fn)
+            dest = os.path.join(inbox, vname)
             _atomic_copy(src, dest)                      # 반쪽 복사 방지(.tmp -> rename)
             if not _verify_copy(src, dest):              # #R4 사본 검증(잘림·널패딩 감지) + 1회 재복사
-                log(f"복사 검증 실패 {fn}(원본-사본 불일치) — 재복사 시도")
+                log(f"복사 검증 실패 {vname}(원본-사본 불일치) — 재복사 시도")
                 _atomic_copy(src, dest)
                 if not _verify_copy(src, dest):
-                    log(f"재복사도 검증 실패 {fn} — 이 파일은 전달 목록에서 제외")
+                    log(f"재복사도 검증 실패 {vname} — 이 파일은 전달 목록에서 제외")
                     continue
-            copied.append(fn)
+            copied.append(vname)
+            name_map[fn] = vname
         except Exception as e:
             log(f"복사 실패 {fn}: {type(e).__name__}: {e}")
 
@@ -281,23 +300,27 @@ def push() -> bool:
         return False
     # #R4: 핵심 데이터셋이 검증을 통과하지 못했으면 push 전체를 거부(이전 inbox 온전 사본 유지,
     # RETRO_GO 미발행) — 회고가 깨진 핵심 데이터로 분석하는 일 방지.
-    if os.path.isfile(json_src) and "retro_dataset.json" not in copied:
+    if os.path.isfile(json_src) and "retro_dataset.json" not in name_map:
         log("핵심 retro_dataset.json 전달 실패 — push 중단(RETRO_GO 미발행, 이전 inbox 유지)")
         return False
 
     today = datetime.now().strftime("%Y-%m-%d")
-    # #1 체크섬: 회고가 파일 무결성을 sha256·rowcount 로 대조할 수 있게.
+    # #1 체크섬: 회고가 파일 무결성을 sha256·rowcount 로 대조할 수 있게(키=실제 드롭된 버전 파일명).
     checks = {}
-    for fn in copied:
-        p = os.path.join(inbox, fn)
+    for orig, vname in name_map.items():
+        p = os.path.join(inbox, vname)
         c = {"sha256": _sha256(p), "bytes": (os.path.getsize(p) if os.path.isfile(p) else None)}
-        if fn == "retro_dataset.json":
+        if orig == "retro_dataset.json":
             c["rowcount"] = n_rows
-        elif fn == "retro_dataset.csv":
+        elif orig == "retro_dataset.csv":
             c["rowcount"] = _csv_rowcount(p)
-        checks[fn] = c
+        checks[vname] = c
     latest = {"date": today, "pushed_at": datetime.now().isoformat(), "files": copied,
-              "checksums": checks}
+              # #P0-1: 회고가 '역할 → 실제 파일명'을 찾는 표. 파일명이 매 회차 달라지므로 이 표가 전거다.
+              "roles": name_map,
+              "checksums": checks,
+              "_note": ("파일명은 회차마다 날짜가 붙는다(불변 드롭 — 덮어쓰기 경합/되돌림 방지). "
+                        "roles 로 실제 파일명을 찾고, checksums 로 무결성을 대조한 뒤 읽어라.")}
     try:
         _atomic_write(os.path.join(inbox, "latest.json"),
                       json.dumps(latest, ensure_ascii=False, indent=2))
@@ -310,8 +333,44 @@ def push() -> bool:
     except Exception as e:
         log(f"RETRO_GO.flag 작성 실패(무시): {type(e).__name__}: {e}")
 
+    _prune_versions(inbox, keep=KEEP_VERSIONS)
+    _drop_legacy_names(inbox, name_map)
     log(f"push 완료: {inbox} ({', '.join(copied)}) + RETRO_GO.flag")
     return True
+
+
+def _drop_legacy_names(inbox: str, name_map: dict):
+    """버저닝 이전의 고정 이름 사본(retro_dataset.json 등)을 제거한다.
+    남겨두면 회고가 습관적으로 그 이름을 읽어 '낡은 회차 데이터'로 분석할 위험이 있다
+    (이번 회차 파일은 버전명으로 이미 안전하게 드롭됨 — 원본은 BASE_DIR 에 그대로 있으니 무손실)."""
+    for orig, vname in name_map.items():
+        legacy = os.path.join(inbox, orig)
+        if orig == vname or not os.path.isfile(legacy):
+            continue
+        try:
+            os.remove(legacy)
+            log(f"구 고정이름 사본 제거(버저닝 전환): {orig}")
+        except Exception as e:
+            log(f"구 사본 제거 실패(무시) {orig}: {type(e).__name__}")
+
+
+def _prune_versions(inbox: str, keep: int = 7):
+    """버저닝 드롭이 무한 증식하지 않게 파일 역할별 최근 keep 개만 남긴다(오래된 것부터 삭제).
+    latest.json 이 가리키는 현재 회차는 항상 최신이라 보존된다. 삭제 실패는 무시(무해)."""
+    import re as _re
+    for fn in PUSH_FILES:
+        stem, ext = os.path.splitext(fn)
+        pat = _re.compile(r"^%s_\d{4}-\d{2}-\d{2}%s$" % (_re.escape(stem), _re.escape(ext)))
+        try:
+            vs = sorted(n for n in os.listdir(inbox) if pat.match(n))
+        except Exception:
+            continue
+        for old in vs[:-keep] if len(vs) > keep else []:
+            try:
+                os.remove(os.path.join(inbox, old))
+                log(f"오래된 버전 정리: {old}")
+            except Exception:
+                pass
 
 
 def scan_back() -> int:

@@ -3469,7 +3469,9 @@ def cmd_mail(args):
     1·2차 수집 txt를 자동 첨부. 2중 구조(Gmail API → SMTP 폴백) 사용.
       python research_agent.py mail --session "세션폴더" --method auto
       python research_agent.py mail --latest --method smtp --then-archive  (스케줄러 백업)
-    옵션: --method auto|api|smtp / --subject / --to / --no-attach / --latest / --then-archive
+    옵션: --method auto|api|smtp|appscript / --subject / --to / --no-attach / --latest / --then-archive
+          --force-resend(중복발송 게이트 우회) / --skip-pred-check(predictions 계약검증 우회)
+    발송 전 2중 게이트: (1) sent_index 중복확인 (2) predictions.json 계약(timing·conviction·preprice 필수).
     """
     sess = args.session
     if getattr(args, "latest", False) and not sess:
@@ -3498,6 +3500,67 @@ def cmd_mail(args):
         log.error(f"[mail] 리포트 없음: {report_path}")
         print(f"\nMAIL_RESULT=failed:no_report")
         return
+
+    # ── 게이트 1: 중복 발송 방지(#P3) ──────────────────────────────────
+    # 데몬(watch_and_send)과 온디맨드(mail)가 동시에 살아있으면 같은 세션이 두 번 나갈 수 있다.
+    # 데몬이 쓰는 sent_index.json(세션 basename 키)을 그대로 재사용해 양쪽이 한 장부를 본다.
+    # --force-resend 로만 우회(사용자가 의도적으로 재발송할 때).
+    # abspath: '--session .' 이 '.' 이라는 키가 되는 것 방지 / strip: 붙여넣기 시 딸려온 후행 공백 제거
+    # (둘 다 데몬 키(os.listdir 산출 basename)와 어긋나 중복 게이트가 뚫리는 실측 경로였다)
+    _sess_key = os.path.basename(os.path.normpath(os.path.abspath(str(sess).strip())))
+    if not getattr(args, "force_resend", False):
+        try:
+            import watch_and_send as _wsend      # send_email_appscript 가 이미 쓰는 검증된 import
+            if _wsend.already_sent(_sess_key):
+                log.warning(f"[mail] 이미 발송된 세션(sent_index): {_sess_key}")
+                print(f"\nMAIL_RESULT=skipped:already_sent:{_sess_key}")
+                print("  재발송하려면 --force-resend 를 붙여라.")
+                return
+        except Exception as e:
+            log.warning(f"[mail] 중복확인 생략(sent_index 접근 실패): {type(e).__name__}: {e}")
+
+    # ── 게이트 2: predictions.json 계약 검증(#P0-3) ────────────────────
+    # timing·conviction·preprice·entry_ref 가 비면 회고 데이터셋이 조용히 오염된다(회고 6회 요청).
+    # 지시문에만 있던 '필수' 규약을 발송 직전에 코드로 강제한다. --skip-pred-check 로만 우회.
+    if not getattr(args, "skip_pred_check", False):
+        _pred_path = os.path.join(sess, "predictions.json")
+        if not os.path.exists(_pred_path):
+            log.error(f"[mail] predictions.json 없음: {_pred_path}")
+            print(f"\nMAIL_RESULT=blocked_schema:no_predictions")
+            print("  발송 차단: predictions.json 이 있어야 사후채점·회고가 성립한다.")
+            print("  (형식만 확인하고 강행하려면 --skip-pred-check)")
+            return
+        try:
+            with open(_pred_path, encoding="utf-8") as f:
+                _pred = json.load(f)
+            from common import validate_predictions
+            _errs = validate_predictions(_pred)
+        except Exception as e:
+            _errs = [f"predictions.json 파싱 실패: {type(e).__name__}: {e}"]
+        if _errs:
+            log.error(f"[mail] predictions 계약 위반 {len(_errs)}건 — 발송 차단")
+            print(f"\nMAIL_RESULT=blocked_schema:{len(_errs)}_errors")
+            for _e in _errs[:15]:
+                print(f"  - {_e}")
+            if len(_errs) > 15:
+                print(f"  ... 외 {len(_errs) - 15}건")
+            # ★ REPORT_DONE.flag 격리: 이걸 남겨두면 데몬(watch_and_send)이 30초 뒤 같은 세션을
+            #   그대로 발송해 이 차단이 조용히 뒤집힌다(게이트 무력화). 오류를 적어 보관하고,
+            #   predictions 를 고친 뒤 다시 mail 하면 정상 발송된다.
+            _rd = os.path.join(sess, "REPORT_DONE.flag")
+            if os.path.exists(_rd):
+                try:
+                    with open(os.path.join(sess, "SCHEMA_BLOCKED.flag"), "w", encoding="utf-8") as _f:
+                        _f.write("blocked_at=%s\nerrors=%d\n%s\n"
+                                 % (datetime.now().isoformat(timespec="seconds"),
+                                    len(_errs), "\n".join(_errs[:30])))
+                    os.remove(_rd)
+                    print("  REPORT_DONE.flag 격리 -> SCHEMA_BLOCKED.flag (데몬 자동발송 차단)")
+                except Exception as _e2:
+                    log.warning(f"[mail] flag 격리 실패: {type(_e2).__name__}: {_e2}")
+            print("  predictions.json 을 고친 뒤 다시 발송하라(강행: --skip-pred-check).")
+            return
+
     with open(report_path, encoding="utf-8") as f:
         body = f.read()
     # HTML 본문 — 데몬(watch_and_send) 경로와 동일 품질로 완성한다:
@@ -3538,6 +3601,13 @@ def cmd_mail(args):
                            allow_browser=allow_browser, html_body=html_body)
     print(f"\nSESSION_DIR={sess}")
     if sent:
+        # #P3: 데몬과 같은 장부(sent_index.json)에 기록 — flag 제거·아카이브보다 '먼저'.
+        # (watch_and_send.scan_once 와 동일한 순서: 기록이 최종 방어선이라 이후 단계가 실패해도 재발송 차단)
+        try:
+            import watch_and_send as _wsend
+            _wsend.mark_sent(_sess_key, {"to": cfg.get("to", ""), "subject": subject})
+        except Exception as e:
+            log.warning(f"[mail] sent_index 기록 실패(발송은 성공): {type(e).__name__}: {e}")
         update_status(sess, "mailed", {"attachments": len(attachments), "method": method})
         _write_flag(sess, "mail", ok=True)
         # 발송 트리거였던 REPORT_DONE.flag 제거 (감시 프로세스의 중복 발송 방지)
@@ -3797,6 +3867,10 @@ def main():
                         help="Gmail API 토큰 부재 시 인증창 없이 즉시 실패 (스케줄러/헤드리스용)")
     p_mail.add_argument("--then-archive", action="store_true",
                         help="발송 성공 시 세션 폴더 자동 보관 (스케줄러 백업용)")
+    p_mail.add_argument("--force-resend", action="store_true",
+                        help="이미 발송된 세션(sent_index)이어도 강제 재발송 (중복 발송 주의)")
+    p_mail.add_argument("--skip-pred-check", action="store_true",
+                        help="predictions.json 계약 검증(timing/conviction/preprice 필수) 생략하고 강행")
 
     p_minfo = sub.add_parser("mailinfo",
                              help="Composio 발송용 값(수신자/제목/리포트·첨부 경로) 출력")

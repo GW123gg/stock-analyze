@@ -149,13 +149,21 @@ def mark_sent(session_name: str, extra: dict = None):
     if extra:
         rec.update(extra)
     idx[session_name] = rec
-    tmp = SENT_INDEX + ".tmp"
+    # tmp 에 PID 를 붙인다: research_agent.cmd_mail 도 이 장부에 쓰게 되어(온디맨드 발송 기록)
+    # writer 가 2개가 됐다. 고정 tmp 를 쓰면 동시 실행 시 서로의 tmp 를 덮어 '섞인 JSON'을
+    # os.replace 해 장부 전체가 깨질 수 있다(→ 다음 로드에서 .corrupt 격리 + 전 기록 소실 = 재발송 폭주).
+    tmp = "%s.%d.tmp" % (SENT_INDEX, os.getpid())
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(idx, f, ensure_ascii=False, indent=2)
         os.replace(tmp, SENT_INDEX)
     except Exception as e:
         log(f"⚠️ sent_index.json 기록 실패: {e}")
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)

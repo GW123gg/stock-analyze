@@ -539,6 +539,13 @@ def run_morning_pipeline():
     _run_step("step15 market_caution",
               [py, os.path.join(BASE_DIR, "market_caution.py")], timeout=120)
 
+    # step15.5: 루트 신호 4종(deriv/ecos/vkospi/market_caution)을 '오늘 세션'에 동결 복사.
+    #   루트 파일은 매일 덮어써져 회고가 '그날 분석가가 본 국면 입력'을 재현할 수 없었다
+    #   (회고 사각지대: F1/F8 게이트의 1차 입력이 학습에서 통째로 누락). market_caution 다음이어야
+    #   13종 신호가 모두 확정된 상태를 찍고, step16(회고 폴더 복사) 앞이어야 같은 회차에 전달된다.
+    _run_step("step15.5 snapshot_signals",
+              [py, os.path.join(BASE_DIR, "snapshot_signals.py")], timeout=60)
+
     # step16: 아침 수집결과(수급/거시/파생/국면)도 회고 폴더 collections/<날짜>/ 로 복사 + 일일상태 기록(#9).
     _run_step("step16 push_collections",
               [py, os.path.join(BASE_DIR, "retro_forward.py"), "--push-collections"], timeout=180)
@@ -720,11 +727,49 @@ def run_retro_pipeline():
     _mlog("-" * 50)
     _mlog("retro(회고분석 데이터셋) 시작 — 과거 추천 라벨링")
     # timeout 상향(1500s): pre_* asof 수급/공매도 + DART 분배공시 매칭으로 느려져, kill 로 저장이 잘리지 않게.
-    _run_step("retro_label", [py, os.path.join(BASE_DIR, "retro_label.py")], timeout=1500)
-    _run_step("retro_push", [py, os.path.join(BASE_DIR, "retro_forward.py"), "--push"],
-              timeout=180)
+    # ★ rc 확인(#A5): 예전엔 반환값을 버려서, retro_label 이 죽어도 push 가 그대로 돌아
+    #   '낡은 데이터셋 + RETRO_GO'가 회고로 넘어갔다(사용자는 정상 회고로 오인). 실패면 push 를 건너뛴다.
+    rc = _run_step("retro_label", [py, os.path.join(BASE_DIR, "retro_label.py")], timeout=1500)
+    if rc != 0:
+        _mlog(f"[retro] retro_label 실패(rc={rc}) — push 생략(낡은 데이터셋 전달 방지). "
+              f"logs/morning_auto.log 확인 필요")
+        _record_retro_status(ok=False, note=f"retro_label rc={rc}")
+        _mlog("-" * 50)
+        return
+    rc2 = _run_step("retro_push", [py, os.path.join(BASE_DIR, "retro_forward.py"), "--push"],
+                    timeout=180)
+    if rc2 != 0:
+        _mlog(f"[retro] retro_push 실패(rc={rc2}) — 회고 inbox 미갱신(회고는 이전 회차 대기 상태)")
+        _record_retro_status(ok=False, note=f"retro_push rc={rc2}")
+        _mlog("-" * 50)
+        return
+    _record_retro_status(ok=True, note="dataset+push 완료")
     _mlog("retro 종료 (회고 Cowork inbox 로 전달, RETRO_GO.flag 생성)")
     _mlog("-" * 50)
+
+
+def _record_retro_status(ok: bool, note: str = ""):
+    """회고 실행 결과를 daily_status.json 에 남긴다(#A5 '무음 실패' 대책).
+    예전엔 회고가 성공/실패 어느 쪽도 상태에 안 남아, 4일간 멈춰도 아무도 몰랐다.
+    실패는 로그 + 이 상태로 드러나고, morning-research 스킬의 회고 신선도 가드가 사람에게 알린다."""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        path = os.path.join(BASE_DIR, "daily_status.json")
+        data = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            except Exception:
+                data = {}
+        entry = data.get(today) or {}
+        entry["retro"] = {"ok": bool(ok), "note": note,
+                          "at": datetime.now().isoformat(timespec="seconds")}
+        data[today] = entry
+        from common import save_json_atomic
+        save_json_atomic(path, data)
+    except Exception as e:
+        _mlog(f"[retro] 상태 기록 실패(무시): {type(e).__name__}: {e}")
 
 
 def maybe_run_retro(retro_time: str, state: dict) -> bool:

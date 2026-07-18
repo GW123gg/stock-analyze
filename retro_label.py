@@ -287,6 +287,61 @@ _SECTOR_MAP = None
 
 
 _SECTOR_CACHE_FILE = os.path.join(HERE, "cache", "sector_map.json")
+_CAPMKT_CACHE_FILE = os.path.join(HERE, "cache", "cap_market_map.json")
+_CAPMKT_MAP = None
+
+
+def _cap_market_of(code):
+    """code -> (시총 억원, KOSPI/KOSDAQ). FDR StockListing('KRX') 1회 로드 + 디스크 캐시 폴백.
+    #E(주도주 예외 정량화): '반도체·바이오 대장 예외'가 12회차 내내 서사로만 존재해 정의 불가였다 —
+    시총 버킷이 있어야 회고가 '대형은 강세추격에도 간다'를 수치로 검증/기각할 수 있다.
+    ⚠️ 이 값은 '현재' 시총(조회 시점)이지 진입 시점 시총이 아니다(경미한 드리프트) — 버킷 분류용으로만
+    쓰고 수익률 크기 회귀에 쓰지 마라(label_guide 에 동일 경고)."""
+    global _CAPMKT_MAP
+    if _CAPMKT_MAP is None:
+        _CAPMKT_MAP = {}
+        if FDR_OK:
+            try:
+                lst = fdr.StockListing("KRX")
+                ccol = next((c for c in ("Code", "Symbol") if c in lst.columns), None)
+                if ccol and "Marcap" in lst.columns:
+                    mcol = "Market" if "Market" in lst.columns else None
+                    for _, rr in lst.iterrows():
+                        c = str(rr[ccol]).zfill(6)
+                        try:
+                            cap_eok = round(float(rr["Marcap"]) / 1e8)
+                        except Exception:
+                            continue
+                        mk = str(rr[mcol]) if mcol else ""
+                        _CAPMKT_MAP[c] = [cap_eok, mk]
+            except Exception:
+                pass
+        if _CAPMKT_MAP:
+            try:
+                from common import save_json_atomic as _sj
+                _sj(_CAPMKT_CACHE_FILE, _CAPMKT_MAP)
+            except Exception:
+                pass
+        else:
+            cached = _load_json(_CAPMKT_CACHE_FILE)
+            if isinstance(cached, dict) and cached:
+                _CAPMKT_MAP = {str(k): v for k, v in cached.items()}
+                log.info("[retro] cap/market: FDR 실패 -> 디스크 캐시 사용(%d종목)", len(_CAPMKT_MAP))
+    v = _CAPMKT_MAP.get(str(code).zfill(6))
+    return (v[0], v[1]) if v else (None, None)
+
+
+def _cap_bucket(cap_eok):
+    """시총(억원) -> 버킷. 메가(>=10조)/대형(>=1조)/중형(>=3천억)/소형."""
+    if cap_eok is None:
+        return None
+    if cap_eok >= 100000:
+        return "메가(10조+)"
+    if cap_eok >= 10000:
+        return "대형(1조+)"
+    if cap_eok >= 3000:
+        return "중형(3천억+)"
+    return "소형"
 
 
 def _sector_of(code):
@@ -409,6 +464,8 @@ PRE_COLS = [
 ]
 # 라벨side 보강 컬럼(보유 후 결과 — 진입규칙 사용 금지). cats/titles 도 CSV 에 포함(JSON 과 일관, 조용한 드롭 방지)
 ENRICH_COLS = ["dist_disc_count", "dist_disc_cats", "dist_disc_titles"]
+# #E 메타 컬럼(현재값 프록시 — 진입시점 아님·버킷 분류 전용): 주도주 예외·KOSPI/KOSDAQ 분해용
+META_COLS = ["market_cap_eok", "cap_bucket", "exchange"]
 # DART 분배공시 매칭 토글(--no-dart 로 끔). 키 없으면 자동 graceful.
 DART_ENRICH = True
 
@@ -451,7 +508,7 @@ LABEL_COLS = [
     "ret_if_stop8_pct", "ret_if_stop8_tp12_pct",   # #S2 손절 반사실(규칙을 지켰다면)
     "profit_take_flag", "hit", "settle_close",
     # 거래량(차익실현·큰손 매도 신호)
-    "entry_volume", "avg_volume_20d", "peak_day_vol_ratio", "trough_day_vol_ratio",
+    "entry_volume", "avg_volume_20d", "avg_volume_20d_ex_entry", "peak_day_vol_ratio", "trough_day_vol_ratio",
     # 투자자별 순매수(보유기간, 억원) — 누가 사고 팔았나
     "flow_foreign_eok", "flow_inst_eok", "flow_indiv_eok",
 ]
@@ -647,6 +704,10 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
             return None
     pre_vols = [x for x in vols[max(0, start - 20):start + 1] if x is not None]  # 진입 직전까지 ~20일
     avg_vol = (sum(pre_vols) / len(pre_vols)) if pre_vols else None
+    # #A6: 비율(pre_*_ratio) 분모용 — 추천일 '당일' 거래량 제외(pre_ 명명 준수, 경미한 룩어헤드 제거).
+    # avg_volume_20d(라벨용, 당일 포함)는 기존 동작 보존 — 회고가 축적한 vol_ratio 해석과의 호환.
+    _prior = [x for x in vols[max(0, start - 20):start] if x is not None]
+    avg_vol_ex = (sum(_prior) / len(_prior)) if _prior else None
     entry_vol = _v(start)
     peak_vol = _v(start + peak_k)
     worst_k = min(range(1, len(rets)), key=lambda k: rets[k]) if len(rets) > 1 else 0
@@ -718,6 +779,7 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         # 거래량
         "entry_volume": int(entry_vol) if entry_vol else None,
         "avg_volume_20d": int(avg_vol) if avg_vol else None,
+        "avg_volume_20d_ex_entry": int(avg_vol_ex) if avg_vol_ex else None,   # #A6 비율 분모(당일 제외)
         "peak_day_vol_ratio": _ratio(peak_vol),     # 고점일 거래량 / 평소(>1.5면 고점에 매물 집중)
         "trough_day_vol_ratio": _ratio(trough_vol),  # 최대낙폭일 거래량 / 평소(>1.5면 큰손 투매)
         # 투자자별 순매수(보유기간 동안, 억원. + 순매수 / - 순매도)
@@ -739,7 +801,9 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
     row = {
         "pred_date": pred_date, "kind": kind, "ticker": code,
         "name": item.get("name") or code,
-        "tag": (item.get("tag") if kind == "pick" else "숏"),
+        # #A11(회고 07-17 요청): '[단기스윙]' 대괄호 잔재 정규화 — 분리 집계 방지(acc._norm_tag 재사용)
+        "tag": ((acc._norm_tag(item.get("tag")) if (ACC_OK and hasattr(acc, "_norm_tag"))
+                 else str(item.get("tag") or "").strip("[] ")) if kind == "pick" else "숏"),
         "timing": item.get("timing"), "horizon": horizon,
         "conviction": acc._safe_float(item.get("conviction")) if ACC_OK else item.get("conviction"),
         "entry_ref": entry_ref, "preprice": item.get("preprice"),
@@ -780,7 +844,7 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
     for col in ("pre_foreign_5d_ratio", "pre_indiv_5d_ratio"):
         row[col] = None
     try:
-        _avgv, _px = lab.get("avg_volume_20d"), entry_ref
+        _avgv, _px = lab.get("avg_volume_20d_ex_entry"), entry_ref   # #A6 당일 제외 분모
         if _avgv and _px and _px > 0:
             tv_eok = (float(_avgv) * float(_px)) / 1e8      # 20일 평균 일거래대금(억원)
             if tv_eok > 0:
@@ -808,6 +872,14 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
                     row[k] = dd[k]
         except Exception:
             pass
+    # #E 메타(현재 시총·시장 — 버킷 분류 전용, 수익률 회귀 금지)
+    try:
+        _cap, _mkt = _cap_market_of(code)
+        row["market_cap_eok"] = _cap
+        row["cap_bucket"] = _cap_bucket(_cap)
+        row["exchange"] = (_mkt or None)
+    except Exception:
+        row["market_cap_eok"] = row["cap_bucket"] = row["exchange"] = None
     # #6 rec_id/parent — (ticker,date,kind)=parent(한 추천), +horizon=rec_id(행). 다중horizon·중복 인지용.
     row["parent_rec_id"] = "%s_%s_%s" % (code, pred_date, kind)
     row["rec_id"] = "%s_h%s" % (row["parent_rec_id"], horizon if horizon else "NA")
@@ -824,6 +896,19 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
 def build_rows():
     if not ACC_OK:
         return [], 0
+    # #A5 캐리포워드: 이전 dataset 의 pre_* 값을 재사용할 사전(rec_id -> row).
+    # pre_* 는 '그 시점의 사실'이라 한번 계산되면 불변 — 새벽(KRX 취약 시간) 재실행에서 라이브 폴백이
+    # 실패해도 과거에 성공한 값을 잃지 않는다(archive 행 pre_* 커버리지가 회차마다 출렁이던 원인 제거).
+    prev_pre = {}
+    try:
+        _prev = _load_json(DATASET_JSON)
+        if isinstance(_prev, dict):
+            for pr in _prev.get("rows", []) or []:
+                rid = pr.get("rec_id")
+                if rid:
+                    prev_pre[rid] = pr
+    except Exception:
+        prev_pre = {}
     preds = acc.load_predictions()
     # 6/18 이전 발송 리포트(predictions.json 없음)도 파싱해 추가(표본 확대, _src_kind='archive')
     n_arch = 0
@@ -853,8 +938,39 @@ def build_rows():
                 except Exception as e:
                     log.warning("[retro] 행 생성 예외(무시) %s: %s",
                                 item.get("ticker"), type(e).__name__)
+    # #A5: 이번 실행에서 None 인 pre_* 를 이전 dataset 값으로 복원(점시점 사실 — 룩어헤드 없음)
+    carried = 0
+    if prev_pre:
+        for r in rows:
+            old = prev_pre.get(r.get("rec_id"))
+            if not old:
+                continue
+            for col in PRE_COLS:
+                if r.get(col) is None and old.get(col) is not None:
+                    r[col] = old[col]
+                    carried += 1
+    if carried:
+        log.info("[retro] pre_* 캐리포워드: 이전 dataset 에서 %d개 값 복원", carried)
     if n_arch:
         log.info("[retro] 아카이브 리포트 %d일 추가 채점 포함", n_arch)
+    # #A10(회고 07-17 요청): market_call 원본을 회고에 전달 — 12회 내내 미조명이던 최악 지표(T+5 23%)의
+    # 원인 분석(§3.15) 입력. predictions 를 이미 전부 로드했으므로 여기서 부산물로 모아 별도 파일로 저장.
+    try:
+        calls = []
+        for pred in preds:
+            mc = pred.get("market_call")
+            if isinstance(mc, dict):
+                calls.append({"date": pred.get("date"), "_src_kind": pred.get("_src_kind", "prediction"),
+                              "kospi": mc.get("kospi"), "kosdaq": mc.get("kosdaq"),
+                              "regime": pred.get("regime")})
+        if calls:
+            _save_json_atomic(os.path.join(HERE, "market_calls.json"),
+                              {"generated_at": datetime.now().isoformat(timespec="seconds"),
+                               "what": "일자별 market_call 원본(kospi/kosdaq dir·conviction·invalidation) — 회고 §3.15 입력",
+                               "n": len(calls), "calls": calls})
+            log.info("[retro] market_calls.json 저장(%d일) — 회고 §3.15 입력", len(calls))
+    except Exception as e:
+        log.warning("[retro] market_calls 저장 실패(무시): %s", type(e).__name__)
     # #8 ticker_rec_seq — 같은 종목 N번째 추천(표본 비독립성: 같은 종목 최대 9일 중복). 회고가 종목 클러스터/가중 집계.
     from collections import defaultdict
     _seq = defaultdict(int)
@@ -872,7 +988,7 @@ def _save_json_atomic(path, obj):
 
 
 def _save_csv(path, rows):
-    cols = BASE_COLS + FEATURE_COLS + PRE_COLS + LABEL_COLS + ENRICH_COLS + ["hit"]
+    cols = BASE_COLS + FEATURE_COLS + PRE_COLS + META_COLS + LABEL_COLS + ENRICH_COLS + ["hit"]
     # 원자적 저장(.tmp -> os.replace): 쓰는 중 종료(타임아웃 taskkill 등)에도 부분 CSV 가 남지 않게.
     tmp = path + ".tmp"
     try:
@@ -980,6 +1096,10 @@ def main():
             "pre_vkospi_pct_rank": "[진입피처·시장] 동결 VKOSPI 60일 백분위",
             "pre_base_rate": "[진입피처·거시] 동결 한국은행 기준금리(%)",
             "pre_usdkrw_chg5d": "[진입피처·거시] 동결 원/달러 5일 변화율(%, +면 원화약세=외인 위험회피)",
+            "market_cap_eok": "[메타·#E] 현재 시총(억원) — ⚠️조회시점 값(진입시점 아님). 버킷 분류 전용, 수익률 크기 회귀 금지",
+            "cap_bucket": "[메타·#E] 메가(10조+)/대형(1조+)/중형(3천억+)/소형 — '주도주 예외'(반도체·바이오 대장) 정량 검증용(§3.16)",
+            "exchange": "[메타·#E] KOSPI/KOSDAQ — 시장별 분해(B6/B14: 대형주 레짐과 코스닥은 따로 논다 검증용)",
+            "avg_volume_20d_ex_entry": "[라벨·#A6] 추천일 '당일 제외' 직전 20일 평균 거래량 — pre_*_ratio 의 분모(룩어헤드 제거판)",
             "kospi_ret_h_pct": "[라벨·#R1] 같은 보유창(진입일 종가->T+h)의 KOSPI 수익률(%) — 시장 기여분",
             "alpha_h_pct": "[라벨·#R1] ret_h - kospi_ret_h = 지수 차감 초과수익(%). 음수 크면 종목선택 실패, ret_h 음수인데 alpha>=0 이면 시장베타가 주범(처방: 픽 억제가 아니라 노출 축소/헤지)",
             "flow_foreign_eok": "[라벨·사후] 보유기간 동안 외국인 순매수(억원, -면 외국인 순매도=하락 압력). 진입규칙 사용 금지(룩어헤드)",
@@ -1047,7 +1167,10 @@ def main():
         if not ok:
             log.warning("[retro] 저장 무결성 불일치 — 다음 push 가 검증에서 막을 수 있음")
     except Exception as e:
-        log.warning("[retro] 저장 실패: %s", e)
+        # #A2: 저장 실패는 exit 3 — supervisor 의 rc 게이트가 push 를 생략하게(낡은 dataset 전달 방지).
+        # 예전엔 여기서도 0을 반환해 '저장 실패 + 정상 push'라는 무음 실패가 가능했다.
+        log.warning("[retro] 저장 실패(exit 3 — push 생략 유도): %s", e)
+        return 3
     return 0
 
 
@@ -1057,5 +1180,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception as e:
-        log.warning("[retro] 치명적 예외(무시): %s: %s", type(e).__name__, e)
-        sys.exit(0)
+        # #A2: 치명 예외도 exit 3 — dataset 이 갱신되지 않았으므로 push 하면 안 된다.
+        log.warning("[retro] 치명적 예외(exit 3): %s: %s", type(e).__name__, e)
+        sys.exit(3)

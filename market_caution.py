@@ -117,10 +117,26 @@ def breadth():
     return None
 
 
+def _age_h(payload):
+    """입력 dict 의 generated_at 나이(시간). 결측·파싱 실패 None(graceful 관례 유지)."""
+    try:
+        g = payload.get("generated_at")
+        if not g:
+            return None
+        return round((datetime.now() - datetime.fromisoformat(str(g)[:19])).total_seconds() / 3600.0, 1)
+    except Exception:
+        return None
+
+
 def compute(out_path):
     flow = _latest_json("flow_data.json")
     deriv = _latest_json("deriv_sentiment.json")
     ecos = _latest_json("ecos_macro.json")
+    # #M2 입력 신선도: _latest_json 은 (폴더날짜, mtime) 정렬이라 루트가 최신이어도 낡은 세션 사본이
+    # 이길 수 있다 — 어느 입력이 하루 이상 묵었는지 산출물에 드러내(분석가가 해당 축 가중을 낮추게).
+    inputs_age_h = {"flow_data": _age_h(flow), "deriv_sentiment": _age_h(deriv),
+                    "ecos_macro": _age_h(ecos)}
+    stale_inputs = [k for k, v in inputs_age_h.items() if v is not None and v > 24.0]
 
     k5 = kospi_ret5d()
     pcr_oi = ((deriv.get("market") or {}).get("pcr_oi"))
@@ -200,6 +216,8 @@ def compute(out_path):
         "drivers": drivers,
         "inputs": {"kospi_ret5d": k5, "pcr_oi": pcr_oi, "risk_off_score": risk_off,
                    "usdkrw_change_5d_pct": usdkrw_5d, "breadth": br},
+        "inputs_age_h": inputs_age_h,          # #M2 각 파일입력의 나이(시간). None=결측/라이브
+        "stale_inputs": stale_inputs,          # #M2 24h 초과 입력 — 분석가는 해당 축 가중 하향([5.10])
         "_note": ("회고 운영화 복합 국면점수. score>=60 또는 allow_market_up_call=false 면 그날 신규 롱은 "
                   "분할/보류·추천수 축소, 시장 UP 콜 금지(단일 촉매로 올리지 말 것). regime_kind '공포'면 롱 회피·숏 우대, "
                   "'눌림목'이면 역추세 롱 기회. breadth(하락배수)가 단일 촉매 과대가중을 막는 핵심."),

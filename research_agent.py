@@ -3597,9 +3597,32 @@ def cmd_mail(args):
         f"[데일리 리서치] {date_str} 모멘텀 투자 리포트"
 
     allow_browser = not getattr(args, "no_browser", False)
+    # #A4 클레임-퍼스트: 발송 '전에' REPORT_DONE.flag 를 MAIL_CLAIMED.flag 로 바꿔 데몬 경합 창을 닫는다.
+    # (게이트의 sent_index 검사는 TOCTOU — 렌더링~발송 수 초 동안 데몬 scan 이 같은 flag 를 집어
+    #  이중 발송할 수 있었다. flag 를 먼저 가져오면 데몬은 볼 게 없다. 실패 시 되돌려 데몬 폴백 복원.)
+    _rd_flag = os.path.join(sess, "REPORT_DONE.flag")
+    _claimed = os.path.join(sess, "MAIL_CLAIMED.flag")
+    _did_claim = False
+    if os.path.exists(_rd_flag):
+        try:
+            os.replace(_rd_flag, _claimed)
+            _did_claim = True
+        except Exception:
+            pass
+
     sent, msg = send_email(subject, body, attachments, cfg, method=method,
                            allow_browser=allow_browser, html_body=html_body)
     print(f"\nSESSION_DIR={sess}")
+    if not sent and _did_claim:
+        try:
+            os.replace(_claimed, _rd_flag)     # 실패 -> flag 복원(데몬 재시도 폴백 유지)
+        except Exception:
+            pass
+    if sent and _did_claim:
+        try:
+            os.remove(_claimed)
+        except Exception:
+            pass
     if sent:
         # #P3: 데몬과 같은 장부(sent_index.json)에 기록 — flag 제거·아카이브보다 '먼저'.
         # (watch_and_send.scan_once 와 동일한 순서: 기록이 최종 방어선이라 이후 단계가 실패해도 재발송 차단)

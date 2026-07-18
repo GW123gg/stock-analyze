@@ -335,6 +335,7 @@ def _run_step(label: str, args: list, timeout: int, extra_env: dict = None) -> i
     그래서 Popen + 타임아웃 시 프로세스 트리 강제종료(_kill_proc_tree)로 처리해, 멈춘 collect 가
     파이프라인 전체를 정지시키지 않게 한다."""
     _mlog(f"[{label}] 실행: {' '.join(args[1:])}")
+    _t0 = time.time()                      # #L2 소요 측정
     child_env = dict(os.environ)
     if extra_env:
         child_env.update(extra_env)
@@ -386,13 +387,45 @@ def _run_step(label: str, args: list, timeout: int, extra_env: dict = None) -> i
     except Exception:
         pass
     _mlog(f"[{label}] {status}")
+    # #L2 구조화 헬스 로그(JSONL): 스텝별 성패·소요를 기계가 읽게 — 파이프라인 자체의 건강도 추적.
+    try:
+        with open(os.path.join(LOG_DIR, "pipeline_health.jsonl"), "a", encoding="utf-8") as _hf:
+            _hf.write(json.dumps({"ts": datetime.now().isoformat(timespec="seconds"),
+                                  "step": label, "rc": rc, "dur_s": round(time.time() - _t0, 1)},
+                                 ensure_ascii=False) + chr(10))
+    except Exception:
+        pass
     return rc
+
+
+def _notify_health(subject: str, body: str):
+    """#K4 파이프라인 헬스 알림 — 검증된 Apps Script 채널 재사용. 실패는 조용히 무시(알림이 파이프라인을 못 깨게)."""
+    try:
+        import watch_and_send as _ws
+        url, secret = _ws.load_appscript_config()
+        to = _ws.load_recipients()
+        if not (url and secret and to):
+            return
+        _ws.post_to_appscript(url, {"secret": secret, "to": to,
+                                    "subject": "[헬스] " + subject,
+                                    "htmlBody": "<pre>%s</pre>" % body})
+        _mlog(f"[헬스알림] 발송: {subject}")
+    except Exception as e:
+        _mlog(f"[헬스알림] 실패(무시): {type(e).__name__}: {e}")
+
+
+_status_lock = threading.Lock()   # #A9: morning·retro 스레드가 daily_status.json 을 동시 갱신할 때 유실 방지
 
 
 def _record_daily_status(status: str, **extra):
     """#9 일일 상태 로그(daily_status.json): 날짜별 파이프라인 실행 상태를 누적 기록한다.
     회고 Cowork 가 '평일인데 추천 없음 vs 수집 실패 vs 휴장'을 구분하도록(요청서 #9). 회고 폴더에도 복사됨."""
     p = os.path.join(BASE_DIR, "daily_status.json")
+    with _status_lock:                     # #A9
+        return _record_daily_status_locked(p, status, extra)
+
+
+def _record_daily_status_locked(p, status, extra):
     try:
         data = {}
         if os.path.isfile(p):
@@ -734,6 +767,7 @@ def run_retro_pipeline():
         _mlog(f"[retro] retro_label 실패(rc={rc}) — push 생략(낡은 데이터셋 전달 방지). "
               f"logs/morning_auto.log 확인 필요")
         _record_retro_status(ok=False, note=f"retro_label rc={rc}")
+        _notify_health("회고 데이터셋 생성 실패", f"retro_label rc={rc} — push 생략(낡은 데이터 전달 방지). logs/morning_auto.log 확인")
         _mlog("-" * 50)
         return
     rc2 = _run_step("retro_push", [py, os.path.join(BASE_DIR, "retro_forward.py"), "--push"],
@@ -741,6 +775,7 @@ def run_retro_pipeline():
     if rc2 != 0:
         _mlog(f"[retro] retro_push 실패(rc={rc2}) — 회고 inbox 미갱신(회고는 이전 회차 대기 상태)")
         _record_retro_status(ok=False, note=f"retro_push rc={rc2}")
+        _notify_health("회고 push 실패", f"retro_forward --push rc={rc2} — inbox 미갱신(회고는 이전 회차 대기)")
         _mlog("-" * 50)
         return
     _record_retro_status(ok=True, note="dataset+push 완료")
@@ -752,6 +787,11 @@ def _record_retro_status(ok: bool, note: str = ""):
     """회고 실행 결과를 daily_status.json 에 남긴다(#A5 '무음 실패' 대책).
     예전엔 회고가 성공/실패 어느 쪽도 상태에 안 남아, 4일간 멈춰도 아무도 몰랐다.
     실패는 로그 + 이 상태로 드러나고, morning-research 스킬의 회고 신선도 가드가 사람에게 알린다."""
+    with _status_lock:                     # #A9
+        return _record_retro_status_locked(ok, note)
+
+
+def _record_retro_status_locked(ok, note=""):
     try:
         today = datetime.now().strftime("%Y-%m-%d")
         path = os.path.join(BASE_DIR, "daily_status.json")

@@ -57,7 +57,7 @@ GUIDE_FILE  = os.path.join(BASE_DIR, "회고분석_지시사항.md")
 # 호스트가 inbox 로 밀어 넣을 데이터셋(없으면 그 파일만 건너뜀)
 # ※ 실제 드롭 파일명은 회차마다 날짜가 붙는다(#P0-1 불변 드롭): retro_dataset_2026-07-17.json
 #   회고는 inbox/latest.json 의 roles/files 로 실제 파일명을 찾는다.
-PUSH_FILES  = ["retro_dataset.json", "retro_dataset.csv", "scorecard.md"]
+PUSH_FILES  = ["retro_dataset.json", "retro_dataset.csv", "scorecard.md", "market_calls.json"]
 KEEP_VERSIONS = 7          # 역할별 보관 회차 수(오래된 버전 자동 정리)
 # 회고 Cowork 가 outbox 에 작성하는 '기존 분석 Cowork 용 추가 지시' → 호스트가 이 이름으로 회수
 FEEDBACK_NAME = "PART_A_추가지시.md"
@@ -343,15 +343,16 @@ def _drop_legacy_names(inbox: str, name_map: dict):
     """버저닝 이전의 고정 이름 사본(retro_dataset.json 등)을 제거한다.
     남겨두면 회고가 습관적으로 그 이름을 읽어 '낡은 회차 데이터'로 분석할 위험이 있다
     (이번 회차 파일은 버전명으로 이미 안전하게 드롭됨 — 원본은 BASE_DIR 에 그대로 있으니 무손실)."""
-    for orig, vname in name_map.items():
+    # #A8: name_map(이번 회차 성공분)만 돌면 복사 실패한 역할의 낡은 고정이름이 영구 잔존 -> PUSH_FILES 전체 순회
+    for orig in PUSH_FILES:
         legacy = os.path.join(inbox, orig)
-        if orig == vname or not os.path.isfile(legacy):
+        if not os.path.isfile(legacy):
             continue
         try:
             os.remove(legacy)
             log(f"구 고정이름 사본 제거(버저닝 전환): {orig}")
-        except Exception as e:
-            log(f"구 사본 제거 실패(무시) {orig}: {type(e).__name__}")
+        except Exception:
+            log(f"구 사본 제거 실패(무시) {orig}")
 
 
 def _prune_versions(inbox: str, keep: int = 7):

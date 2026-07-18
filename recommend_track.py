@@ -150,7 +150,23 @@ def track():
     for dd in dests:
         try:
             os.makedirs(dd, exist_ok=True)
-            shutil.copy2(HISTORY_FILE, os.path.join(dd, "recommended_history.json"))
+            dst = os.path.join(dd, "recommended_history.json")
+            shutil.copy2(HISTORY_FILE, dst)
+            # #A7 사본 검증(+1회 재복사): inbox 사본은 Cowork 세션 되돌림 경합으로 손상된 전례가
+            # 있는 경로다(retro_dataset 07-06·07-12). 크기·해시 불일치면 한 번 다시 복사하고 기록.
+            import hashlib
+
+            def _sha(p):
+                h = hashlib.sha256()
+                with open(p, "rb") as f:
+                    for ch in iter(lambda: f.read(65536), b""):
+                        h.update(ch)
+                return h.hexdigest()[:16]
+            if os.path.getsize(HISTORY_FILE) != os.path.getsize(dst) or _sha(HISTORY_FILE) != _sha(dst):
+                log("사본 검증 실패(%s) — 재복사" % dd)
+                shutil.copy2(HISTORY_FILE, dst)
+                if os.path.getsize(HISTORY_FILE) != os.path.getsize(dst):
+                    log("재복사도 불일치(%s) — 수동 확인 필요" % dd)
         except Exception as e:
             log("복사 실패(%s): %s" % (dd, e))
 

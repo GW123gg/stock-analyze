@@ -844,14 +844,14 @@ def build_scorecard(agg, total_entries, n_added):
         if eh:
             L.append("적중 사례:")
             for e in eh:
-                L.append(f"- [{e.get('tag')}] {e.get('name')}({e.get('ticker')}) "
+                L.append(f"- [{_norm_tag(e.get('tag'))}] {e.get('name')}({e.get('ticker')}) "
                          f"{e.get('pred_date')} T+{e.get('horizon')}: "
                          f"수익률 {_fmt_pct(e.get('return_pct'))}, "
                          f"alpha {_fmt_pct(e.get('alpha_pct'))}")
         if em:
             L.append("오답 사례:")
             for e in em:
-                L.append(f"- [{e.get('tag')}] {e.get('name')}({e.get('ticker')}) "
+                L.append(f"- [{_norm_tag(e.get('tag'))}] {e.get('name')}({e.get('ticker')}) "
                          f"{e.get('pred_date')} T+{e.get('horizon')}: "
                          f"수익률 {_fmt_pct(e.get('return_pct'))}, "
                          f"alpha {_fmt_pct(e.get('alpha_pct'))}")

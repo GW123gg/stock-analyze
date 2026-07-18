@@ -47,6 +47,46 @@ def atomic_write_text(path, text):
 
 
 # ─────────────────────────────────────────────────────────────────────
+# 세션 해석 (H-3 — 12개 수집기의 _today_latest_session 복제 통합)
+# ─────────────────────────────────────────────────────────────────────
+def resolve_session(output_dir, fallback_age_h=6):
+    """오늘 날짜 세션 중 최신 폴더 경로. 없으면 '최근 fallback_age_h 시간 내' 최신 세션(자정 경계 완화).
+
+    자정 함정(문서화된 지뢰): collect 를 23:50 에 돌리고 신호를 00:10 에 돌리면 날짜가 어긋나
+    '오늘 세션 없음'이 되던 문제 — 6시간 폴백 창이 자정을 건너는 연속 실행만 허용한다.
+    창을 크게 잡지 않는 이유: 아침 06:30 에 어제 저녁(14h 전) 세션을 잡으면 어제 세션의 신호 파일을
+    오늘 데이터로 '덮어써' 회고 스냅샷 무결성(룩어헤드)을 오염시킨다 — 6h 는 그 사고를 막는 상한이다.
+    '_' 시작 폴더(_archive/_designtest)는 항상 제외. 없으면 None(수집기는 루트 폴백 또는 생략).
+    """
+    import time as _time
+    from datetime import datetime as _dt
+    if not os.path.isdir(output_dir):
+        return None
+    today = _dt.now().strftime("%Y-%m-%d")
+    cands, recent = [], []
+    now = _time.time()
+    for nm in os.listdir(output_dir):
+        if nm.startswith("_") or nm == "__pycache__":
+            continue
+        p = os.path.join(output_dir, nm)
+        if not os.path.isdir(p):
+            continue
+        try:
+            mt = os.path.getmtime(p)
+        except Exception:
+            continue
+        if nm.startswith(today):
+            cands.append((mt, p))
+        elif now - mt <= fallback_age_h * 3600:
+            recent.append((mt, p))
+    pool = cands or recent
+    if not pool:
+        return None
+    pool.sort(reverse=True)
+    return pool[0][1]
+
+
+# ─────────────────────────────────────────────────────────────────────
 # predictions.json 계약 검증 (순수함수 — 부작용·IO 없음)
 # ─────────────────────────────────────────────────────────────────────
 # 왜: timing·conviction·preprice 필수는 지금까지 '지시문'에만 있어 강제력이 없었고,

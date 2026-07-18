@@ -49,6 +49,10 @@ KEEP_KEYWORDS = ["기준금리", "콜금리", "CD", "국고채", "회사채", "�
                  "코스닥", "소비자물가", "생산자물가", "실업", "경상수지", "수출", "외환보유"]
 # 환율 시계열(추세용) — 검증된 코드. 실패해도 스냅샷은 유지.
 FX_STAT, FX_ITEM, FX_CYCLE = "731Y001", "0000001", "D"   # 원/달러(매매기준율), 일별
+# 회사채(3년, AA-) 일별 수익률 — 신용스프레드(회사채-국고3y) 산출용. F1 risk-off 보강(신용경색 조기경보).
+# 코드 검증: StatisticItemList(817Y002)에 '010300000 | 회사채(3년, AA-) | D' 존재,
+#   StatisticSearch 라이브 응답이 KeyStatisticList 스냅샷 값과 일치함을 확인(2026-07-18, 4.544).
+CB_STAT, CB_ITEM, CB_CYCLE = "817Y002", "010300000", "D"
 
 
 def load_ecos_key():
@@ -151,6 +155,34 @@ def fx_trend(key, days=20):
             "change_5d_pct": chg, "series": series[-10:]}
 
 
+def cb_trend(key, days=20):
+    """회사채(3년, AA-) 수익률 시계열(최근 days) → {latest, asof, change_5d_bp}. 실패 시 None(graceful).
+    fx_trend 와 동일 패턴(StatisticSearch STAT→CYCLE→start→end→ITEM 순서)."""
+    end = datetime.now().strftime("%Y%m%d")
+    start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+    url = "%s/StatisticSearch/%s/json/kr/1/100/%s/%s/%s/%s/%s" % (
+        BASE, key, CB_STAT, CB_CYCLE, start, end, CB_ITEM)
+    j, err = _get(url)
+    if j is None:
+        log.info("[ecos] 회사채 시계열 생략(%s) — 스냅샷의 회사채값은 유효", err)
+        return None
+    rows = (j.get("StatisticSearch", {}) or {}).get("row", []) or []
+    series = []
+    for it in rows:
+        v = _num(it.get("DATA_VALUE"))
+        t = it.get("TIME", "")
+        if v is not None and t:
+            series.append((t, v))
+    series.sort()
+    if not series:
+        return None
+    latest = series[-1][1]
+    chg_bp = None
+    if len(series) >= 6 and series[-6][1] is not None:
+        chg_bp = round((latest - series[-6][1]) * 100, 1)   # 수익률 차이(%p) -> bp
+    return {"latest": latest, "asof": series[-1][0], "change_5d_bp": chg_bp}
+
+
 def _pick(snapshot, *keywords):
     for s in snapshot:
         if all(kw in s["name"] for kw in keywords):
@@ -166,12 +198,21 @@ def collect(key, out_path):
     usdkrw = _pick(snap, "환율")
     ktb3 = _pick(snap, "국고채")
     kospi = _pick(snap, "코스피") or _pick(snap, "KOSPI")
+    cb_snap = _pick(snap, "회사채")            # 스냅샷엔 이미 잡히고 있었다(감사 실측) — derived 추출만 누락이었음
+    cb = cb_trend(key)
+    cb_yield = (cb["latest"] if cb else (cb_snap["value"] if cb_snap else None))
+    ktb3y_val = ktb3["value"] if ktb3 else None
     derived = {
         "base_rate": base_rate["value"] if base_rate else None,
         "usdkrw": (fx["latest"] if fx else (usdkrw["value"] if usdkrw else None)),
         "usdkrw_change_5d_pct": fx["change_5d_pct"] if fx else None,
-        "ktb3y": ktb3["value"] if ktb3 else None,
+        "ktb3y": ktb3y_val,
         "kospi": kospi["value"] if kospi else None,
+        # 신용스프레드(회사채AA-3y − 국고3y, %p): 확대=신용경색 신호(F1 risk-off 보강 축)
+        "cb_yield_3y_aa": cb_yield,
+        "cb_change_5d_bp": cb["change_5d_bp"] if cb else None,
+        "credit_spread": (round(cb_yield - ktb3y_val, 3)
+                          if (cb_yield is not None and ktb3y_val is not None) else None),
         "risk_off_hint": None,
     }
     # 아주 단순한 힌트(코워크가 최종 해석): 환율 5일 +1% 이상이면 '원화약세=주의'

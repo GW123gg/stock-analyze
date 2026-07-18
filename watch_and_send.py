@@ -351,6 +351,29 @@ def scan_once(url: str, secret: str, recipients: str) -> int:
                 pass
             continue
 
+        # ── #A1 predictions 계약 게이트(cmd_mail 과 동일 계약 — 두 발송 경로가 같은 문을 지난다) ──
+        # timing·conviction 등 누락 발송은 회고 데이터셋을 조용히 오염시킨다(회고 7회 지적).
+        # 위반 시 flag 를 SCHEMA_BLOCKED.flag 로 격리(내용에 오류 기록) — 수정 후 report-done 재실행하면 됨.
+        try:
+            from common import validate_predictions as _vp
+            _pp = os.path.join(sess, "predictions.json")
+            if not os.path.isfile(_pp):
+                _errs = ["predictions.json 없음(채점·모의투자 입력 끊김 — [7.5] 필수)"]
+            else:
+                with open(_pp, encoding="utf-8") as _f:
+                    _errs = _vp(json.load(_f))
+        except Exception as _e:
+            _errs = [f"predictions.json 검증 실패: {type(_e).__name__}: {_e}"]
+        if _errs:
+            log(f"⛔ 발송 차단(계약 위반 {len(_errs)}건): {name} | {_errs[0]}")
+            try:
+                with open(os.path.join(sess, "SCHEMA_BLOCKED.flag"), "w", encoding="utf-8") as _f:
+                    _f.write("blocked_at=%s\n%s\n" % (datetime.now().isoformat(), "\n".join(_errs[:30])))
+                os.remove(flag)
+            except Exception:
+                pass
+            continue
+
         if sess in _handled:                  # 이번 프로세스에서 이미 시도
             continue
 

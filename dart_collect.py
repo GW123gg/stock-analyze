@@ -485,22 +485,9 @@ def process_one(code, name, key, corp_map, cache, use_cache, today):
 # 저장 위치
 # =====================================================================
 def _today_latest_session():
-    today = datetime.now().strftime("%Y-%m-%d")
-    if not os.path.isdir(OUTPUT_DIR):
-        return None
-    cands = []
-    for nm in os.listdir(OUTPUT_DIR):
-        if nm.startswith("_") or nm == "__pycache__":
-            continue
-        if not nm.startswith(today):
-            continue
-        p = os.path.join(OUTPUT_DIR, nm)
-        if os.path.isdir(p):
-            cands.append((os.path.getmtime(p), p))
-    if not cands:
-        return None
-    cands.sort(reverse=True)
-    return cands[0][1]
+    """H-3: common.resolve_session 위임 — 자정 경계 완화(6h 폴백) + 11곳 복제 제거."""
+    from common import resolve_session
+    return resolve_session(OUTPUT_DIR)
 
 
 def _resolve_output_path(explicit):

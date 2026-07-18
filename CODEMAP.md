@@ -58,7 +58,8 @@ overheat/fundamentals/disclosures/mirae_data/short.json · *.flag. 발송 후 `_
 | `deriv_collect.py` | deriv_sentiment.json(**루트**) | pykrx(KRX) | KOSPI200 PCR+개별 풋콜. flow_collect import로 세션 워밍업 필수 |
 | `ecos_collect.py` | ecos_macro.json(**루트**) | 한국은행 ECOS(ecos_api.txt) | 기준금리·환율 5일. 플레이스홀더 키 거부. 저녁 타임아웃 잦음 |
 | `vkospi_collect.py` | vkospi.json(**루트**) | 금융위 지수시세(vkospi_api.txt→fsc 키 폴백) | VKOSPI 수준/5일변화/60d백분위/공포라벨 — F1 입력. 키 활용신청 필요 |
-| `market_caution.py` | market_caution.json(**루트**) | 위 산출물 합성(deriv/flow/ecos+FDR) | 국면 종합게이트 0~100·regime_kind·allow_market_up_call. ★신호 중 맨 마지막 실행 |
+| `market_caution.py` | market_caution.json(**루트**) | 위 산출물 합성(deriv/flow/ecos+FDR) | 국면 종합게이트 0~100·regime_kind·allow_market_up_call + **inputs_age_h/stale_inputs**(입력 신선도). ★신호 중 맨 마지막 실행 |
+| `snapshot_signals.py` | 세션에 signals_snapshot_* 4종 | 루트 4종 복사(동결) | **market_caution 다음 필수** — 회고가 그날 국면입력(F1/F8)을 학습하는 유일한 경로. retro_label 이 pre_caution/pcr/vkospi/거시 피처로 읽음 |
 
 ## 4. 뉴스 수집기 (전부 루트 저장, Cowork가 [5.8]에서 직접 실행)
 
@@ -99,7 +100,8 @@ overheat/fundamentals/disclosures/mirae_data/short.json · *.flag. 발송 후 `_
 
 ## 7. 공통·설정·데이터 파일
 
-- **`common.py`** — `save_json_atomic(ensure_ascii/indent/fsync/ensure_dir)`·`atomic_write_text`. **새 저장 코드는 반드시 이걸 사용**(12곳 복붙을 통합한 것). 부작용 없는 순수함수만 추가 가능.
+- **`common.py`** — `save_json_atomic`·`atomic_write_text` + **`validate_predictions`(발송 계약 게이트)** + **`resolve_session`(세션 해석 통합 — 자정 6h 폴백)**. **새 저장 코드는 반드시 이걸 사용**. 부작용 없는 순수함수만 추가 가능.
+- **`tests/run_tests.py`** — 골든 하네스(검증 게이트 0단계, ~5초·네트워크 0). 라벨 수학·계약·복사 검증·LABEL_COLS 완전성 자동 체크. **새 라벨/피처 추가 후 반드시 실행**.
 - **키 파일**(루트 *.txt — 내용 출력·커밋 금지): dart/fsc/mirae/naver/ecos/gdelt/apify/vkospi_api.txt·gemini_keys·krx_account·mail_config(.full)·appscript_config. 각 로더는 제공자별 검증이 달라 통합 금지.
 - **설정**: watch_tickers.txt(58종 유니버스)·media_rss_feeds.txt·retro_config.txt·mock_forward_config.txt.
 - **상태**(생성물): supervisor.lock/heartbeat/state·sent_index.json·daily_status.json·accuracy_log.json·recommended_*.

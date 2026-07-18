@@ -130,6 +130,9 @@ INTERMARKET_SYMBOLS = [
     ("gold",   "GC=F"),
     ("dxy",    "DX-Y.NYB"),
     ("usdkrw", "KRW=X"),
+    # EWY(미국 상장 iShares MSCI Korea ETF) — 한국장 마감 후 미국시간에 거래되므로
+    # 06:30 분석 시점의 '간밤 한국물 센티먼트'(갭 예측) 프록시. 미국 전일 종가라 룩어헤드 없음.
+    ("ewy",    "EWY"),
 ]
 
 # 한국 업종지수 — 월가식 테마별로 KRX 표준 업종지수(검증된 코드)를 best-fit 매핑.
@@ -740,26 +743,9 @@ def compute_regime(intermarket, breadth, flows, notes):
 # 저장 위치 결정
 # =====================================================================
 def _today_latest_session():
-    """
-    오늘 날짜로 시작하는 output/ 안 최신 세션 폴더. 없으면 None.
-    세션 후보 기준: 디렉터리이고 이름이 YYYY-MM-DD 로 시작. mtime 최신 선택.
-    """
-    today = datetime.now().strftime("%Y-%m-%d")
-    if not os.path.isdir(OUTPUT_DIR):
-        return None
-    cands = []
-    for name in os.listdir(OUTPUT_DIR):
-        if name.startswith("_") or name == "__pycache__":
-            continue
-        if not name.startswith(today):
-            continue
-        sess = os.path.join(OUTPUT_DIR, name)
-        if os.path.isdir(sess):
-            cands.append((os.path.getmtime(sess), sess))
-    if not cands:
-        return None
-    cands.sort(reverse=True)
-    return cands[0][1]
+    """H-3: common.resolve_session 위임 — 자정 경계 완화(6h 폴백) + 11곳 복제 제거."""
+    from common import resolve_session
+    return resolve_session(OUTPUT_DIR)
 
 
 def _resolve_output_path():
@@ -852,6 +838,12 @@ def build_context():
         notes.append(f"kr_index: 예외 ({type(e).__name__}: {e})")
         kr_index = {"kospi_ret5d_pct": None, "kosdaq_ret5d_pct": None, "asof_close": None}
 
+    try:
+        etf_flow = collect_etf_flow(notes)
+    except Exception as e:
+        notes.append(f"etf_flow: 예외 ({type(e).__name__}: {e})")
+        etf_flow = None
+
     context = {
         "generated_at": datetime.now().isoformat(),
         "intermarket": intermarket,
@@ -860,9 +852,45 @@ def build_context():
         "flows": flows,
         "regime": regime,
         "kr_index": kr_index,
+        "etf_flow": etf_flow,
         "notes": notes,
     }
     return context
+
+
+def collect_etf_flow(notes):
+    """KODEX 레버리지(122630)/인버스2X(252670) 거래대금 — 개인 방향성 베팅 강도(F8 투기심리 보조).
+    lev_inv_ratio > 1 이면 상방 베팅 우세, 급등 시 과열 방향 쏠림. pykrx 1순위, FDR 폴백(Close*Volume 근사)."""
+    out = {"lev_value_eok": None, "inv_value_eok": None, "lev_inv_ratio": None,
+           "asof": None, "source": None}
+    pairs = [("lev", "122630"), ("inv", "252670")]
+    start, end = _date_range(14)
+    for tag, code in pairs:
+        val = asof = src = None
+        if PYKRX_AVAILABLE:
+            try:
+                df = _krx.get_market_ohlcv_by_date(start, end, code)
+                if df is not None and len(df) and "거래대금" in df.columns:
+                    val = _won_to_eok(float(df["거래대금"].iloc[-1]))
+                    asof = str(df.index[-1])[:10]
+                    src = "krx"
+            except Exception as e:
+                notes.append(f"etf_flow {code}: pykrx 실패({type(e).__name__})")
+        if val is None and FDR_AVAILABLE:
+            try:
+                df = fdr.DataReader(code)
+                if df is not None and len(df) and "Close" in df.columns and "Volume" in df.columns:
+                    val = _won_to_eok(float(df["Close"].iloc[-1]) * float(df["Volume"].iloc[-1]))
+                    asof = str(df.index[-1])[:10]
+                    src = "fdr(Close*Volume 근사)"
+            except Exception as e:
+                notes.append(f"etf_flow {code}: FDR 폴백 실패({type(e).__name__})")
+        out[f"{tag}_value_eok"] = val
+        out["asof"] = out["asof"] or asof
+        out["source"] = out["source"] or src
+    if out["lev_value_eok"] and out["inv_value_eok"]:
+        out["lev_inv_ratio"] = round(out["lev_value_eok"] / out["inv_value_eok"], 2)
+    return out
 
 
 def main():
@@ -878,7 +906,7 @@ def main():
         context = {
             "generated_at": datetime.now().isoformat(),
             "intermarket": None, "kr_sectors": None, "breadth": None,
-            "flows": None, "regime": None, "kr_index": None,
+            "flows": None, "regime": None, "kr_index": None, "etf_flow": None,
             "notes": [f"build_context 치명 예외: {type(e).__name__}: {e}"],
         }
 

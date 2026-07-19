@@ -71,6 +71,23 @@ def test_validate_predictions():
     bad = dict(ok_pick, preprice="조금")
     check("validate: preprice enum 차단", any("강함/부분/미반영" in e for e in v({"picks": [bad]})))
     check("validate: 비dict 차단", v("깨짐") != [])
+    # ── v9.6 확률 예보(월가식 개편) — 있을 때만 검사(하위호환) ──
+    base_mc = {"picks": [], "shorts": [ok_short]}
+    good_mc = dict(base_mc, market_call={"kospi": {"dir": "down", "conviction": 0.6,
+                   "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
+    check("v9.6: 정상 확률(합1·argmax=dir) 통과", v(good_mc) == [], str(v(good_mc)))
+    check("v9.6: prob 없는 구식 market_call 통과(하위호환)",
+          v(dict(base_mc, market_call={"kospi": {"dir": "up", "conviction": 0.5}})) == [])
+    bad = dict(base_mc, market_call={"kospi": {"dir": "down", "prob_up": 0.5, "prob_flat": 0.3, "prob_down": 0.3}})
+    check("v9.6: prob 합!=1 차단", any("합" in e for e in v(bad)))
+    bad = dict(base_mc, market_call={"kospi": {"dir": "up", "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
+    check("v9.6: dir!=argmax(prob) 차단", any("argmax" in e for e in v(bad)))
+    bad = dict(base_mc, market_call={"kospi": {"dir": "down", "prob_up": 0.1, "prob_flat": 0.1, "prob_down": 0.8}})
+    check("v9.6: 확률 상한 0.75 초과 차단(겸손 규칙)", any("0.75" in e for e in v(bad)))
+    ok_rated = dict(ok_pick, rating="매수", rating_action="신규커버", target_price=85000)
+    check("v9.6: 커버리지 필드 정상 통과", v({"picks": [ok_rated], "shorts": []}) == [])
+    bad_rated = dict(ok_pick, rating="적극매수")
+    check("v9.6: rating enum 차단", any("rating" in e for e in v({"picks": [bad_rated], "shorts": []})))
 
 
 # =====================================================================

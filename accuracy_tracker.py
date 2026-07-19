@@ -61,8 +61,12 @@ SCORECARD_PATH = os.path.join(BASE_DIR, "scorecard.md")
 KOSPI_SYMBOL = "KS11"
 KOSDAQ_SYMBOL = "KQ11"
 
-# market_call neutral 판정 임계(|구간 등락률| < 0.5% 면 횡보로 간주)
-NEUTRAL_BAND_PCT = 0.5
+# market_call neutral 판정 임계 — v9.6: 지평별 스케일(변동성 ~sqrt(t) 근사).
+#   구 밴드(전 지평 0.5%)는 T+5 에서 기저율이 0%에 수렴해 neutral 을 '이길 수 없는 콜'로 만들었다
+#   (23일 실측: neutral T+5 적중 0/15). 이미 채점된 과거 엔트리는 멱등이라 재채점되지 않는다 —
+#   scorecard 각주에 밴드 변경일을 명시해 회차 간 비교 시 참고.
+NEUTRAL_BAND_BY_H = {1: 0.5, 5: 1.2}
+NEUTRAL_BAND_PCT = 0.5   # 폴백(미정의 지평)
 
 # scorecard 요약 대상 최근 예측일 수
 RECENT_DAYS = 20
@@ -415,15 +419,16 @@ def grade_market_call(pred_date, market_name, call, horizon):
     if idx_ret is None:
         return None  # 만기 미도달 또는 데이터 부족 → 보류
 
+    band = NEUTRAL_BAND_BY_H.get(horizon, NEUTRAL_BAND_PCT)
     if direction == "neutral":
-        hit = abs(idx_ret) < NEUTRAL_BAND_PCT
+        hit = abs(idx_ret) < band
     elif direction == "up":
         hit = idx_ret > 0
     else:  # down
         hit = idx_ret < 0
 
     conv = _safe_float(call.get("conviction"))
-    return {
+    entry = {
         "kind": "market",
         "pred_date": str(pred_date),
         "market": market_name,
@@ -435,6 +440,21 @@ def grade_market_call(pred_date, market_name, call, horizon):
         "hit": bool(hit),
         "graded_at": datetime.now().isoformat(),
     }
+    # #WS(월가식 확률예보 채점, v9.6 additive): prob_up/flat/down 이 있으면 Brier 점수(3분류, 낮을수록 좋음).
+    # 방향 이진 적중(동전던지기 프레임)보다 '확률의 정직성'을 재는 proper scoring rule —
+    # 균등확률(1/3,1/3,1/3)의 기대 Brier=0.667 이 무정보 기준선. 확률 필드 없으면 기존 채점 그대로.
+    pu, pf, pd = (_safe_float(call.get("prob_up")), _safe_float(call.get("prob_flat")),
+                  _safe_float(call.get("prob_down")))
+    if None not in (pu, pf, pd) and abs((pu + pf + pd) - 1.0) < 0.05:
+        if idx_ret > band:
+            o = (1.0, 0.0, 0.0)
+        elif idx_ret < -band:
+            o = (0.0, 0.0, 1.0)
+        else:
+            o = (0.0, 1.0, 0.0)
+        entry["prob_up"], entry["prob_flat"], entry["prob_down"] = pu, pf, pd
+        entry["brier"] = round((pu - o[0]) ** 2 + (pf - o[1]) ** 2 + (pd - o[2]) ** 2, 4)
+    return entry
 
 
 def grade_all(preds, logdata):
@@ -600,10 +620,15 @@ def aggregate(entries):
 
         if kind == "market":
             h = e.get("horizon")
-            m = agg["market"].setdefault(h, {"total": 0, "hit": 0})
+            m = agg["market"].setdefault(h, {"total": 0, "hit": 0,
+                                             "brier_sum": 0.0, "brier_n": 0})
             m["total"] += 1
             if hit:
                 m["hit"] += 1
+            b = _safe_float(e.get("brier"))          # #WS 확률예보(있을 때만)
+            if b is not None:
+                m["brier_sum"] = m.get("brier_sum", 0.0) + b
+                m["brier_n"] = m.get("brier_n", 0) + 1
 
         elif kind == "pick":
             p = agg["picks"]
@@ -759,7 +784,13 @@ def build_scorecard(agg, total_entries, n_added):
         for h in sorted(mkt.keys()):
             m = mkt[h]
             rate = _pct(m["hit"], m["total"])
-            L.append(f"- T+{h}: 적중 {m['hit']}/{m['total']} ({_fmt_rate(rate)})")
+            line = f"- T+{h}: 적중 {m['hit']}/{m['total']} ({_fmt_rate(rate)})"
+            if m.get("brier_n", 0) >= 3:            # #WS 확률예보 품질(낮을수록 좋음, 0.667=무정보)
+                line += (f" | Brier {m['brier_sum'] / m['brier_n']:.3f}"
+                         f" (N={m['brier_n']}, 무정보 기준선 0.667)")
+            L.append(line)
+        L.append("  (neutral 밴드 v9.6: T+1 ±0.5% / T+5 ±1.2% — 2026-07-19 이후 채점분부터. "
+                 "Brier 는 prob_up/flat/down 제출 콜만 집계)")
     L.append("")
 
     # 픽 성과

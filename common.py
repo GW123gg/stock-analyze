@@ -118,6 +118,34 @@ def validate_predictions(payload):
         return ["predictions.json 이 dict 가 아님(파싱 실패 또는 형식 오류)"]
     picks = payload.get("picks") or []
     shorts = payload.get("shorts") or []
+    # ★v9.6 확률 예보 검사(market_call — 필드가 있을 때만, 하위호환):
+    #   prob 3종이 오면 각 0~1 + 합=1.00(±0.03) + dir=argmax(prob) 정합. 도피성 콜 방지의 코드측 강제.
+    mc = payload.get("market_call")
+    if isinstance(mc, dict):
+        for mkt in ("kospi", "kosdaq"):
+            c = mc.get(mkt)
+            if not isinstance(c, dict):
+                continue
+            probs = [c.get("prob_up"), c.get("prob_flat"), c.get("prob_down")]
+            if any(p is not None for p in probs):
+                try:
+                    pu, pf, pd = (float(probs[0]), float(probs[1]), float(probs[2]))
+                except (TypeError, ValueError):
+                    errs.append(f"market_call.{mkt}: prob_up/flat/down 3종 모두 숫자로 채워야 함")
+                    continue
+                if not all(0.0 <= x <= 1.0 for x in (pu, pf, pd)):
+                    errs.append(f"market_call.{mkt}: prob 값이 0~1 범위 밖")
+                if abs((pu + pf + pd) - 1.0) > 0.03:
+                    errs.append(f"market_call.{mkt}: prob 합 {pu + pf + pd:.2f} != 1.00(±0.03)")
+                if max(pu, pf, pd) > 0.75 + 1e-9:
+                    errs.append(f"market_call.{mkt}: 확률 상한 0.75 초과(겸손 규칙 — [4.7] 규칙 3)")
+                _amax = {"up": pu, "flat": pf, "down": pd}
+                _dir = str(c.get("dir") or "").strip().lower()
+                _map = {"up": "up", "neutral": "flat", "down": "down"}
+                if _dir in _map and _amax[_map[_dir]] < max(pu, pf, pd) - 1e-9:
+                    errs.append(f"market_call.{mkt}: dir '{_dir}' 이 argmax(prob)와 불일치")
+    PRED_RATINGS = ("강력매수", "매수", "중립", "비중축소")
+    PRED_ACTIONS = ("신규커버", "재확인", "유지", "상향", "하향", "커버종료")
     # 픽·숏 0건은 '오류가 아니다' — 국면 게이트([3-차익실현](5)·F1·F8)가 롱을 전면 보류시킨
     # 관망일에는 추천 없이 시장 방향(market_call)만 내는 게 정상이고, 그날도 메일은 나가야 한다.
     # (여기서 막으면 게이트를 잘 지킨 날일수록 메일이 안 나가는 역설이 생긴다.)
@@ -141,6 +169,13 @@ def validate_predictions(payload):
                 pp = it.get("preprice")
                 if pp is not None and str(pp).strip() and str(pp).strip() not in PRED_PREPRICES:
                     errs.append(f"{kind}[{i}] {tag}: preprice '{pp}' 은 강함/부분/미반영 중 하나여야 함")
+                # v9.6 커버리지 필드(있을 때만 enum 검사 — 하위호환)
+                rt = it.get("rating")
+                if rt is not None and str(rt).strip() and str(rt).strip() not in PRED_RATINGS:
+                    errs.append(f"{kind}[{i}] {tag}: rating '{rt}' 은 {'/'.join(PRED_RATINGS)} 중 하나여야 함")
+                ra = it.get("rating_action")
+                if ra is not None and str(ra).strip() and str(ra).strip() not in PRED_ACTIONS:
+                    errs.append(f"{kind}[{i}] {tag}: rating_action '{ra}' 은 {'/'.join(PRED_ACTIONS)} 중 하나여야 함")
             c = it.get("conviction")
             if c is not None:
                 try:

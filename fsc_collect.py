@@ -410,11 +410,27 @@ def main():
     for r in ordered:
         by_src[r.get("source", "none")] = by_src.get(r.get("source", "none"), 0) + 1
     asof = next((r.get("asof") for r in ordered if r.get("asof")), None)
+    # A12 신선도 게이트: 07-16~19 가격 피드 4일 정지가 '성공 로그' 뒤에 숨어 늦게 발견됐다.
+    # 전 종목 최신 거래일과 오늘의 차이를 메타로 남기고, 4일+(연휴 3일 초과)면 경고를 크게 찍는다.
+    # 차단은 하지 않는다 — 있는 데이터로 진행하되(수집기 graceful 원칙) 소비자가 낡음을 알게 한다.
+    freshness = {"latest_trade_date": None, "age_cal_days": None, "stale": False}
+    try:
+        _dates = [r.get("asof") for r in ordered if r.get("asof")]
+        if _dates:
+            _latest = max(_dates)
+            _age = (datetime.now().date() - datetime.strptime(_latest, "%Y-%m-%d").date()).days
+            freshness = {"latest_trade_date": _latest, "age_cal_days": _age, "stale": _age >= 4}
+            if freshness["stale"]:
+                log.warning("[fsc] ★신선도 경고: 최신 거래일 %s (%d일 경과) — 피드 정지 의심(A12). "
+                            "FDR 꼬리 보강도 실패했다는 뜻이므로 원인 확인 필요", _latest, _age)
+    except Exception:
+        pass
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "what": "금융위원회(FSC) 주식시세정보 — 일별 공식 종가(clpr)/등락률(fltRt)/거래량(trqu). 일1회 갱신.",
         "key_present": key_present,
         "asof_date": asof,
+        "freshness": freshness,
         "by_source": by_src,
         "universe": len(universe),
         "field_guide": {"close": "종가(원)", "change_pct": "전일대비 등락률(%)",

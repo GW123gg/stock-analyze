@@ -788,6 +788,9 @@ def build_scorecard(agg, total_entries, n_added):
     L.append(f"- 집계 대상: 최근 {agg['n_pred_dates']} 예측일"
              + (f" ({d0} ~ {d1})" if d0 else ""))
     L.append(f"- 누적 채점 엔트리: {total_entries}건 (이번 실행 추가 {n_added}건)")
+    L.append("- ★모집단 주의(회고 06-29 요청): 이 카드는 '최근 창(predictions.json 구조화 예측)' 기준이다."
+             " 회고 retro_dataset(전 기간·archive 파싱 포함 완전표본)과 모집단이 달라 수치가 어긋날 수"
+             " 있다 — 결론이 다르면 완전표본(회고) 쪽을 우선하라.")
     L.append("")
 
     # 권고(맨 위 강조)
@@ -847,12 +850,22 @@ def build_scorecard(agg, total_entries, n_added):
     else:
         L.append("| 태그 | 건수 | 적중률 | 평균수익률 | 평균alpha |")
         L.append("|---|---|---|---|---|")
+        _has_untagged = False
         for tag, t in sorted(agg["by_tag"].items(), key=lambda kv: -kv[1]["total"]):
             rate = _pct(t["hit"], t["total"])
             ar = _pct_avg(t["ret_sum"], t["ret_n"])
             aa = _pct_avg(t["alpha_sum"], t["alpha_n"])
-            L.append(f"| [{tag}] | {t['total']} | {_fmt_rate(rate)} | "
+            _mark = ""
+            if tag == "(태그없음)":
+                _has_untagged = True
+                _mark = " ※"
+            L.append(f"| [{tag}]{_mark} | {t['total']} | {_fmt_rate(rate)} | "
                      f"{_fmt_pct(ar)} | {_fmt_pct(aa)} |")
+        if _has_untagged:
+            L.append("")
+            L.append("  ※ (태그없음) = tag 필드 결측 행(archive 파싱 유래 추정) — 신뢰 한 단계 하향해"
+                     " 읽어라(회고 07-16 요청). 발송 게이트가 tag 를 필수화한 이후 신규 유입은 없어야"
+                     " 정상이며, 이 행이 계속 늘면 게이트 우회 경로를 의심하라.")
     L.append("")
 
     # 타이밍별(임박/단기/중기) — '언제 오른다'는 콜이 실제로 맞았는지(T1 신호별 적중률)

@@ -103,7 +103,7 @@ def resolve_session(output_dir, fallback_age_h=6):
 #   "모든 픽에 timing·conviction·preprice·horizon_days·entry_ref 를 반드시" / "숏도 timing·conviction 필수".
 #   preprice(강함|부분|미반영)는 '선반영' 개념이라 픽 전용이고 숏 스키마엔 아예 없다.
 #   (실측: 2026-07-11·07-16 세션의 숏은 preprice 가 없는 게 계약상 정상 — 여기서 요구하면 정상 발송을 오차단한다.)
-PRED_REQUIRED_PICK = ("ticker", "timing", "conviction", "preprice", "entry_ref", "horizon_days")
+PRED_REQUIRED_PICK = ("ticker", "tag", "timing", "conviction", "preprice", "entry_ref", "horizon_days")
 PRED_REQUIRED_SHORT = ("ticker", "timing", "conviction", "entry_ref", "horizon_days")
 PRED_TIMINGS = ("임박", "단기", "중기")
 PRED_PREPRICES = ("강함", "부분", "미반영")
@@ -186,6 +186,11 @@ def validate_predictions(payload):
             if t is not None and str(t).strip() and str(t).strip() not in PRED_TIMINGS:
                 errs.append(f"{kind}[{i}] {tag}: timing '{t}' 은 임박/단기/중기 중 하나여야 함")
             if kind == "pick":
+                # v9.7(회고 07-16, 무태그 7회 관찰): tag 는 필수 + enum — 무태그 행은 태그별
+                # 회고 분석에서 영구 제외되므로 발송 전에 막는다(숏은 tag 없음 — 픽 전용).
+                tg = it.get("tag")
+                if tg is not None and str(tg).strip() and str(tg).strip() not in ("단기스윙", "장투가능", "장전선취매"):
+                    errs.append(f"{kind}[{i}] {tag}: tag '{tg}' 은 단기스윙/장투가능/장전선취매 중 하나여야 함")
                 pp = it.get("preprice")
                 if pp is not None and str(pp).strip() and str(pp).strip() not in PRED_PREPRICES:
                     errs.append(f"{kind}[{i}] {tag}: preprice '{pp}' 은 강함/부분/미반영 중 하나여야 함")

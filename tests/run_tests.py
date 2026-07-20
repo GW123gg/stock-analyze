@@ -49,7 +49,7 @@ def check(name, cond, detail=""):
 # =====================================================================
 def test_validate_predictions():
     from common import validate_predictions as v
-    ok_pick = {"ticker": "005930", "timing": "단기", "conviction": 0.5,
+    ok_pick = {"ticker": "005930", "tag": "단기스윙", "timing": "단기", "conviction": 0.5,
                "preprice": "부분", "entry_ref": 70000, "horizon_days": 5}
     ok_short = {"ticker": "000660", "timing": "단기", "conviction": 0.5,
                 "entry_ref": 100000, "horizon_days": 5}
@@ -70,6 +70,11 @@ def test_validate_predictions():
     check("validate: entry_ref 음수 차단", any("양수가 아님" in e for e in v({"picks": [bad]})))
     bad = dict(ok_pick, preprice="조금")
     check("validate: preprice enum 차단", any("강함/부분/미반영" in e for e in v({"picks": [bad]})))
+    bad = dict(ok_pick, tag=None)
+    check("v9.7: tag null 차단(무태그 7회 관찰 근절)", any("'tag'" in e for e in v({"picks": [bad]})))
+    bad = dict(ok_pick, tag="스윙")
+    check("v9.7: tag enum 차단", any("단기스윙/장투가능/장전선취매" in e for e in v({"picks": [bad]})))
+    check("v9.7: 숏은 tag 없어도 통과(픽 전용)", v({"picks": [], "shorts": [ok_short]}) == [])
     check("validate: 비dict 차단", v("깨짐") != [])
     # ── v9.6 확률 예보(월가식 개편) + v9.7 게이트 강화(리뷰 [4]) ──
     base_mc = {"picks": [], "shorts": [ok_short]}
@@ -169,6 +174,11 @@ def test_compute_labels_golden():
         check("labels: 익절 반사실 = 실제 종가 +13.0", lab2["ret_if_stop8_tp12_pct"] == 13.0,
               str(lab2["ret_if_stop8_tp12_pct"]))
         check("labels: 손절 미터치 시 반사실 = 만기수익", lab2["ret_if_stop8_pct"] == lab2["ret_h_pct"])
+        # A15 캡판: 익절 갭상승(+13)은 +12 로 캡, 손절 경로(-12)는 캡 무관(하방 정직 유지)
+        check("labels: A15 캡판 익절 = +12.0(갭상승 +13 캡)", lab2["ret_if_stop8_tp12_cap_pct"] == 12.0,
+              str(lab2["ret_if_stop8_tp12_cap_pct"]))
+        check("labels: A15 캡판 손절 경로 = 실제 종가 -12.0(캡 미적용)",
+              lab["ret_if_stop8_tp12_cap_pct"] == -12.0, str(lab["ret_if_stop8_tp12_cap_pct"]))
     finally:
         rl.fsc, rl.FSC_OK, rl._KS11_SERIES, rl.FLOW_OK = old_fsc, old_ok, old_ks, old_flow_ok
 

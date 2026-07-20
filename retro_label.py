@@ -506,6 +506,7 @@ LABEL_COLS = [
     "days_to_trough", "post_trough_rebound_pct",   # #R2 숏 경로(익절 설계)
     "kospi_ret_h_pct", "alpha_h_pct",              # #R1 지수차감(베타/선택 분리)
     "ret_if_stop8_pct", "ret_if_stop8_tp12_pct",   # #S2 손절 반사실(규칙을 지켰다면)
+    "ret_if_stop8_tp12_cap_pct",                   # #A15 익절 지정가 체결 가정(상방편향 보정판)
     "profit_take_flag", "hit", "settle_close",
     # 거래량(차익실현·큰손 매도 신호)
     "entry_volume", "avg_volume_20d", "avg_volume_20d_ex_entry", "peak_day_vol_ratio", "trough_day_vol_ratio",
@@ -727,12 +728,15 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
     # 손절 반사실 라벨(#S2, 사각지대 #5) — "규칙을 지켰다면 결과가 얼마였나".
     # 즉시고점군 ret_h -13%를 손절선이 얼마나 줄였을지 회고가 정량 답하게 한다(경로 기반, 종가 근사).
     # 주의: 종가 기준이라 장중 터치는 반영 못 함(보수적 = 실제보다 손절이 덜 걸림). 진입규칙 아닌 사후 라벨.
-    def _counterfactual(stop_pct, tp_pct=None):
+    def _counterfactual(stop_pct, tp_pct=None, cap_tp=False):
         """진입 후 종가경로에서 stop/tp 에 처음 닿은 날 '그날 종가'로 청산했다면의 수익률(%).
 
         정직성: 손절선(-8%)을 그대로 반환하지 않고 **실제 그날 종가 수익률**을 반환한다.
         갭하락으로 -12% 마감했으면 -12% 로 기록 — 이상적 -8% 체결을 가정하면 손절의 효과를
         과대평가해 회고가 틀린 권고를 하게 된다(종가 기준이라 장중 터치는 애초에 못 잡는다).
+        cap_tp(A15): 익절 쪽은 반대 방향의 편향이 있다 — 갭상승 종가(+20%)를 그대로 기록하면
+        '+12% 지정가 익절 룰'의 성과를 과대계상한다(실전은 +12 근처 체결). cap_tp=True 면 익절
+        도달 시 min(실제 종가, tp_pct) 로 캡. 손절 쪽은 그대로(하방 정직성 유지).
         """
         if not matured:
             return None
@@ -740,11 +744,15 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
             if k >= len(rets):
                 break
             if rets[k] <= stop_pct or (tp_pct is not None and rets[k] >= tp_pct):
-                return round(rets[k], 2)      # 이상적 체결가가 아니라 실제 종가
+                r = rets[k]                    # 이상적 체결가가 아니라 실제 종가
+                if cap_tp and tp_pct is not None and r >= tp_pct:
+                    r = min(r, tp_pct)         # A15: 익절만 지정가 체결 가정(상방 캡)
+                return round(r, 2)
         return round(rets[horizon], 2) if horizon < len(rets) else None
 
     ret_stop8 = _counterfactual(-8.0)
     ret_stop8_tp12 = _counterfactual(-8.0, 12.0)   # auto stock strategy_config 의 실제 룰(-8/+12)
+    ret_stop8_tp12_cap = _counterfactual(-8.0, 12.0, cap_tp=True)  # A15 상방편향 보정판(비교용 병존)
 
     def _ratio(x):
         return round(x / avg_vol, 2) if (x and avg_vol and avg_vol > 0) else None
@@ -774,6 +782,7 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         "post_trough_rebound_pct": round(post_trough_rb, 2) if post_trough_rb is not None else None,
         "kospi_ret_h_pct": kospi_rh, "alpha_h_pct": alpha_h,
         "ret_if_stop8_pct": ret_stop8, "ret_if_stop8_tp12_pct": ret_stop8_tp12,
+        "ret_if_stop8_tp12_cap_pct": ret_stop8_tp12_cap,
         "profit_take_flag": bool(profit_take),
         "settle_close": settle_close_v, "last_close": last_close_v,
         # 거래량
@@ -1084,7 +1093,8 @@ def main():
             "days_to_trough": "[라벨·#R2] 저점(최대낙폭)까지 거래일 수 — 숏 익절 타이밍('D+N') 설계용. 픽엔 눌림 깊이 시점",
             "post_trough_rebound_pct": "[라벨·#R2] 저점 이후 만기까지 최대 되돌림(%) — 숏이 익절 없이 버틸 때 반납하는 폭(스퀴즈 강도)",
             "ret_if_stop8_pct": "[라벨·#S2 반사실] -8% 손절을 지켰다면의 만기수익(%). ret_h 와 비교해 '손절이 얼마나 건졌나/승자를 잃었나' 판정(종가 근사 — 장중 터치 미반영)",
-            "ret_if_stop8_tp12_pct": "[라벨·#S2 반사실] -8% 손절 + +12% 익절 룰(auto stock 실제 config)을 지켰다면의 수익(%)",
+            "ret_if_stop8_tp12_pct": "[라벨·#S2 반사실] -8% 손절 + +12% 익절 룰(auto stock 실제 config)을 지켰다면의 수익(%). 익절일 갭상승 종가를 그대로 기록하므로 상방편향 있음(A15) — 룰 성과 평가에는 _cap 판을 쓰라",
+            "ret_if_stop8_tp12_cap_pct": "[라벨·#A15] 위와 같되 익절 도달 시 min(실제 종가, +12%) 캡 — '+12% 지정가 체결' 가정. 익절 룰의 실전 성과 평가는 이 컬럼 기준(손절 쪽은 두 컬럼 모두 실제 종가 = 하방 정직)",
             "pre_foreign_5d_ratio": "[진입피처·#A6] 직전 5일 외국인 순매수 / 20일 평균 일거래대금(배). 메가캡은 금액이 상시 커서 부호만 보면 신호가 희석된다 → 종목 간 비교는 이 비율로",
             "pre_indiv_5d_ratio": "[진입피처·#A6] 직전 5일 개인 순매수 / 20일 평균 일거래대금(배)",
             "pre_avg_trade_value_20d_eok": "[진입피처·#A6] 진입 직전 20일 평균 일거래대금(억원) — 위 비율의 분모(유동성 규모)",

@@ -57,6 +57,11 @@ def resolve_session(output_dir, fallback_age_h=6):
     창을 크게 잡지 않는 이유: 아침 06:30 에 어제 저녁(14h 전) 세션을 잡으면 어제 세션의 신호 파일을
     오늘 데이터로 '덮어써' 회고 스냅샷 무결성(룩어헤드)을 오염시킨다 — 6h 는 그 사고를 막는 상한이다.
     '_' 시작 폴더(_archive/_designtest)는 항상 제외. 없으면 None(수집기는 루트 폴백 또는 생략).
+
+    ★분석 완료 세션 보호(2026-07-20): 03_final_report.md 가 이미 있는 세션은 후보에서 제외한다.
+    신호 수집기는 이 함수로 '쓰기 대상'을 찾으므로, 분석이 끝난 세션에 재실행하면 그날 분석가가
+    본 입력이 새 시각 데이터로 덮여 회고 스냅샷이 오염된다(실제 사고 2회: 07-18·07-20 —
+    문서 경고로는 재발을 못 막아 코드로 차단). 완료 세션뿐이면 None → 루트 폴백(무해).
     """
     import time as _time
     from datetime import datetime as _dt
@@ -75,6 +80,8 @@ def resolve_session(output_dir, fallback_age_h=6):
             mt = os.path.getmtime(p)
         except Exception:
             continue
+        if os.path.isfile(os.path.join(p, "03_final_report.md")):
+            continue      # 분석 완료 세션 — 쓰기 대상 아님(스냅샷 오염 방지, 위 도크 참조)
         if nm.startswith(today):
             cands.append((mt, p))
         elif now - mt <= fallback_age_h * 3600:
@@ -109,8 +116,9 @@ def validate_predictions(payload):
       - timing: 임박/단기/중기 중 하나 (픽·숏 공통 필수 — 회고가 6회 요청한 축)
       - conviction: 숫자 0~1
       - entry_ref: 양수(예측 시점 가격 — 채점 기준)
-      - horizon_days: 양의 정수
+      - horizon_days: 1|5|20 ([6.5] 타이밍 enum — v9.7 강화)
       - preprice: 픽만 필수(강함/부분/미반영)
+      - market_call: 콜이 있으면 prob 3종 필수 + conviction=max(prob)(±0.05) — v9.7 강화
     payload 가 dict 가 아니거나 picks/shorts 가 모두 비면 그 사실을 오류로 본다.
     """
     errs = []
@@ -118,8 +126,9 @@ def validate_predictions(payload):
         return ["predictions.json 이 dict 가 아님(파싱 실패 또는 형식 오류)"]
     picks = payload.get("picks") or []
     shorts = payload.get("shorts") or []
-    # ★v9.6 확률 예보 검사(market_call — 필드가 있을 때만, 하위호환):
-    #   prob 3종이 오면 각 0~1 + 합=1.00(±0.03) + dir=argmax(prob) 정합. 도피성 콜 방지의 코드측 강제.
+    # ★v9.6 확률 예보 검사(market_call). v9.7: 콜(dict)이 있으면 prob 3종은 '필수'다 —
+    #   [7.5]가 필수라 말하면서 게이트가 안 보면 도피성 콜 방지라는 취지에 구멍이 난다(리뷰 [4]).
+    #   각 0~1 + 합=1.00(±0.03) + 상한 0.75 + dir=argmax(prob) + conviction=max(prob)(±0.05).
     mc = payload.get("market_call")
     if isinstance(mc, dict):
         for mkt in ("kospi", "kosdaq"):
@@ -127,23 +136,34 @@ def validate_predictions(payload):
             if not isinstance(c, dict):
                 continue
             probs = [c.get("prob_up"), c.get("prob_flat"), c.get("prob_down")]
-            if any(p is not None for p in probs):
+            if all(p is None for p in probs):
+                errs.append(f"market_call.{mkt}: prob_up/flat/down 누락 — v9.7 필수([7.5] 확률 예보)")
+                continue
+            try:
+                pu, pf, pd = (float(probs[0]), float(probs[1]), float(probs[2]))
+            except (TypeError, ValueError):
+                errs.append(f"market_call.{mkt}: prob_up/flat/down 3종 모두 숫자로 채워야 함")
+                continue
+            if not all(0.0 <= x <= 1.0 for x in (pu, pf, pd)):
+                errs.append(f"market_call.{mkt}: prob 값이 0~1 범위 밖")
+            if abs((pu + pf + pd) - 1.0) > 0.03:
+                errs.append(f"market_call.{mkt}: prob 합 {pu + pf + pd:.2f} != 1.00(±0.03)")
+            if max(pu, pf, pd) > 0.75 + 1e-9:
+                errs.append(f"market_call.{mkt}: 확률 상한 0.75 초과(겸손 규칙 — [4.7] 규칙 3)")
+            _amax = {"up": pu, "flat": pf, "down": pd}
+            _dir = str(c.get("dir") or "").strip().lower()
+            _map = {"up": "up", "neutral": "flat", "down": "down"}
+            if _dir in _map and _amax[_map[_dir]] < max(pu, pf, pd) - 1e-9:
+                errs.append(f"market_call.{mkt}: dir '{_dir}' 이 argmax(prob)와 불일치")
+            cv = c.get("conviction")
+            if cv is not None:
                 try:
-                    pu, pf, pd = (float(probs[0]), float(probs[1]), float(probs[2]))
+                    if abs(float(cv) - max(pu, pf, pd)) > 0.05 + 1e-9:
+                        errs.append(
+                            f"market_call.{mkt}: conviction {cv} 이 max(prob)={max(pu, pf, pd):.2f} 와"
+                            f" 불일치([4.7] 규칙 3 — 허용오차 0.05)")
                 except (TypeError, ValueError):
-                    errs.append(f"market_call.{mkt}: prob_up/flat/down 3종 모두 숫자로 채워야 함")
-                    continue
-                if not all(0.0 <= x <= 1.0 for x in (pu, pf, pd)):
-                    errs.append(f"market_call.{mkt}: prob 값이 0~1 범위 밖")
-                if abs((pu + pf + pd) - 1.0) > 0.03:
-                    errs.append(f"market_call.{mkt}: prob 합 {pu + pf + pd:.2f} != 1.00(±0.03)")
-                if max(pu, pf, pd) > 0.75 + 1e-9:
-                    errs.append(f"market_call.{mkt}: 확률 상한 0.75 초과(겸손 규칙 — [4.7] 규칙 3)")
-                _amax = {"up": pu, "flat": pf, "down": pd}
-                _dir = str(c.get("dir") or "").strip().lower()
-                _map = {"up": "up", "neutral": "flat", "down": "down"}
-                if _dir in _map and _amax[_map[_dir]] < max(pu, pf, pd) - 1e-9:
-                    errs.append(f"market_call.{mkt}: dir '{_dir}' 이 argmax(prob)와 불일치")
+                    errs.append(f"market_call.{mkt}: conviction '{cv}' 이 숫자가 아님")
     PRED_RATINGS = ("강력매수", "매수", "중립", "비중축소")
     PRED_ACTIONS = ("신규커버", "재확인", "유지", "상향", "하향", "커버종료")
     # 픽·숏 0건은 '오류가 아니다' — 국면 게이트([3-차익실현](5)·F1·F8)가 롱을 전면 보류시킨
@@ -194,8 +214,8 @@ def validate_predictions(payload):
             h = it.get("horizon_days")
             if h is not None:
                 try:
-                    if int(h) <= 0:
-                        errs.append(f"{kind}[{i}] {tag}: horizon_days {h} 이 양의 정수가 아님")
+                    if int(h) not in (1, 5, 20):
+                        errs.append(f"{kind}[{i}] {tag}: horizon_days {h} 은 1|5|20 중 하나여야 함([6.5] 타이밍)")
                 except (TypeError, ValueError):
                     errs.append(f"{kind}[{i}] {tag}: horizon_days '{h}' 이 정수가 아님")
     return errs

@@ -277,6 +277,21 @@ def get_history(code, days=DEFAULT_DAYS, key=None) -> list:
     end = (datetime.now() + timedelta(days=1)).strftime("%Y%m%d")
     begin = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
     rows = fetch_history_fsc(key, code, begin, end) if key else []
+    # #A12(회고 15회차 최우선 지적): FSC 가 '성공하되 며칠 뒤처진' 데이터를 줄 수 있다
+    # (실측 2026-07-20: FSC 마지막 07-15 vs 실제 최근 거래일 07-16 — 4개 드롭 연속 만기 동결,
+    #  07-16 폭락일 -6.37% 누락으로 진행중 부분수익이 전량 낙관 편향).
+    # FSC 성공이 FDR 폴백을 가리는 구조가 원인 → 마지막 날짜가 3일+ 낡았으면 FDR 로 꼬리 보강.
+    if rows:
+        try:
+            _gap = (datetime.now().date()
+                    - datetime.strptime(rows[-1]["date"], "%Y-%m-%d").date()).days
+            if _gap >= 3:
+                fdr_rows = fetch_history_fdr(code, begin, end)
+                if fdr_rows and fdr_rows[-1]["date"] > rows[-1]["date"]:
+                    _last = rows[-1]["date"]
+                    rows = rows + [r for r in fdr_rows if r["date"] > _last]
+        except Exception:
+            pass
     if not rows:
         rows = fetch_history_fdr(code, begin, end)
     _HIST_CACHE[ckey] = rows

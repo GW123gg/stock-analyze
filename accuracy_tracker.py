@@ -588,6 +588,17 @@ def aggregate(entries):
     """엔트리 → scorecard 작성에 필요한 집계 dict."""
     recent = _recent_pred_dates(entries, RECENT_DAYS)
     rset = [e for e in entries if str(e.get("pred_date") or "") in recent]
+    # #A14(회고 15회차): 주말·휴장일 발행 콜은 다음 거래일 콜과 '같은 채점 창'을 본다(같은 settle_date)
+    # — 3콜이 같은 창을 3표로 계상하던 중복을 접는다: (market,horizon,settle_date)당 최신 pred_date 1건.
+    _mkt_dedup = {}
+    for e in rset:
+        if e.get("kind") != "market":
+            continue
+        k = (e.get("market"), e.get("horizon"), str(e.get("settle_date") or ""))
+        prev = _mkt_dedup.get(k)
+        if prev is None or str(e.get("pred_date") or "") > str(prev.get("pred_date") or ""):
+            _mkt_dedup[k] = e
+    _mkt_keep = set(id(e) for e in _mkt_dedup.values())
 
     agg = {
         "n_pred_dates": len(recent),
@@ -619,12 +630,22 @@ def aggregate(entries):
                     break
 
         if kind == "market":
+            if id(e) not in _mkt_keep:
+                continue                              # #A14 같은 창 중복 콜 접기
             h = e.get("horizon")
             m = agg["market"].setdefault(h, {"total": 0, "hit": 0,
-                                             "brier_sum": 0.0, "brier_n": 0})
+                                             "brier_sum": 0.0, "brier_n": 0,
+                                             "by_dir": {}, "bench_down_hit": 0})
             m["total"] += 1
             if hit:
                 m["hit"] += 1
+            d = agg["market"][h]["by_dir"].setdefault(str(e.get("dir")), {"total": 0, "hit": 0})
+            d["total"] += 1
+            if hit:
+                d["hit"] += 1
+            ir = _safe_float(e.get("index_return_pct"))   # #A14 always-down 벤치마크
+            if ir is not None and ir < 0:
+                m["bench_down_hit"] = m.get("bench_down_hit", 0) + 1
             b = _safe_float(e.get("brier"))          # #WS 확률예보(있을 때만)
             if b is not None:
                 m["brier_sum"] = m.get("brier_sum", 0.0) + b
@@ -785,10 +806,17 @@ def build_scorecard(agg, total_entries, n_added):
             m = mkt[h]
             rate = _pct(m["hit"], m["total"])
             line = f"- T+{h}: 적중 {m['hit']}/{m['total']} ({_fmt_rate(rate)})"
+            if m.get("total"):
+                bench = _pct(m.get("bench_down_hit", 0), m["total"])
+                line += f" | 벤치마크(always-down) {_fmt_rate(bench)}"    # #A14 정직 기준선
             if m.get("brier_n", 0) >= 3:            # #WS 확률예보 품질(낮을수록 좋음, 0.667=무정보)
                 line += (f" | Brier {m['brier_sum'] / m['brier_n']:.3f}"
                          f" (N={m['brier_n']}, 무정보 기준선 0.667)")
             L.append(line)
+            bd = m.get("by_dir") or {}
+            if bd:
+                parts = [f"{k} {v['hit']}/{v['total']}" for k, v in sorted(bd.items())]
+                L.append(f"  · dir별: {' / '.join(parts)}  (주말·휴장 중복 콜은 같은 창 1건으로 접음)")
         L.append("  (neutral 밴드 v9.6: T+1 ±0.5% / T+5 ±1.2% — 2026-07-19 이후 채점분부터. "
                  "Brier 는 prob_up/flat/down 제출 콜만 집계)")
     L.append("")

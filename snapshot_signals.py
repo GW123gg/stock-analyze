@@ -41,7 +41,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
 
 # 루트에 저장되는 국면·거시 신호(세션 아님) — CLAUDE.md/CODEMAP.md 의 '루트 저장 4종'과 동일
-ROOT_SIGNALS = ["deriv_sentiment.json", "ecos_macro.json", "vkospi.json", "market_caution.json"]
+ROOT_SIGNALS = ["deriv_sentiment.json", "ecos_macro.json", "vkospi.json", "market_caution.json",
+                "credit_balance.json"]   # v9.8: 신용잔고(빚투) 국면 신호 — 회고 pre_margin_* 원천
 PREFIX = "signals_snapshot_"
 
 from common import save_json_atomic

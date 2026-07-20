@@ -257,12 +257,67 @@ def test_snapshot_signals():
 
 
 # =====================================================================
+# 7. v9.8 신규 수집기 순수함수 — credit(신용잔고)·earnings(실적캘린더)·vkospi 페이로드
+# =====================================================================
+def test_new_collectors_pure():
+    import credit_collect as cc
+    # 합성 신용공여 rows(십억 단위): 융자총 TMPV2, 유가 TMPV3, 코스닥 TMPV4, 대주 TMPV5, 담보 TMPV9
+    credit_rows = [
+        {"TMPV1": "20260701", "TMPV2": 36000, "TMPV3": 26000, "TMPV4": 10000, "TMPV5": 50, "TMPV9": 26000},
+        {"TMPV1": "20260702", "TMPV2": 36500, "TMPV3": 26300, "TMPV4": 10200, "TMPV5": 51, "TMPV9": 26100},
+        {"TMPV1": "20260703", "TMPV2": 36400, "TMPV3": 26200, "TMPV4": 10200, "TMPV5": 52, "TMPV9": 26200},
+        {"TMPV1": "20260706", "TMPV2": 36200, "TMPV3": 26100, "TMPV4": 10100, "TMPV5": 52, "TMPV9": 26200},
+        {"TMPV1": "20260707", "TMPV2": 35000, "TMPV3": 25200, "TMPV4": 9800, "TMPV5": 53, "TMPV9": 26300},
+        {"TMPV1": "20260708", "TMPV2": 33362, "TMPV3": 26253, "TMPV4": 7109, "TMPV5": 24, "TMPV9": 25196},
+    ]
+    funds_rows = [
+        {"TMPV1": "20260707", "TMPV2": 132860, "TMPV5": 1537, "TMPV6": 37, "TMPV7": 2.2},
+        {"TMPV1": "20260708", "TMPV2": 108082, "TMPV5": 1145, "TMPV6": 15, "TMPV7": 1.1},
+    ]
+    p = cc.build_payload(credit_rows, funds_rows)
+    check("credit: 십억→억 변환(총융자 333620)", p["margin_loan"]["total_eok"] == 333620.0,
+          str(p["margin_loan"]["total_eok"]))
+    check("credit: d5 변화율(-7.33% 근사)", abs(p["margin_loan"]["d5_chg_pct"] - (-7.33)) < 0.02,
+          str(p["margin_loan"]["d5_chg_pct"]))
+    check("credit: 예탁금 억 변환", p["deposit"]["total_eok"] == 1080820.0, str(p["deposit"]))
+    check("credit: 반대매매 비중 전달", p["misu"]["rt_sell_ratio_pct"] == 1.1)
+    check("credit: 급감 시 디레버리징 라벨", "디레버리징" in p["level_label"], p["level_label"])
+    check("credit: 빈 입력 -> 빈 dict", cc.build_payload([], []) == {})
+
+    import earnings_collect as ecal
+    sample = ('<tr tablesorterdivider><td colspan="9" class="theDay">2026년 7월 20일 월요일</td></tr>'
+              '<tr><td class="flag"></td>'
+              '<td class="left noWrap earnCalCompany" title="기아" _p_pid="43460">'
+              '<span class="earnCalCompanyName middle">기아</span>&nbsp;'
+              '(<a href="/equities/kia-motors">000270</a>)</td></tr>'
+              '<tr><td colspan="9" class="theDay">2026년 7월 21일 화요일</td></tr>'
+              '<tr><td class="flag"></td>'
+              '<td class="left noWrap earnCalCompany" title="POSCO홀딩스" _p_pid="43461">'
+              '<a href="/equities/posco?cid=1">POSCO</a></td></tr>')
+    ev = ecal.parse_calendar(sample)
+    check("earnings: 2건 파싱", len(ev) == 2, str(ev))
+    check("earnings: 날짜 구분 반영", ev[0]["date"] == "2026-07-20" and ev[1]["date"] == "2026-07-21")
+    check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
+    check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
+
+    import vkospi_collect as vc
+    items = [{"idxNm": "코스피 200 변동성지수", "basDt": "20260717", "clpr": "27.5"},
+             {"idxNm": "코스피 200 변동성지수", "basDt": "20260716", "clpr": "21.0"},
+             {"idxNm": "다른지수", "basDt": "20260717", "clpr": "999"}]
+    vp = vc.build_payload(items)
+    check("vkospi: 변동성 지수만 채택 + 최신값", vp["latest"]["value"] == 27.5, str(vp.get("latest")))
+    check("vkospi: 레벨 25+ -> 공포 라벨", "공포" in vp["level_label"], vp["level_label"])
+    check("vkospi: 빈 입력 -> 빈 dict", vc.build_payload([]) == {})
+
+
+# =====================================================================
 def main():
     print("=" * 60)
     print("stock_research 골든 테스트 (네트워크 0 · 라이브 파일 무수정)")
     print("=" * 60)
     for fn in (test_validate_predictions, test_norm_tag, test_compute_labels_golden,
-               test_pre_entry_snapshot_first, test_retro_forward_helpers, test_snapshot_signals):
+               test_pre_entry_snapshot_first, test_retro_forward_helpers, test_snapshot_signals,
+               test_new_collectors_pure):
         try:
             fn()
         except Exception as e:

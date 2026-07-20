@@ -496,6 +496,8 @@ SNAPSHOT_MARKET_COLS = {
     "pre_caution_score", "pre_regime_kind", "pre_allow_market_up",
     "pre_pcr_oi", "pre_vkospi", "pre_vkospi_d5_chg", "pre_vkospi_pct_rank", "pre_vkospi_label",
     "pre_base_rate", "pre_usdkrw_chg5d",
+    # v9.8 신용잔고(빚투) — 2026-07-21 이후 세션에만 값(그 전은 결측=정상)
+    "pre_margin_total_eok", "pre_margin_d5_chg_pct", "pre_margin_pct_rank",
 }
 LABEL_COLS = [
     "matured", "label_status", "fwd_days_avail", "ret_h_pct",
@@ -637,6 +639,12 @@ def _snapshot_market_feats(session_dir):
         out["pre_vkospi_d5_chg"] = lt.get("d5_chg_pct") if isinstance(lt, dict) else None
         out["pre_vkospi_pct_rank"] = vk.get("pct_rank_60d")
         out["pre_vkospi_label"] = vk.get("level_label")   # '공포' 판별(F1/F8 입력)
+    cb = _load_json(os.path.join(session_dir, "signals_snapshot_credit_balance.json"))
+    if isinstance(cb, dict) and isinstance(cb.get("margin_loan"), dict):
+        ml = cb["margin_loan"]                            # v9.8 신용잔고(빚투) — [5.12]
+        out["pre_margin_total_eok"] = ml.get("total_eok")
+        out["pre_margin_d5_chg_pct"] = ml.get("d5_chg_pct")
+        out["pre_margin_pct_rank"] = ml.get("pct_rank_60d")
     return out
 
 
@@ -1095,6 +1103,9 @@ def main():
             "ret_if_stop8_pct": "[라벨·#S2 반사실] -8% 손절을 지켰다면의 만기수익(%). ret_h 와 비교해 '손절이 얼마나 건졌나/승자를 잃었나' 판정(종가 근사 — 장중 터치 미반영)",
             "ret_if_stop8_tp12_pct": "[라벨·#S2 반사실] -8% 손절 + +12% 익절 룰(auto stock 실제 config)을 지켰다면의 수익(%). 익절일 갭상승 종가를 그대로 기록하므로 상방편향 있음(A15) — 룰 성과 평가에는 _cap 판을 쓰라",
             "ret_if_stop8_tp12_cap_pct": "[라벨·#A15] 위와 같되 익절 도달 시 min(실제 종가, +12%) 캡 — '+12% 지정가 체결' 가정. 익절 룰의 실전 성과 평가는 이 컬럼 기준(손절 쪽은 두 컬럼 모두 실제 종가 = 하방 정직)",
+            "pre_margin_total_eok": "[진입피처·v9.8] 추천일 시점 신용거래융자 총잔고(억원, 금투협 — 세션 스냅샷). 레버리지 수준 = 반대매매 취약도. 2026-07-21 이후 세션에만 값",
+            "pre_margin_d5_chg_pct": "[진입피처·v9.8] 신용융자 잔고 5거래일 변화율(%) — 급증=빚투 과열, 급감=디레버리징(투매 소화) 국면",
+            "pre_margin_pct_rank": "[진입피처·v9.8] 신용융자 잔고의 60거래일 백분위(높을수록 역대급 레버리지)",
             "pre_foreign_5d_ratio": "[진입피처·#A6] 직전 5일 외국인 순매수 / 20일 평균 일거래대금(배). 메가캡은 금액이 상시 커서 부호만 보면 신호가 희석된다 → 종목 간 비교는 이 비율로",
             "pre_indiv_5d_ratio": "[진입피처·#A6] 직전 5일 개인 순매수 / 20일 평균 일거래대금(배)",
             "pre_avg_trade_value_20d_eok": "[진입피처·#A6] 진입 직전 20일 평균 일거래대금(억원) — 위 비율의 분모(유동성 규모)",

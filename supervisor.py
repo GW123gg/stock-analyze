@@ -567,6 +567,16 @@ def run_morning_pipeline():
     _run_step("step14.5 vkospi_collect",
               [py, os.path.join(BASE_DIR, "vkospi_collect.py")], timeout=120)
 
+    # step14.6: 신용잔고(빚투)·증시자금 — 금투협 freesis 공개 JSON → 루트 credit_balance.json
+    #   레버리지 과열/디레버리징 국면 신호([5.12]). 키 불필요, 실패 시 graceful.
+    _run_step("step14.6 credit_collect",
+              [py, os.path.join(BASE_DIR, "credit_collect.py")], timeout=120)
+
+    # step14.7: 실적발표 캘린더(한국, 향후 2주) — investing.com → 세션 earnings_calendar.json
+    #   [4.8](5) 이벤트 경로 체크·픽 실적일정 대조용. 실패 시 웹검색 폴백(graceful).
+    _run_step("step14.7 earnings_collect",
+              [py, os.path.join(BASE_DIR, "earnings_collect.py")], timeout=120)
+
     # step15: 시장 국면 복합 게이트 — KOSPI 5일 + 파생 PCR + 외인 risk_off + 환율 합성 → market_caution.json
     #   회고 최강 발견('추천일 시장 과열이 결과 좌우')을 운영화(F1/F6). step12~14 산출물을 읽으므로 맨 뒤.
     _run_step("step15 market_caution",

@@ -490,6 +490,9 @@ FEATURE_COLS = [
     "pre_caution_score", "pre_regime_kind", "pre_allow_market_up",
     "pre_pcr_oi", "pre_vkospi", "pre_vkospi_d5_chg", "pre_vkospi_pct_rank", "pre_vkospi_label",
     "pre_base_rate", "pre_usdkrw_chg5d",
+    # v9.8 신용잔고(빚투) — 2026-07-21 이후 세션에만 값(그 전은 결측=정상). SNAPSHOT_MARKET_COLS 와
+    # ★반드시 동기 유지(여기 없으면 _row_for 831행 루프가 컬럼을 아예 안 실어 무음 no-op — 하네스가 계약검사).
+    "pre_margin_total_eok", "pre_margin_d5_chg_pct", "pre_margin_pct_rank",
 ]
 # 위 중 '시장수준(그날 공통)' 컬럼 — _row_for 가 종목별 feats 가 아니라 regime 에서 읽어야 하는 것들.
 SNAPSHOT_MARKET_COLS = {

@@ -7,7 +7,7 @@
 ## 시스템 한눈에
 
 ```
-[02:00 precollect] → [06:30 collect(세션 생성)] → [신호 수집기 13종] → [Cowork 분석: commands.txt→deep→03_final_report+predictions]
+[02:00 precollect] → [06:30 collect(세션 생성)] → [신호 수집기 15종] → [Cowork 분석: commands.txt→deep→03_final_report+predictions]
        → [발송: report-done→watch_and_send 또는 mail --method appscript] → [recommend_track]
 [03:30 회고] retro_label → retro_forward --push → (회고 Cowork) → --scan-back → retro_feedback.md → 다음 아침 [0.5] 자기보정
 [채점] accuracy_tracker(scorecard.md, 매일) · gen_scorecard(예측채점_리포트.md, 회고용)
@@ -16,8 +16,8 @@
 
 **세션 폴더**(`output\YYYY-MM-DD_HHMMSS\`): 00_precollect.md · 01_broad_collection.md · INSTRUCTIONS.md · commands.txt ·
 02_deep_collection.md · 03_final_report.md/.html · predictions.json · force_scores/market_context/fsc_prices/flow_data/
-overheat/fundamentals/disclosures/mirae_data/short.json · *.flag. 발송 후 `_archive\`로 이동.
-**루트 저장 신호**(세션 아님): deriv_sentiment · ecos_macro · market_caution · vkospi + 뉴스 6종(news_rss/gdelt/media_rss/naver_stock_news/yahoo_news/analyst_reco).
+overheat/fundamentals/disclosures/mirae_data/short/earnings_calendar.json · signals_snapshot_*.json(루트 신호 동결) · *.flag. 발송 후 `_archive\`로 이동.
+**루트 저장 신호**(세션 아님): deriv_sentiment · ecos_macro · market_caution · vkospi · credit_balance(5종) + 뉴스 6종(news_rss/gdelt/media_rss/naver_stock_news/yahoo_news/analyst_reco).
 
 ## 1. 오케스트레이션·감시
 
@@ -42,7 +42,7 @@ overheat/fundamentals/disclosures/mirae_data/short.json · *.flag. 발송 후 `_
 - 세션 탐색: `latest_session_dir()`은 `_`로 시작하는 폴더(_archive/_designtest) 제외.
 - 함정: Selenium 전역(_SELENIUM_DRIVER 등)·USE_PLAYWRIGHT=0 dead 함수·_fallback_md_to_html은 의도적(CLAUDE.md 지뢰).
 
-## 3. 신호 수집기 (13종 — 실행 순서·위치는 MCP 지시 표)
+## 3. 신호 수집기 (15종 — 실행 순서·위치는 MCP 지시 표)
 
 | 파일 | 산출(위치) | 데이터원(키) | 비고 |
 |---|---|---|---|
@@ -58,8 +58,10 @@ overheat/fundamentals/disclosures/mirae_data/short.json · *.flag. 발송 후 `_
 | `deriv_collect.py` | deriv_sentiment.json(**루트**) | pykrx(KRX) | KOSPI200 PCR+개별 풋콜. flow_collect import로 세션 워밍업 필수 |
 | `ecos_collect.py` | ecos_macro.json(**루트**) | 한국은행 ECOS(ecos_api.txt) | 기준금리·환율 5일. 플레이스홀더 키 거부. 저녁 타임아웃 잦음 |
 | `vkospi_collect.py` | vkospi.json(**루트**) | 금융위 지수시세(vkospi_api.txt→fsc 키 폴백) | VKOSPI 수준/5일변화/60d백분위/공포라벨 — F1 입력. 키 활용신청 필요 |
-| `market_caution.py` | market_caution.json(**루트**) | 위 산출물 합성(deriv/flow/ecos+FDR) | 국면 종합게이트 0~100·regime_kind·allow_market_up_call + **inputs_age_h/stale_inputs**(입력 신선도). ★신호 중 맨 마지막 실행 |
-| `snapshot_signals.py` | 세션에 signals_snapshot_* 4종 | 루트 4종 복사(동결) | **market_caution 다음 필수** — 회고가 그날 국면입력(F1/F8)을 학습하는 유일한 경로. retro_label 이 pre_caution/pcr/vkospi/거시 피처로 읽음 |
+| `credit_collect.py` | credit_balance.json(**루트**) | 금투협 freesis 공개 JSON(**키 불필요**) | 신용잔고(빚투)·증시자금·반대매매 [5.12]. 컬럼 매핑 언론 실측 대조. 실패 시 생략=정상 |
+| `earnings_collect.py` | earnings_calendar.json(**세션**) | investing.com(requests→curl 폴백) | 향후 2주 실적발표 [5.13]. 실패 시 웹검색 폴백=정상 |
+| `market_caution.py` | market_caution.json(**루트**) | 위 산출물 합성(deriv/flow/ecos+FDR) | 국면 종합게이트 0~100·regime_kind·allow_market_up_call + **inputs_age_h/stale_inputs·missing_axes/inputs_incomplete**(입력 신선도·결측). ★신호 중 맨 마지막 실행 |
+| `snapshot_signals.py` | 세션에 signals_snapshot_* 5종 | 루트 5종 복사(동결) | **market_caution 다음 필수** — 회고가 그날 국면입력(F1/F8)을 학습하는 유일한 경로. retro_label 이 pre_caution/pcr/vkospi/margin/거시 피처로 읽음 |
 
 ## 4. 뉴스 수집기 (전부 루트 저장, Cowork가 [5.8]에서 직접 실행)
 

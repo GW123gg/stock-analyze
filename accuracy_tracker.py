@@ -619,6 +619,11 @@ def aggregate(entries):
         conv = e.get("conviction")
         hit = bool(e.get("hit"))
 
+        # #A14 같은 창 중복 콜 접기 — ★calibration 집계보다 먼저 스킵해야 시장콜 중복이
+        #   calib 버킷에 이중계상되지 않는다(시장콜은 conviction 을 가지므로 아래 calib 에 들어간다).
+        if kind == "market" and id(e) not in _mkt_keep:
+            continue
+
         # calibration (모든 종류 공통; conviction 있는 것만)
         if conv is not None:
             for label, lo, hi in CALIB_BUCKETS:
@@ -630,8 +635,6 @@ def aggregate(entries):
                     break
 
         if kind == "market":
-            if id(e) not in _mkt_keep:
-                continue                              # #A14 같은 창 중복 콜 접기
             h = e.get("horizon")
             m = agg["market"].setdefault(h, {"total": 0, "hit": 0,
                                              "brier_sum": 0.0, "brier_n": 0,

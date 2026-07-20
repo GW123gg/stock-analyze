@@ -582,7 +582,7 @@ def run_morning_pipeline():
     _run_step("step15 market_caution",
               [py, os.path.join(BASE_DIR, "market_caution.py")], timeout=120)
 
-    # step15.5: 루트 신호 4종(deriv/ecos/vkospi/market_caution)을 '오늘 세션'에 동결 복사.
+    # step15.5: 루트 신호 5종(deriv/ecos/vkospi/market_caution/credit_balance)을 '오늘 세션'에 동결 복사.
     #   루트 파일은 매일 덮어써져 회고가 '그날 분석가가 본 국면 입력'을 재현할 수 없었다
     #   (회고 사각지대: F1/F8 게이트의 1차 입력이 학습에서 통째로 누락). market_caution 다음이어야
     #   13종 신호가 모두 확정된 상태를 찍고, step16(회고 폴더 복사) 앞이어야 같은 회차에 전달된다.

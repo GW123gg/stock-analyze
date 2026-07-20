@@ -193,13 +193,19 @@ def _pick(snapshot, *keywords):
 def collect(key, out_path):
     snap = keystat_snapshot(key)
     fx = fx_trend(key)
+    cb0 = cb_trend(key)
+    # ★BOK 다운 시 전 지표 실패(snap=[]·fx=None·cb=None)면 기존 ecos_macro.json 을 빈 값으로
+    #   덮어써 '금리·환율 전부 결측'인 국면 신호가 사라진다 → 전량 실패면 저장 스킵(기존 파일 보존).
+    if not snap and fx is None and cb0 is None:
+        log.warning("[ecos] 전 지표 수집 실패(BOK 다운 등) — 기존 ecos_macro.json 보존(저장 스킵)")
+        return None
     # 파생: 핵심값 + 거친 risk-off 힌트(환율 상승=원화약세=외인 위험회피 맥락)
     base_rate = _pick(snap, "기준금리")
     usdkrw = _pick(snap, "환율")
     ktb3 = _pick(snap, "국고채")
     kospi = _pick(snap, "코스피") or _pick(snap, "KOSPI")
     cb_snap = _pick(snap, "회사채")            # 스냅샷엔 이미 잡히고 있었다(감사 실측) — derived 추출만 누락이었음
-    cb = cb_trend(key)
+    cb = cb0                                    # 위에서 이미 조회(전량실패 가드용) — 재호출 방지
     cb_yield = (cb["latest"] if cb else (cb_snap["value"] if cb_snap else None))
     ktb3y_val = ktb3["value"] if ktb3 else None
     derived = {

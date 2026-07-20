@@ -64,7 +64,9 @@ def _load_krx_account_into_env():
 
 _load_krx_account_into_env()
 try:
-    from pykrx import stock as _krx
+    from common import suppress_stdout as _suppress_stdout
+    with _suppress_stdout():                 # pykrx 포크의 import-시 계정 ID 콘솔 노출 억제
+        from pykrx import stock as _krx
 except Exception:
     _krx = None
 
@@ -245,6 +247,11 @@ def get_market_flow(market):
 
 def _risk_off(markets):
     """시장 외국인 수급으로 risk-off 점수(0~100)+라벨+드라이버. PART A 가 환율/breadth 와 결합."""
+    # ★KRX 다운 시 markets 가 전부 source='none'(결측)이면 streak/cum20 이 0 으로 뭉개져 '낮음'이라는
+    #   거짓 안도가 나온다 → 시장 수급이 전량 결측이면 점수 대신 명시적 결측을 반환한다.
+    if not any((m or {}).get("source") == "krx" for m in markets.values()):
+        return {"risk_off_score": None, "risk_off_label": "결측(KRX 미수집)", "drivers": [],
+                "note": "시장 수급 전량 결측(KRX 다운 등) — score 산출 불가. 낮은 값이 아니라 미상이다."}
     score = 0
     drv = []
     streak = max([m.get("foreign_sell_streak") or 0 for m in markets.values()] or [0])

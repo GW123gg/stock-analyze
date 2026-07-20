@@ -91,6 +91,18 @@ def test_validate_predictions():
     check("v9.7: conviction!=max(prob) 차단(±0.05)", any("max(prob)" in e for e in v(bad)))
     bad_h = dict(ok_pick, horizon_days=10)
     check("v9.7: horizon_days enum(1|5|20) 차단", any("1|5|20" in e for e in v({"picks": [bad_h]})))
+    # v9.8 감사 반영 — dir enum·존재 검사, 관망일 market_call 위반 보존
+    bad = dict(base_mc, market_call={"kospi": {"dir": "flat",  # 오타(neutral 이어야)
+               "prob_up": 0.2, "prob_flat": 0.6, "prob_down": 0.2}})
+    check("v9.8: dir enum 오타 차단", any("up/down/neutral" in e for e in v(bad)))
+    bad = dict(base_mc, market_call={"kospi": {"prob_up": 0.2, "prob_flat": 0.6, "prob_down": 0.2}})
+    check("v9.8: dir 누락 차단", any("up/down/neutral" in e for e in v(bad)))
+    watch_bad = {"picks": [], "shorts": [], "market_call": {"kospi": {"dir": "up", "conviction": 0.5}}}
+    check("v9.8: 관망일(픽·숏0)에도 market_call prob 누락 차단(구 return [] 폐기 버그)",
+          any("prob_up/flat/down 누락" in e for e in v(watch_bad)))
+    check("v9.8: 관망일+정상 콜은 통과(발송 보존)",
+          v({"picks": [], "shorts": [], "market_call": {"kospi": {"dir": "up", "conviction": 0.6,
+             "prob_up": 0.6, "prob_flat": 0.25, "prob_down": 0.15}}}) == [])
     bad = dict(base_mc, market_call={"kospi": {"dir": "down", "prob_up": 0.5, "prob_flat": 0.3, "prob_down": 0.3}})
     check("v9.6: prob 합!=1 차단", any("합" in e for e in v(bad)))
     bad = dict(base_mc, market_call={"kospi": {"dir": "up", "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
@@ -165,6 +177,11 @@ def test_compute_labels_golden():
         missing = [k for k in lab if k not in rl.LABEL_COLS and k not in internal]
         check("labels: 반환키 전부 LABEL_COLS 등록(미등록=조용한 무효화)",
               not missing, str(missing))
+        # v9.8 계약: SNAPSHOT_MARKET_COLS ⊆ FEATURE_COLS (여기 없으면 _row_for 루프가 컬럼을
+        #   아예 안 실어 무음 no-op — pre_margin_* 3종이 이 방식으로 사라졌던 회귀 재발 차단).
+        snap_missing = [c for c in rl.SNAPSHOT_MARKET_COLS if c not in set(rl.FEATURE_COLS)]
+        check("labels: SNAPSHOT_MARKET_COLS 전부 FEATURE_COLS 등록(무음 no-op 방지)",
+              not snap_missing, str(snap_missing))
 
         # 익절 먼저 닿는 경로: D+1 +13% -> tp12 룰이면 D+1 실제 종가 +13 반환
         closes2 = [100.0, 113.0, 108.0, 105.0, 104.0, 103.0]
@@ -283,6 +300,15 @@ def test_new_collectors_pure():
     check("credit: 반대매매 비중 전달", p["misu"]["rt_sell_ratio_pct"] == 1.1)
     check("credit: 급감 시 디레버리징 라벨", "디레버리징" in p["level_label"], p["level_label"])
     check("credit: 빈 입력 -> 빈 dict", cc.build_payload([], []) == {})
+    # v9.8 감사: deposit.asof ISO 포맷(TMPV1 원문 YYYYMMDD 아님)
+    check("credit: deposit.asof ISO 포맷", p["deposit"]["asof"] == "2026-07-08", str(p["deposit"]["asof"]))
+    # v9.8 감사: 마지막 행 결측이면 d1/d5 위치기반이라 None(valid 압축으로 신장 금지)
+    gap_rows = credit_rows[:-1] + [dict(credit_rows[-1], TMPV2=None)]
+    pg = cc.build_payload(gap_rows, funds_rows)
+    check("credit: 마지막행 결측 -> 빈 dict(총잔고 None)", pg == {}, str(pg)[:60])
+    mid_gap = [dict(credit_rows[0], TMPV2=None)] + credit_rows[1:]
+    pm = cc.build_payload(mid_gap, funds_rows)
+    check("credit: 중간 결측 있어도 최신 유효 시 산출", pm.get("margin_loan", {}).get("total_eok") == 333620.0)
 
     import earnings_collect as ecal
     sample = ('<tr tablesorterdivider><td colspan="9" class="theDay">2026년 7월 20일 월요일</td></tr>'

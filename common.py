@@ -12,7 +12,26 @@ common.py — 여러 스크립트가 복붙하던 '원자적 저장' 원시함�
     헬퍼는 통합하지 않는다(값·부작용이 달라질 수 있음).
 """
 import os
+import sys
+import io as _io
 import json
+import contextlib
+
+
+@contextlib.contextmanager
+def suppress_stdout():
+    """with 블록 동안 stdout 을 버린다(정의만으로는 stdout 무접촉 — import 부작용 없음).
+
+    용도: pykrx 포크가 import(KRX 로그인) 시점에 계정 ID를 stdout 으로 찍는다
+    ('로그인 ID: ...'). 그 노출만 억제한다 — 네트워크 로그인 자체는 그대로 수행되어 동작 무변경.
+    stderr 는 건드리지 않아 실제 오류 로그는 보존된다.
+    """
+    _saved = sys.stdout
+    try:
+        sys.stdout = _io.StringIO()
+        yield
+    finally:
+        sys.stdout = _saved
 
 
 def save_json_atomic(path, obj, *, ensure_ascii=False, indent=2, fsync=False, ensure_dir=True):
@@ -118,8 +137,9 @@ def validate_predictions(payload):
       - entry_ref: 양수(예측 시점 가격 — 채점 기준)
       - horizon_days: 1|5|20 ([6.5] 타이밍 enum — v9.7 강화)
       - preprice: 픽만 필수(강함/부분/미반영)
-      - market_call: 콜이 있으면 prob 3종 필수 + conviction=max(prob)(±0.05) — v9.7 강화
-    payload 가 dict 가 아니거나 picks/shorts 가 모두 비면 그 사실을 오류로 본다.
+      - market_call: 콜이 있으면 prob 3종 필수 + dir enum + conviction=max(prob)(±0.05) — v9.7~9.8
+    payload 가 dict 가 아니면 오류. 픽·숏 0건(관망일) 자체는 오류가 아니되, market_call 위반은
+    그 경우에도 보존해 반환한다(v9.8 — 관망일에 콜만 내는 날의 게이트 구멍 차단).
     """
     errs = []
     if not isinstance(payload, dict):
@@ -153,7 +173,11 @@ def validate_predictions(payload):
             _amax = {"up": pu, "flat": pf, "down": pd}
             _dir = str(c.get("dir") or "").strip().lower()
             _map = {"up": "up", "neutral": "flat", "down": "down"}
-            if _dir in _map and _amax[_map[_dir]] < max(pu, pf, pd) - 1e-9:
+            # dir 자체의 존재·enum 검사(v9.8): 오타·누락 dir 은 argmax 검사를 조용히 건너뛰고
+            #   통과한 뒤 accuracy_tracker.grade_market_call 에서 무음 채점 스킵된다(영구 미채점).
+            if _dir not in _map:
+                errs.append(f"market_call.{mkt}: dir '{_dir or '누락'}' 은 up/down/neutral 중 하나여야 함([7.5])")
+            elif _amax[_map[_dir]] < max(pu, pf, pd) - 1e-9:
                 errs.append(f"market_call.{mkt}: dir '{_dir}' 이 argmax(prob)와 불일치")
             cv = c.get("conviction")
             if cv is not None:
@@ -169,8 +193,10 @@ def validate_predictions(payload):
     # 픽·숏 0건은 '오류가 아니다' — 국면 게이트([3-차익실현](5)·F1·F8)가 롱을 전면 보류시킨
     # 관망일에는 추천 없이 시장 방향(market_call)만 내는 게 정상이고, 그날도 메일은 나가야 한다.
     # (여기서 막으면 게이트를 잘 지킨 날일수록 메일이 안 나가는 역설이 생긴다.)
+    # ★단 errs 를 버리지 마라(v9.8 수정): market_call 이 유일한 예측인 관망일에 위 prob/dir
+    #   위반이 잡혔으면 그날이야말로 게이트가 작동해야 하는 날이다(예전엔 return [] 로 폐기됐다).
     if not picks and not shorts:
-        return []
+        return errs
     for kind, items in (("pick", picks), ("short", shorts)):
         for i, it in enumerate(items):
             if not isinstance(it, dict):

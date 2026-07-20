@@ -67,7 +67,9 @@ def _load_krx_account_into_env():
 
 _load_krx_account_into_env()
 try:
-    from pykrx import stock as _krx
+    from common import suppress_stdout as _suppress_stdout
+    with _suppress_stdout():                 # pykrx 포크의 import-시 계정 ID 콘솔 노출 억제
+        from pykrx import stock as _krx
 except Exception:
     _krx = None
 

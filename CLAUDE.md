@@ -24,9 +24,9 @@ supervisor 데몬이 상주할 수 있다(현재는 온디맨드 MCP 전환 중)
 | 회고 데이터 전달 | `python retro_forward.py --push` / 피드백 회수 `--scan-back` | |
 | 세션 경로 인자 | 따옴표 없이: `--session output\2026-…` | cmd에서 `--session "경로"`는 따옴표가 인자에 포함돼 "세션 없음" 오류 |
 
-- **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json·vkospi.json 4개는 루트에 저장**된다(정상 — 분석 지시 [5.9]/[5.10]가 루트에서 읽음). 세션에 없다고 실패 아님.
+- **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json·vkospi.json·credit_balance.json 5개는 루트에 저장**된다(정상 — 분석 지시 [5.9]~[5.12]가 루트에서 읽음). 세션에 없다고 실패 아님.
 - **신호 수집기는 '오늘 날짜 세션'을 자동 타겟**(common.resolve_session 위임): 자정 경계는 **6시간 폴백 창**으로 완화됨(23:50 collect→00:10 신호 OK). 오늘 세션도 6h 내 세션도 없으면 루트 폴백(무용).
-- **market_caution.py는 flow/deriv/ecos 산출물을 읽으므로 신호 중 맨 마지막에 실행.**
+- **market_caution.py는 flow/deriv/ecos 산출물을 읽으므로 신호 수집기 중 맨 마지막에 실행, 그 직후 snapshot_signals.py로 루트 신호 5종을 세션에 signals_snapshot_*로 동결**(빠뜨리면 루트 파일이 다음날 덮어써져 회고 국면입력(F1/F8)이 영구 공백).
 - KRX(pykrx)·BOK(ecos)는 **저녁·밤에 간헐 실패**(krx=0, timeout) — 스크립트는 exit 0 graceful. 데이터 완전성은 장중/아침이 최고.
 - 온디맨드 전 과정 절차는 **`..\stock_research_mcp\코워크_통합지시_최종.md`**(PART A) 참조.
 
@@ -47,7 +47,7 @@ supervisor 데몬이 상주할 수 있다(현재는 온디맨드 MCP 전환 중)
 
 ## ★ 검증 게이트 (코드 수정 후 필수 — 생략 금지)
 
-0. **`python testsun_tests.py` (골든 하네스, ~5초)** — 순수함수·계약(LABEL_COLS 등록 등) 자동 검증. 실패면 진행 금지.
+0. **`python tests/run_tests.py` (골든 하네스, ~5초)** — 순수함수·계약(LABEL_COLS 등록 등) 자동 검증. 실패면 진행 금지.
 1. `python -m py_compile <수정파일>` 2. `python -c "import <모듈>"`(의존 모듈 포함) 3. 대표 스크립트 **라이브 1회 실행**으로 산출물 확인(예: fsc_collect→세션 json) 4. `git status`로 비밀 미스테이징 확인 후 커밋. 5. 결과를 **정직하게** 보고(실패·부분성공을 성공으로 포장 금지).
 ⚠️ **분석이 끝난 세션(03_final_report 존재)에 신호 수집기를 재실행하지 마라** — 세션 파일이 새 시각 데이터로 덮여 회고 스냅샷(그날 분석가가 본 입력)이 오염된다. 테스트는 `--out`/임시폴더로.
 

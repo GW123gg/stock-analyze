@@ -11,7 +11,8 @@ earnings_collect.py — 한국 실적발표 캘린더 수집 → 세션 earnings
   파싱은 정규식(stdlib) — 사이트 구조 변경 시 빈 결과 → graceful 생략(수집 실패=정상 경로).
 
 [출력] 오늘 세션 earnings_calendar.json (세션 파일 — 루트 국면신호 아님, 종목 이벤트 데이터):
-  {asof_date, window{from,to}, events:[{date, name, slug, eps_actual, eps_forecast}...], count}
+  {asof_date, window{from,to}, events:[{date, name, slug}...], count}
+  (eps 실적치/예상치는 발표 캘린더 목록엔 없다 — 종목명·발표일 대조가 목적이라 3필드로 충분.)
 
 [설계] 독립 실행·graceful(실패 시 exit 0, 파일 미생성)·ASCII 로그 [earnings]·
   원자적 저장(common.save_json_atomic)·resolve_session 위임·이모지 금지.

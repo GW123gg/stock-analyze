@@ -44,8 +44,10 @@ PROD_SINGLE_OPT = "KRDRVOPEQU"       # 개별주식 옵션
 # KRX 세션 워밍업(로그인) — flow_collect import 가 KRX 로그인 수행. 실패해도 시도.
 _FETCH = None
 try:
-    import flow_collect  # noqa: F401  (import 시 KRX 로그인 → pykrx 세션 인증)
-    from pykrx.website.krx.future.core import 전종목시세 as _AllListing
+    from common import suppress_stdout as _suppress_stdout
+    with _suppress_stdout():                 # pykrx 포크의 import-시 계정 ID 콘솔 노출 억제
+        import flow_collect  # noqa: F401  (import 시 KRX 로그인 → pykrx 세션 인증)
+        from pykrx.website.krx.future.core import 전종목시세 as _AllListing
     _FETCH = _AllListing
 except Exception as e:
     log.warning("[deriv] pykrx/KRX 세션 준비 실패: %s", type(e).__name__)

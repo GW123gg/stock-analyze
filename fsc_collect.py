@@ -280,12 +280,14 @@ def get_history(code, days=DEFAULT_DAYS, key=None) -> list:
     # #A12(회고 15회차 최우선 지적): FSC 가 '성공하되 며칠 뒤처진' 데이터를 줄 수 있다
     # (실측 2026-07-20: FSC 마지막 07-15 vs 실제 최근 거래일 07-16 — 4개 드롭 연속 만기 동결,
     #  07-16 폭락일 -6.37% 누락으로 진행중 부분수익이 전량 낙관 편향).
-    # FSC 성공이 FDR 폴백을 가리는 구조가 원인 → 마지막 날짜가 3일+ 낡았으면 FDR 로 꼬리 보강.
+    # FSC 성공이 FDR 폴백을 가리는 구조가 원인 → 마지막 날짜가 '평일 2일+' 낡았으면 FDR 로 꼬리 보강.
+    # ★캘린더일 gap 은 매주 월요일(금요일 종가와 3일차)을 오탐한다 — 사이에 낀 '평일 수'로 판정.
     if rows:
         try:
-            _gap = (datetime.now().date()
-                    - datetime.strptime(rows[-1]["date"], "%Y-%m-%d").date()).days
-            if _gap >= 3:
+            _last_d = datetime.strptime(rows[-1]["date"], "%Y-%m-%d").date()
+            _biz_gap = sum(1 for i in range(1, (datetime.now().date() - _last_d).days)
+                           if (_last_d + timedelta(days=i)).weekday() < 5)
+            if _biz_gap >= 2:
                 fdr_rows = fetch_history_fdr(code, begin, end)
                 if fdr_rows and fdr_rows[-1]["date"] > rows[-1]["date"]:
                     _last = rows[-1]["date"]
@@ -413,16 +415,23 @@ def main():
     # A12 신선도 게이트: 07-16~19 가격 피드 4일 정지가 '성공 로그' 뒤에 숨어 늦게 발견됐다.
     # 전 종목 최신 거래일과 오늘의 차이를 메타로 남기고, 4일+(연휴 3일 초과)면 경고를 크게 찍는다.
     # 차단은 하지 않는다 — 있는 데이터로 진행하되(수집기 graceful 원칙) 소비자가 낡음을 알게 한다.
-    freshness = {"latest_trade_date": None, "age_cal_days": None, "stale": False}
+    freshness = {"latest_trade_date": None, "oldest_trade_date": None, "age_cal_days": None,
+                 "stale": False, "stale_ratio": None}
     try:
         _dates = [r.get("asof") for r in ordered if r.get("asof")]
         if _dates:
-            _latest = max(_dates)
-            _age = (datetime.now().date() - datetime.strptime(_latest, "%Y-%m-%d").date()).days
-            freshness = {"latest_trade_date": _latest, "age_cal_days": _age, "stale": _age >= 4}
+            _today = datetime.now().date()
+            _ages = [(_today - datetime.strptime(dd, "%Y-%m-%d").date()).days for dd in _dates]
+            _latest, _oldest = max(_dates), min(_dates)
+            _min_age = min(_ages)
+            # ★단일 max(date) 로 판정하면 1종목만 신선해도 나머지 정지가 가려진다 → 비율로 본다.
+            _stale_n = sum(1 for a in _ages if a >= 4)
+            _ratio = round(_stale_n / len(_ages), 3)
+            freshness = {"latest_trade_date": _latest, "oldest_trade_date": _oldest,
+                         "age_cal_days": _min_age, "stale": _ratio >= 0.5, "stale_ratio": _ratio}
             if freshness["stale"]:
-                log.warning("[fsc] ★신선도 경고: 최신 거래일 %s (%d일 경과) — 피드 정지 의심(A12). "
-                            "FDR 꼬리 보강도 실패했다는 뜻이므로 원인 확인 필요", _latest, _age)
+                log.warning("[fsc] ★신선도 경고: 종목 %.0f%%가 4일+ 낡음(최신 %s~최고령 %s) — 피드 정지 의심(A12). "
+                            "FDR 꼬리 보강도 실패했다는 뜻이므로 원인 확인 필요", _ratio * 100, _latest, _oldest)
     except Exception:
         pass
     payload = {

@@ -73,7 +73,9 @@ _load_krx_account_into_env()
 # pykrx 는 import 시점에 KRX 로그인을 시도하는데, KRX 가 IP 를 403 으로 차단하면
 # 로그인 응답(HTML)을 JSON 파싱하다 죽는다 → BaseException 으로 흡수(무손상).
 try:
-    from pykrx import stock as _krx
+    from common import suppress_stdout as _suppress_stdout
+    with _suppress_stdout():                 # pykrx 포크의 import-시 계정 ID 콘솔 노출 억제
+        from pykrx import stock as _krx
     PYKRX_AVAILABLE = True
     PYKRX_IMPORT_ERROR = ""
 except BaseException as _e:   # ImportError + JSONDecodeError + 기타 전부

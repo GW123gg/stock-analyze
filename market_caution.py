@@ -86,8 +86,10 @@ def kospi_ret5d():
 
 # KRX 세션(breadth용) — flow_collect import 가 KRX 로그인. 선택.
 try:
-    import flow_collect  # noqa: F401
-    from pykrx import stock as _krx_stock
+    from common import suppress_stdout as _suppress_stdout
+    with _suppress_stdout():                 # pykrx 포크의 import-시 계정 ID 콘솔 노출 억제
+        import flow_collect  # noqa: F401
+        from pykrx import stock as _krx_stock
     _KRX = True
 except Exception:
     _krx_stock = None
@@ -136,11 +138,15 @@ def compute(out_path):
     # 이길 수 있다 — 어느 입력이 하루 이상 묵었는지 산출물에 드러내(분석가가 해당 축 가중을 낮추게).
     inputs_age_h = {"flow_data": _age_h(flow), "deriv_sentiment": _age_h(deriv),
                     "ecos_macro": _age_h(ecos)}
-    stale_inputs = [k for k, v in inputs_age_h.items() if v is not None and v > 24.0]
+    # ★반올림(_age_h 가 round(...,1)) 때문에 정확히 24.0h 인 전일 파일이 v>24.0 을 못 넘겨 누락됐다
+    #   → 0.5h 마진(>=23.5). 일일 파이프라인에서 23.5h+ 파일은 반드시 전일본이라 오탐 경로 없음.
+    stale_inputs = [k for k, v in inputs_age_h.items() if v is not None and v >= 23.5]
 
     k5 = kospi_ret5d()
     pcr_oi = ((deriv.get("market") or {}).get("pcr_oi"))
-    risk_off = ((flow.get("risk_off") or {}).get("score"))
+    # ★flow_collect 는 risk_off_score 로 쓰는데 예전엔 여기서 "score" 를 읽어 축③이 항상 죽어 있었다
+    #   (isinstance(None,...) False → 가산 안 됨). 생산자 키에 맞춘다(flow_collect.py:267).
+    risk_off = ((flow.get("risk_off") or {}).get("risk_off_score"))
     usdkrw_5d = ((ecos.get("derived") or {}).get("usdkrw_change_5d_pct"))
     br = breadth()
     dratio = (br or {}).get("decline_ratio")
@@ -189,10 +195,19 @@ def compute(out_path):
         drivers.append(f"원/달러 5일 +{usdkrw_5d}%(원화 약세)")
 
     score = round(max(0.0, min(100.0, score)), 1)
+    # ★결측 축 추적(KRX/BOK 다운 시 전 축이 결측→score 0→'우호'라는 거짓 안도가 나오는 걸 막는다).
+    #   가산식이라 결측은 조용히 0점이 된다 — 몇 개 축이 빠졌는지 소비자가 알게 하고, 과반 결측이면
+    #   '우호' 단정을 유보(score 는 왜곡하지 않되 라벨·플래그로 불확실성을 표면화).
+    missing_axes = [nm for nm, v in (("breadth", dratio), ("kospi", k5), ("pcr", pcr_oi),
+                    ("risk_off", risk_off if isinstance(risk_off, (int, float)) else None),
+                    ("usdkrw", usdkrw_5d)) if v is None]
+    inputs_incomplete = len(missing_axes) >= 3
     if score >= 60:
         label = "경계(신규 롱 보수적)"
     elif score >= 35:
         label = "주의"
+    elif inputs_incomplete:
+        label = "판단보류(입력 과반 결측 — 데이터 복구 후 재평가)"
     else:
         label = "우호"
     # 국면 종류(회고 D): 공포(breadth붕괴/고PCR) vs 눌림목(완만한 하락) 구분 — 둘은 롱 대응이 정반대.
@@ -217,7 +232,9 @@ def compute(out_path):
         "inputs": {"kospi_ret5d": k5, "pcr_oi": pcr_oi, "risk_off_score": risk_off,
                    "usdkrw_change_5d_pct": usdkrw_5d, "breadth": br},
         "inputs_age_h": inputs_age_h,          # #M2 각 파일입력의 나이(시간). None=결측/라이브
-        "stale_inputs": stale_inputs,          # #M2 24h 초과 입력 — 분석가는 해당 축 가중 하향([5.10])
+        "stale_inputs": stale_inputs,          # #M2 23.5h+ 입력 — 분석가는 해당 축 가중 하향([5.10])
+        "missing_axes": missing_axes,          # 결측 축(가산식이라 0점 처리됨 — 낮은 score 를 안도로 오독 금지)
+        "inputs_incomplete": inputs_incomplete,  # 과반(3+) 결측 = score 신뢰 불가(KRX/BOK 다운 등)
         "_note": ("회고 운영화 복합 국면점수. score>=60 또는 allow_market_up_call=false 면 그날 신규 롱은 "
                   "분할/보류·추천수 축소, 시장 UP 콜 금지(단일 촉매로 올리지 말 것). regime_kind '공포'면 롱 회피·숏 우대, "
                   "'눌림목'이면 역추세 롱 기회. breadth(하락배수)가 단일 촉매 과대가중을 막는 핵심."),

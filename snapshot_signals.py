@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-snapshot_signals.py ─ 루트 저장 신호 4종을 '오늘 세션'에 동결(freeze) 복사
+snapshot_signals.py ─ 루트 저장 신호 5종을 '오늘 세션'에 동결(freeze) 복사
 
 [왜 필요한가 — 회고 12회차 감사 결과]
-  deriv_sentiment/ecos_macro/vkospi/market_caution 4종은 루트에 저장되고 매일 덮어써진다.
+  deriv_sentiment/ecos_macro/vkospi/market_caution/credit_balance 5종은 루트에 저장되고 매일 덮어써진다.
   그래서 (a) 회고 시점에 '그날 분석가가 본 국면 입력'을 재현할 수 없고,
-      (b) retro_label 이 이 4종을 피처로 쓸 수 없어(실측 0건) F1/F8 게이트의 1차 입력이
+      (b) retro_label 이 이 5종을 피처로 쓸 수 없어(실측 0건) F1/F8 게이트의 1차 입력이
           회고 학습에서 통째로 빠져 있었다(사각지대 #10).
   이 스크립트가 신호 체인 '맨 마지막'(market_caution 다음)에 1회 돌면, 그날의 국면 입력이
   세션에 signals_snapshot_*.json 으로 남아 회고가 룩어헤드 없이 학습할 수 있다.
@@ -18,7 +18,7 @@ snapshot_signals.py ─ 루트 저장 신호 4종을 '오늘 세션'에 동결(f
   - 콘솔 ASCII 태그([snapshot])만, 이모지 금지. UTF-8 IO, ensure_ascii=False.
 
 [사용법]
-  python snapshot_signals.py            # 루트 4종 → 오늘 세션에 동결
+  python snapshot_signals.py            # 루트 5종 → 오늘 세션에 동결
   python snapshot_signals.py --check    # 무엇이 복사될지 점검만(쓰기 없음)
 """
 import os
@@ -40,7 +40,7 @@ log = logging.getLogger("snapshot")
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
 
-# 루트에 저장되는 국면·거시 신호(세션 아님) — CLAUDE.md/CODEMAP.md 의 '루트 저장 4종'과 동일
+# 루트에 저장되는 국면·거시 신호(세션 아님) — CLAUDE.md/CODEMAP.md 의 '루트 저장 5종'과 동일
 ROOT_SIGNALS = ["deriv_sentiment.json", "ecos_macro.json", "vkospi.json", "market_caution.json",
                 "credit_balance.json"]   # v9.8: 신용잔고(빚투) 국면 신호 — 회고 pre_margin_* 원천
 PREFIX = "signals_snapshot_"
@@ -64,7 +64,7 @@ def _load(path):
 
 
 def snapshot(session_dir, check_only=False):
-    """루트 4종 → session_dir/signals_snapshot_<name>.json. 복사한 파일명 리스트 반환."""
+    """루트 5종 → session_dir/signals_snapshot_<name>.json. 복사한 파일명 리스트 반환."""
     done = []
     for fn in ROOT_SIGNALS:
         src = os.path.join(HERE, fn)
@@ -101,7 +101,7 @@ def snapshot(session_dir, check_only=False):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="루트 신호 4종을 오늘 세션에 동결 복사")
+    ap = argparse.ArgumentParser(description="루트 신호 5종을 오늘 세션에 동결 복사")
     ap.add_argument("--check", action="store_true", help="복사 대상만 점검(쓰기 없음)")
     ap.add_argument("--session", default="", help="세션 폴더 직접 지정(기본: 오늘 최신)")
     args = ap.parse_args()

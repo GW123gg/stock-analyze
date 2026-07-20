@@ -81,7 +81,9 @@ _load_krx_account_into_env()
 # → ImportError 만 잡으면 그 크래시가 프로그램 전체를 죽인다. 어떤 예외든(403/네트워크/
 #   로그인 실패 포함) 흡수해서 "pykrx 없음"으로 처리하고 FDR·Naver 폴백으로 넘어간다.
 try:
-    from pykrx import stock as _krx
+    from common import suppress_stdout as _suppress_stdout
+    with _suppress_stdout():                 # pykrx 포크의 import-시 계정 ID 콘솔 노출 억제
+        from pykrx import stock as _krx
     PYKRX_AVAILABLE = True
 except BaseException as _e:   # ImportError + JSONDecodeError + 기타 전부
     _krx = None

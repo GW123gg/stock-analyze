@@ -93,8 +93,8 @@ def _eok(v):
 
 
 def _d5_pct(vals):
-    """직전 5거래행 대비 변화율(%). 표본 부족/0 이면 None."""
-    if len(vals) >= 6 and vals[-6]:
+    """직전 5거래행 대비 변화율(%). 위치 기반(양 끝 결측·0 이면 None — 갭 신장 방지)."""
+    if len(vals) >= 6 and vals[-1] is not None and vals[-6]:
         return round((vals[-1] / vals[-6] - 1.0) * 100.0, 2)
     return None
 
@@ -113,12 +113,15 @@ def build_payload(credit_rows, funds_rows):
 
     valid = [v for v in m_total if v is not None]
     look = valid[-60:]
+    # pct_rank 은 분포 순위라 결측 제거해도 무방. 단 d1/d5 는 '전일·5거래일 전' 위치 기반이라
+    # 결측 제거(valid)로 계산하면 갭이 조용히 신장된다 → 위치 기반(m_total)으로 엄격히.
     pct_rank = round(sum(1 for v in look if v <= valid[-1]) / len(look) * 100.0, 1) if look else None
-    d1 = round(valid[-1] - valid[-2], 1) if len(valid) >= 2 else None
-    d5 = _d5_pct(valid)
+    d1 = (round(m_total[-1] - m_total[-2], 1)
+          if len(m_total) >= 2 and m_total[-2] is not None else None)
+    d5 = _d5_pct(m_total)
 
     margin = {
-        "total_eok": valid[-1], "kospi_eok": _eok(last.get("TMPV3")),
+        "total_eok": m_total[-1], "kospi_eok": _eok(last.get("TMPV3")),
         "kosdaq_eok": _eok(last.get("TMPV4")),
         "d1_chg_eok": d1, "d5_chg_pct": d5, "pct_rank_60d": pct_rank,
     }
@@ -129,10 +132,12 @@ def build_payload(credit_rows, funds_rows):
     misu = None
     if funds_rows:
         f_last = funds_rows[-1]
-        dep_vals = [x for x in (_eok(r.get("TMPV2")) for r in funds_rows) if x is not None]
-        if dep_vals:
-            deposit = {"total_eok": dep_vals[-1], "d5_chg_pct": _d5_pct(dep_vals),
-                       "asof": f_last.get("TMPV1")}
+        dep_series = [_eok(r.get("TMPV2")) for r in funds_rows]   # 위치 보존(갭 신장 방지)
+        if dep_series and dep_series[-1] is not None:
+            _fd = f_last.get("TMPV1") or ""
+            _fasof = f"{_fd[:4]}-{_fd[4:6]}-{_fd[6:]}" if len(_fd) == 8 else _fd
+            deposit = {"total_eok": dep_series[-1], "d5_chg_pct": _d5_pct(dep_series),
+                       "asof": _fasof}
         try:
             misu = {"misu_eok": _eok(f_last.get("TMPV5")),
                     "rt_sell_eok": _eok(f_last.get("TMPV6")),

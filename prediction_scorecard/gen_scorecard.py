@@ -22,6 +22,12 @@ from datetime import datetime, timedelta
 
 SR = os.getenv("STOCK_RESEARCH", r"C:\Users\USER\Desktop\stock_research")
 SB = os.getenv("STOCK_BACKTEST", r"C:\Users\USER\Desktop\stock_backtest")
+# stock_backtest 폴더가 backup 으로 이동돼(폴더 정리) import 가 조용히 깨졌었다(2026-07-20 발견).
+# 원위치 우선, 없으면 backup 폴백 — price_cache 는 자기완결형(자체 cache/ 사용)이라 위치 무관.
+if not os.path.isdir(SB):
+    _bak = r"C:\Users\USER\Desktop\backup\stock_backtest"
+    if os.path.isdir(_bak):
+        SB = _bak
 if SB not in sys.path:
     sys.path.insert(0, SB)
 import price_cache as pc

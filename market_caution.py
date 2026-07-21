@@ -213,6 +213,11 @@ def compute(out_path):
     # 국면 종류(회고 D): 공포(breadth붕괴/고PCR) vs 눌림목(완만한 하락) 구분 — 둘은 롱 대응이 정반대.
     if fear_breadth or (pcr_oi is not None and pcr_oi >= 1.5):
         regime_kind = "공포(롱 회피·falling knife)"
+    elif inputs_incomplete:
+        # ★결측이 심하면 score 가 인위적으로 낮아진다 → '눌림목=롱 기회'라는 거짓 매수 신호를 막는다.
+        #   (2026-07-21: KRX 다운으로 breadth/risk_off 결측인데 score 25→'우호'가 PCR '공포'와 상충).
+        #   개별 축(PCR 등)이 공포를 가리키면 위에서 이미 잡히고, 아니면 '판정보류'로 남긴다.
+        regime_kind = "판정보류(입력 결측 — 낮은 score 를 눌림목으로 오독 금지)"
     elif (k5 is not None and k5 <= 0) and score < 35:
         regime_kind = "눌림목(역추세 롱 기회)"
     elif (k5 is not None and k5 >= 5):
@@ -220,7 +225,8 @@ def compute(out_path):
     else:
         regime_kind = "중립"
     # 시장 UP 콜 허용 여부(회고 A·C): breadth 붕괴/경계면 '단일 촉매 UP 콜' 금지 신호.
-    allow_market_up = not (fear_breadth or score >= 60)
+    #   결측 과반이면 score 를 신뢰 못 하므로 UP 콜도 보수적으로 막는다(거짓 안도 방지).
+    allow_market_up = not (fear_breadth or score >= 60 or inputs_incomplete)
 
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -237,7 +243,9 @@ def compute(out_path):
         "inputs_incomplete": inputs_incomplete,  # 과반(3+) 결측 = score 신뢰 불가(KRX/BOK 다운 등)
         "_note": ("회고 운영화 복합 국면점수. score>=60 또는 allow_market_up_call=false 면 그날 신규 롱은 "
                   "분할/보류·추천수 축소, 시장 UP 콜 금지(단일 촉매로 올리지 말 것). regime_kind '공포'면 롱 회피·숏 우대, "
-                  "'눌림목'이면 역추세 롱 기회. breadth(하락배수)가 단일 촉매 과대가중을 막는 핵심."),
+                  "'눌림목'이면 역추세 롱 기회. breadth(하락배수)가 단일 촉매 과대가중을 막는 핵심. "
+                  "★inputs_incomplete=true(과반 결측)면 score(및 낮은 score발 '우호')를 신뢰하지 말고 "
+                  "살아있는 개별 축(regime_kind·PCR·간밤신호)과 웹검색으로 판단하라 — 결측이 만든 낮은 score 를 안도로 읽지 마라."),
     }
     tmp = out_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:

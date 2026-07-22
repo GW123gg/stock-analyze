@@ -49,9 +49,12 @@ from common import save_json_atomic
 
 
 def _today_latest_session():
-    """H-3: common.resolve_session 위임 - 자정 경계 완화(6h 폴백) + 복제 제거."""
+    """H-3: common.resolve_session 위임 - 자정 경계 완화(6h 폴백) + 복제 제거.
+    ★prefer_sameday_earliest=True: 같은 날 세션이 2개 이상이면(데몬+온디맨드 동시) '가장 먼저
+    생성된' 세션(=predictions 가 붙는 채택 세션)에 동결한다. mtime 최신을 고르면 늦게 생긴 orphan
+    세션에 동결돼 회고 국면입력이 공백이 된다(2026-07-21·22 실사고)."""
     from common import resolve_session
-    return resolve_session(OUTPUT_DIR)
+    return resolve_session(OUTPUT_DIR, prefer_sameday_earliest=True)
 
 
 def _load(path):
@@ -110,6 +113,19 @@ def main():
     if not sess or not os.path.isdir(sess):
         log.info("[snapshot] 오늘 세션 없음 — 동결 생략(정상 종료)")
         return 0
+    # 같은 날 세션이 2개 이상이면(데몬+온디맨드 이중 생성) 어디에 동결하는지 크게 경고 —
+    # 의도와 다르면 --session 으로 명시하라(2026-07-21·22 실사고: orphan 세션에 동결됨).
+    if not args.session:
+        _today = datetime.now().strftime("%Y-%m-%d")
+        try:
+            _same = [n for n in os.listdir(OUTPUT_DIR)
+                     if n.startswith(_today) and os.path.isdir(os.path.join(OUTPUT_DIR, n))]
+            if len(_same) > 1:
+                log.warning("[snapshot] ★같은 날 세션 %d개 감지: %s -> 동결 대상=%s "
+                            "(의도와 다르면 --session 으로 지정하라)",
+                            len(_same), ", ".join(sorted(_same)), os.path.basename(sess))
+        except Exception:
+            pass
     done = snapshot(sess, check_only=args.check)
     log.info("[snapshot] %s: %d/%d 동결 -> %s",
              "점검" if args.check else "완료", len(done), len(ROOT_SIGNALS), sess)

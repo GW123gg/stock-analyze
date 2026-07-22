@@ -274,6 +274,39 @@ def test_snapshot_signals():
 
 
 # =====================================================================
+# 6.5 resolve_session — 같은 날 다중 세션(데몬+온디맨드) 안전 선택 (v9.9)
+# =====================================================================
+def test_resolve_session_multisession():
+    import time
+    from datetime import datetime
+    from common import resolve_session
+    t = tempfile.mkdtemp(prefix="rs_")
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        early = os.path.join(t, today + "_063115")   # 먼저 생성(채택 세션)
+        late = os.path.join(t, today + "_063500")    # 나중 생성(orphan)
+        os.makedirs(early); os.makedirs(late)
+        # mtime 을 일부러 뒤집는다: 이름은 early 가 앞이지만 late 가 '더 최신 mtime'
+        os.utime(early, (time.time() - 100, time.time() - 100))
+        os.utime(late, (time.time(), time.time()))
+        check("resolve: 기본은 mtime 최신(late) 반환(기존 동작 보존)",
+              os.path.basename(resolve_session(t)) == today + "_063500")
+        check("resolve: prefer_sameday_earliest 는 '먼저 생성된' early 반환(snapshot 오염 방지)",
+              os.path.basename(resolve_session(t, prefer_sameday_earliest=True)) == today + "_063115")
+        # 완료 세션(03_final_report) 제외 가드가 다중세션에서도 유지되는지
+        open(os.path.join(early, "03_final_report.md"), "w").close()
+        check("resolve: 완료 세션은 후보 제외(earliest 여도 late 선택)",
+              os.path.basename(resolve_session(t, prefer_sameday_earliest=True)) == today + "_063500")
+        # 단일 세션이면 두 모드 동일
+        shutil.rmtree(late)
+        os.remove(os.path.join(early, "03_final_report.md"))
+        check("resolve: 단일 세션이면 모드 무관 동일",
+              resolve_session(t) == resolve_session(t, prefer_sameday_earliest=True))
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
+
+# =====================================================================
 # 7. v9.8 신규 수집기 순수함수 — credit(신용잔고)·earnings(실적캘린더)·vkospi 페이로드
 # =====================================================================
 def test_new_collectors_pure():
@@ -343,7 +376,7 @@ def main():
     print("=" * 60)
     for fn in (test_validate_predictions, test_norm_tag, test_compute_labels_golden,
                test_pre_entry_snapshot_first, test_retro_forward_helpers, test_snapshot_signals,
-               test_new_collectors_pure):
+               test_resolve_session_multisession, test_new_collectors_pure):
         try:
             fn()
         except Exception as e:

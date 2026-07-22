@@ -522,7 +522,7 @@ BASE_COLS = [
     # 식별자(#6/#8) — 중복·다중horizon·종목클러스터 인지용
     "rec_id", "parent_rec_id", "ticker_rec_seq",
     "pred_date", "kind", "ticker", "name", "tag", "timing", "horizon",
-    "conviction", "entry_ref", "preprice", "flow_unit_check", "thesis",
+    "conviction", "entry_ref", "entry_ref_estimated", "preprice", "flow_unit_check", "thesis",
 ]
 
 
@@ -826,7 +826,8 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
                  else str(item.get("tag") or "").strip("[] ")) if kind == "pick" else "숏"),
         "timing": item.get("timing"), "horizon": horizon,
         "conviction": acc._safe_float(item.get("conviction")) if ACC_OK else item.get("conviction"),
-        "entry_ref": entry_ref, "preprice": item.get("preprice"),
+        "entry_ref": entry_ref, "entry_ref_estimated": bool(item.get("entry_ref_estimated")),
+        "preprice": item.get("preprice"),
         "thesis": (str(item.get("thesis") or "")[:200]),
     }
     # 피처(추천 시점 스냅샷)

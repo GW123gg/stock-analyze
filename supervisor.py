@@ -447,9 +447,29 @@ def _record_daily_status_locked(p, status, extra):
         _mlog(f"[daily_status] 기록 실패: {type(e).__name__}")
 
 
-def run_morning_pipeline():
+def _today_session_exists() -> bool:
+    """오늘 날짜(YYYY-MM-DD) 접두 + COLLECT_DONE.flag 를 가진 세션이 이미 있으면 True.
+    데몬 스케줄 morning 과 외부 온디맨드 collect 가 같은 날 겹칠 때, 데몬이 중복 세션·collect 를
+    만들지 않도록 하는 감지기(2026-07-21·22 double-session 실사고: 데몬 06:35 collect 가 온디맨드
+    06:31 세션과 충돌해 orphan 세션 생성→snapshot 오염). find_deep_pending 등과 같은 스캔 규약."""
+    out = os.path.join(BASE_DIR, "output")
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        for nm in os.listdir(out):
+            if nm.startswith("_") or not nm.startswith(today):
+                continue
+            if os.path.isfile(os.path.join(out, nm, "COLLECT_DONE.flag")):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def run_morning_pipeline(guard_dup: bool = False):
     """
     .bat 없이 파이썬이 직접 수집 파이프라인을 순차 실행한다(별도 스레드에서 호출됨).
+    guard_dup=True(스케줄 morning 경로): step0 뒤, 오늘 이미 collect 된 세션이 있으면 조기 종료
+      (외부 온디맨드/수동 collect 와의 double-session 방지). manual(RUN_NOW) 경로는 명시 요청이라 가드 안 함.
       step1) research_agent.py collect --no-playwright   (광역수집)
       step2) morning_postprocess.py --check-only          (폴백 필요 판단, 종료코드)
       step3) 종료코드!=0 이면 api_collect.py               (폴백 수집)
@@ -466,6 +486,15 @@ def run_morning_pipeline():
     #   분석가(Cowork)가 오늘 분석 시작 시 scorecard.md 를 읽어 자기보정한다.
     _run_step("step0 accuracy_tracker",
               [py, os.path.join(BASE_DIR, "accuracy_tracker.py")], timeout=600)
+
+    # ★double-session 가드(스케줄 morning 경로만): 오늘 이미 collect 된 세션이 있으면(외부 온디맨드/
+    #   수동 collect) 데몬은 중복 collect·세션을 만들지 않고 조기 종료한다. step0(채점)은 위에서 이미
+    #   돌아 scorecard 는 매일 갱신된다. (2026-07-21·22: 데몬 06:35 collect 가 온디맨드 세션과 충돌해
+    #   orphan 생성→snapshot 오염. 사용자가 데몬을 못 끈 날에도 이 가드가 이중 세션을 막는다.)
+    if guard_dup and _today_session_exists():
+        _mlog("오늘 이미 collect 된 세션 존재 → 스케줄 morning 중복 실행 생략(double-session 방지)")
+        _mlog("=" * 50)
+        return
 
     # step1: 광역 수집
     # collect 는 광역수집(RSS/Naver)만. Gemini 본문복구는 끔(429 병목 회피, 분석은 Cowork 담당).
@@ -622,7 +651,7 @@ def maybe_run_morning(morning_time: str, state: dict) -> bool:
     log(f"🌅 morning 수집 트리거 (시각 {morning_time} 경과) → 파이썬 직접 실행(스레드)")
     try:
         _morning_thread = threading.Thread(
-            target=run_morning_pipeline, name="morning-pipeline", daemon=True)
+            target=lambda: run_morning_pipeline(guard_dup=True), name="morning-pipeline", daemon=True)
         _morning_thread.start()
         state["last_morning_run"] = today
         state["last_morning_started_at"] = now.isoformat()

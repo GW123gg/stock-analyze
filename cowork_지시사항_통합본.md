@@ -453,10 +453,14 @@ COLLECT_DONE 확인 후 세션폴더에 보통 다음이 있다:
         "foreign_net_5d": 숫자, "inst_net_5d": 숫자, "trend": "유입|유출|혼조"
       },
       "regime": {"score": 0~100, "label": "risk-on|risk-off|전환", "drivers": ["..."]},
-      "kr_index": {"kospi_ret5d_pct": 숫자, "kosdaq_ret5d_pct": 숫자, "asof_close": 숫자}
+      "kr_index": {"kospi_ret5d_pct": 숫자, "kosdaq_ret5d_pct": 숫자, "asof_close": 숫자,
+                   "kospi_close": 숫자, "kosdaq_close": 숫자}
     }
   - kr_index(v8.9 신규): KOSPI/KOSDAQ '직전 5거래일 수익률(%)' — [3-차익실현](5) KOSPI 국면
     게이트·[6.6] F6 ③의 판정 근거(전일 종가 기준·룩어헤드 없음). 구세션엔 없을 수 있다(결측 폴백).
+    ★v9.9 신규: `kospi_close`·`kosdaq_close`(지수 '레벨' 포인트) — **(0-2) 데스크 콜 카드의 코스닥
+    지지/저항/레인지를 이 값 기준으로 채워라**(예전엔 코스닥 레벨이 없어 % 로만 냈다, 2026-07-21).
+    결측이면 자체 웹검색으로 코스닥 지수 포인트를 확인해 레벨을 채워라(null 로 두지 마라).
   - market_context.json 이 없거나 일부 결측이면 → 기존처럼 자체 웹검색으로 대체·보강하고,
     0번 섹션과 5번 출처 섹션에 "market_context 결측 — 자체 웹검색 기반" 명시.
   - 있어도 호스트 수집은 전일 마감 기준이므로, 핵심 수치(美선물·VIX·환율·SOX·외국인)는
@@ -1461,6 +1465,8 @@ scorecard.md 를 갱신하는 근거다. 즉 이 파일의 정직성이 [0.5] �
     {"ticker": "6자리", "name": "종목명", "tag": "단기스윙|장투가능|장전선취매",
      "timing": "임박|단기|중기", "horizon_days": 1또는5또는20,
      "entry_ref": 현재가또는전일종가숫자,
+     "entry_ref_estimated": false(선택 — entry_ref 가 '지연종가×등락률' 추정이면 true, v9.9),
+     "entry_ref_basis": "추정근거문자열(선택 — estimated=true 일 때)",
      "target_pct": 목표익절퍼센트(F4·예 8), "stop_pct": 손절퍼센트음수(F4·예 -5),
      "partial_take_pct": 분할익절퍼센트(F6④·예 7 — 고점 +7~10% 도달 시 일부 익절. 회고: 픽 절반이 D+1~2 즉시고점),
      "trailing_stop_pct": 트레일링스탑퍼센트(예 -5 — 고점 대비 이만큼 하락 시 청산. 특히 tag=장투가능, 차익실현형 반납 -12% 방지),
@@ -1484,7 +1490,15 @@ scorecard.md 를 갱신하는 근거다. 즉 이 파일의 정직성이 [0.5] �
     영구 검증 불가 — 현재 일부 픽이 timing 을 빠뜨려 회고가 못 본다.) 숏도 timing·conviction·entry_ref·horizon_days 필수(발송 게이트 기준 — preprice 만 픽 전용).
   - entry_ref 는 **반드시 예측 시점 가격** — 자체 웹검색으로 확인한 현재가, 또는 그게
     불가하면 force_scores 기준일 종가(data_basis_date 기준)를 넣어라. 사후에 미래값을
-    끼워넣지 마라(룩어헤드 편향 금지). entry_ref 가 추정이면 thesis 에 "(기준일 종가)" 표기.
+    끼워넣지 마라(룩어헤드 편향 금지).
+  - ★**fsc 시세 지연 시 entry_ref(v9.9 — 사후채점 왜곡 방지)**: fsc_prices.json 이 하루 늦어
+    (freshness.latest_trade_date 가 분석일 전일보다 낡음) 당일 종가를 못 얻는 경우가 있다(2026-07-21:
+    개별시세 07-20 까지인데 수급은 07-21). 이때 두 방법 중 하나:
+      (a) **정직한 실측 사용(권장)**: 지연된 실제 종가(예 07-20)를 entry_ref 로 쓰고 data_basis_date 를
+         그 날짜로 맞춰라 — 추정 오차 0. 채점 시점이 하루 밀릴 뿐 왜곡은 없다.
+      (b) **재구성(불가피할 때만)**: '지연 종가 × 당일 등락률'로 추정하면, predictions 의 그 픽/숏에
+         **반드시 구조화 플래그** `entry_ref_estimated: true` 와 `entry_ref_basis`(예 "07-20종가×07-21등락률추정")를
+         남겨라 — 회고·채점이 추정 행을 감쇠·구분할 수 있게. thesis 자유텍스트로만 남기면 기계가 못 본다.
   - dir/conviction/target_pct/invalidation 은 리포트 0-2 의 방향성 콜과 정확히 일치.
   - ★v9.6 확률 예보(필수 — [4.7] 규칙 3): `prob_up/prob_flat/prob_down` 합=1.00(±0.03),
     dir = argmax(prob), conviction = max(prob), 상한 0.75. flat 정의 = 채점 밴드(T+1 ±0.5%,

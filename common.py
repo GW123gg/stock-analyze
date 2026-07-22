@@ -68,7 +68,7 @@ def atomic_write_text(path, text):
 # ─────────────────────────────────────────────────────────────────────
 # 세션 해석 (H-3 — 12개 수집기의 _today_latest_session 복제 통합)
 # ─────────────────────────────────────────────────────────────────────
-def resolve_session(output_dir, fallback_age_h=6):
+def resolve_session(output_dir, fallback_age_h=6, prefer_sameday_earliest=False):
     """오늘 날짜 세션 중 최신 폴더 경로. 없으면 '최근 fallback_age_h 시간 내' 최신 세션(자정 경계 완화).
 
     자정 함정(문서화된 지뢰): collect 를 23:50 에 돌리고 신호를 00:10 에 돌리면 날짜가 어긋나
@@ -105,11 +105,20 @@ def resolve_session(output_dir, fallback_age_h=6):
             cands.append((mt, p))
         elif now - mt <= fallback_age_h * 3600:
             recent.append((mt, p))
-    pool = cands or recent
-    if not pool:
+    if cands:
+        # ★같은 날 세션이 2개 이상일 때(데몬 morning + 온디맨드 collect 동시 실행 등):
+        #   prefer_sameday_earliest 이면 '가장 먼저 생성된' 세션(=분석·predictions 가 붙는 채택 세션)을
+        #   고른다. 폴더명이 %Y-%m-%d_%H%M%S 라 이름 오름차순 = 생성순(디렉터리 mtime 은 이후 쓰기로
+        #   뒤집혀 신뢰 불가). 이 옵션 없이는 mtime 최신=늦게 생긴 orphan 세션을 골라 snapshot 이
+        #   엉뚱한 세션에 동결돼 회고 국면입력(F1/F8)이 공백이 된다(2026-07-21·22 실사고).
+        if prefer_sameday_earliest and len(cands) > 1:
+            return min(cands, key=lambda t: os.path.basename(t[1]))[1]
+        cands.sort(reverse=True)
+        return cands[0][1]
+    if not recent:
         return None
-    pool.sort(reverse=True)
-    return pool[0][1]
+    recent.sort(reverse=True)          # 자정 폴백은 '최신' 유지(23:50→00:10 연속 실행 완화)
+    return recent[0][1]
 
 
 # ─────────────────────────────────────────────────────────────────────

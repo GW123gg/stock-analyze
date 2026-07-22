@@ -772,16 +772,22 @@ def collect_kr_index_momentum(notes):
     06:30 실행 시 마지막 종가 = 전일이므로 룩어헤드 없음(진입 시점에 아는 값).
     +2% 초과 = 강세추격 국면(회고 실측: 픽 ret_h -9.3%/적중 14%) → cowork [3-차익실현](5) 게이트.
     """
-    out = {"kospi_ret5d_pct": None, "kosdaq_ret5d_pct": None, "asof_close": None}
+    # asof_close(코스피 종가)는 하위호환 유지. kospi_close/kosdaq_close 를 추가 —
+    # 예전엔 코스닥 지수 '레벨'을 아예 안 담아 코스닥 콜의 지지/저항/레인지를 % 로만 냈다(2026-07-21).
+    out = {"kospi_ret5d_pct": None, "kosdaq_ret5d_pct": None, "asof_close": None,
+           "kospi_close": None, "kosdaq_close": None}
     for key, code in (("kospi_ret5d_pct", INDEX_KOSPI), ("kosdaq_ret5d_pct", INDEX_KOSDAQ)):
         try:
             closes = _index_closes(code, days=15)
             if closes and len(closes) >= 6:
                 out[key] = round((closes[-1] / closes[-6] - 1) * 100, 2)
                 if key == "kospi_ret5d_pct":
-                    out["asof_close"] = round(float(closes[-1]), 2)
+                    out["asof_close"] = round(float(closes[-1]), 2)   # 하위호환(코스피)
+                    out["kospi_close"] = round(float(closes[-1]), 2)
+                else:
+                    out["kosdaq_close"] = round(float(closes[-1]), 2)  # ★신규: 코스닥 지수 레벨
             else:
-                notes.append(f"kr_index: {code} 종가 부족(5d 수익률 결측)")
+                notes.append(f"kr_index: {code} 종가 부족(5d 수익률·레벨 결측)")
         except Exception as e:
             notes.append(f"kr_index: {code} 실패 ({type(e).__name__}: {e})")
     if out["kospi_ret5d_pct"] is not None:
@@ -842,7 +848,8 @@ def build_context():
         kr_index = collect_kr_index_momentum(notes)
     except Exception as e:
         notes.append(f"kr_index: 예외 ({type(e).__name__}: {e})")
-        kr_index = {"kospi_ret5d_pct": None, "kosdaq_ret5d_pct": None, "asof_close": None}
+        kr_index = {"kospi_ret5d_pct": None, "kosdaq_ret5d_pct": None, "asof_close": None,
+                    "kospi_close": None, "kosdaq_close": None}
 
     try:
         etf_flow = collect_etf_flow(notes)

@@ -60,6 +60,9 @@ FSC_URL = ("https://apis.data.go.kr/1160100/service/"
 MAX_WORKERS = 5          # 30 TPS 한도 내 보수적
 REQ_TIMEOUT = 15
 DEFAULT_DAYS = 40
+# 회고용 조회창의 '진입 이전' 여유(캘린더일). 20거래일 평균을 계산하려면 주말·공휴일을 감안해
+# 최소 30일 이상이 필요하다. 45일 ≈ 30거래일. 이 값을 줄이면 avg_volume_20d 가 다시 짧아진다.
+PRE_ENTRY_LOOKBACK_DAYS = 45
 
 # FDR 폴백
 try:
@@ -287,11 +290,19 @@ def get_history(code, days=DEFAULT_DAYS, key=None) -> list:
             _last_d = datetime.strptime(rows[-1]["date"], "%Y-%m-%d").date()
             _biz_gap = sum(1 for i in range(1, (datetime.now().date() - _last_d).days)
                            if (_last_d + timedelta(days=i)).weekday() < 5)
-            if _biz_gap >= 2:
+            # ★v10.0 (회고 A21 — FSC 상시 1거래일 지연): 임계를 2→1 로 낮춘다.
+            #   _biz_gap 은 '마지막 수집일과 오늘 사이에 낀 평일 수'라 월요일(금 종가)엔 0 이다.
+            #   따라서 >=1 은 '직전 평일 종가가 비어 있다'는 뜻이고 월요일 오탐이 없다.
+            #   >=2 였을 때는 하루 지연이 상시 방치돼 회고 채점이 하루씩 밀렸다.
+            if _biz_gap >= 1:
                 fdr_rows = fetch_history_fdr(code, begin, end)
                 if fdr_rows and fdr_rows[-1]["date"] > rows[-1]["date"]:
                     _last = rows[-1]["date"]
-                    rows = rows + [r for r in fdr_rows if r["date"] > _last]
+                    # ★당일 봉은 배제: 장중 실행 시 FDR 이 미확정 부분봉을 종가처럼 반환해
+                    #   룩어헤드로 채점 피드를 오염시킬 수 있다(06:30 실행이면 애초에 없다).
+                    _today_s = datetime.now().strftime("%Y-%m-%d")
+                    rows = rows + [r for r in fdr_rows
+                                   if _last < r["date"] < _today_s]
         except Exception:
             pass
     if not rows:
@@ -310,7 +321,13 @@ def get_ohlcv_series(code, start_date, key=None):
     """retro_label 용: start_date(date) 이후를 충분히 덮는 (date_obj, close, volume) 리스트(오름차순).
     종가(상승률 계산)와 거래량(차익실현·큰손 매도 신호)을 함께 준다. FSC 우선, FDR 폴백. 실패 시 []."""
     from datetime import date as _date
-    days = max(DEFAULT_DAYS, (datetime.now().date() - start_date).days + 10) if isinstance(start_date, _date) else DEFAULT_DAYS
+    # ★v10.0 (회고 A18) — 조회창의 '시작점'을 start_date 에 고정한다.
+    #   기존 `max(DEFAULT_DAYS, (now-start).days + 10)` 는 begin = now - days = start_date - 10일 이라
+    #   진입 전 확보 봉이 10캘린더일(≈6거래일)뿐이었다 → avg_volume_20d 가 이름과 달리 '6일 평균'
+    #   이었고(실측: pred 06-03 기준 6봉), now 가 흐르면 값이 매 실행 달라졌다(회차 간 재현 불가).
+    #   PRE_ENTRY_LOOKBACK_DAYS=45 면 begin = start_date - 45일(≈30거래일) 로 실행일과 무관해진다.
+    days = ((datetime.now().date() - start_date).days + PRE_ENTRY_LOOKBACK_DAYS
+            if isinstance(start_date, _date) else DEFAULT_DAYS)
     rows = get_history(code, days=days, key=key)
     out = []
     for r in rows:

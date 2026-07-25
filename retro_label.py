@@ -102,7 +102,14 @@ _KOSPI_CACHE = {}
 
 
 def _kospi_ret5d(base_date):
-    """추천일까지 KOSPI(KS11) 직전 5거래일 수익률(%) — 진입시점 국면 프록시(룩어헤드 없음)."""
+    """추천일 '직전' 5거래일 KOSPI(KS11) 수익률(%) — 진입시점 국면 프록시.
+
+    ★v10.0 룩어헤드 수정(회고 A22): 예전엔 base_date(추천일) 종가까지 포함해 계산했다.
+    그 종가는 추천 시점(06:30)에 아직 존재하지 않는 미래값이라 CLAUDE.md 절대규칙
+    '룩어헤드 금지: 회고 피처는 그 시점 이전 데이터만'을 위반했고, 분석가가 아침에 실제로 본
+    market_context.kr_index.kospi_ret5d_pct(D-1 기준)와도 값이 달라 게이트 검증이 왜곡됐다.
+    → base_date **미만** 봉만 사용한다(= D-1 종가로 끝나는 5거래일 수익률).
+    """
     if not FDR_OK or base_date is None:
         return None
     key = base_date.strftime("%Y%m%d")
@@ -110,9 +117,19 @@ def _kospi_ret5d(base_date):
         return _KOSPI_CACHE[key]
     val = None
     try:
-        df = fdr.DataReader("KS11", (base_date - timedelta(days=16)).strftime("%Y-%m-%d"),
+        # 20일로 넓힌다: base_date 를 빼고도 6개 봉(D-1..D-6)을 확보해야 하므로(연휴 대비)
+        df = fdr.DataReader("KS11", (base_date - timedelta(days=20)).strftime("%Y-%m-%d"),
                             base_date.strftime("%Y-%m-%d"))
-        c = [float(x) for x in df["Close"].tolist() if x == x]
+        c = []
+        for _idx, _close in zip(df.index, df["Close"].tolist()):
+            try:
+                _d = _idx.date()
+            except Exception:
+                continue
+            if _d >= base_date:          # ★추천일 당일 이후는 진입 시점에 알 수 없다
+                continue
+            if _close == _close:         # NaN 제외
+                c.append(float(_close))
         if len(c) >= 6:
             val = round((c[-1] / c[-6] - 1.0) * 100, 2)
     except Exception:
@@ -329,6 +346,15 @@ def _cap_market_of(code):
                 log.info("[retro] cap/market: FDR 실패 -> 디스크 캐시 사용(%d종목)", len(_CAPMKT_MAP))
     v = _CAPMKT_MAP.get(str(code).zfill(6))
     return (v[0], v[1]) if v else (None, None)
+
+
+# ★A19: 범주형 컬럼의 '허용값 전체'. 회고가 문자열 접두 매칭으로 추측하다 집계를 틀린 사고가
+#   있었다('메가' vs '메가(10조+)', KOSDAQ 완전일치로 'KOSDAQ GLOBAL' 53건 누락).
+#   → dataset 메타에 그대로 실어 분석이 추측하지 않게 한다. _cap_bucket 리터럴과 동기 유지(하네스 검사).
+CAP_BUCKETS = ["메가(10조+)", "대형(1조+)", "중형(3천억+)", "소형"]
+# exchange 는 FDR StockListing 의 Market 원값을 가공 없이 싣는다(정규화하면 정보가 준다).
+#   'KOSDAQ GLOBAL' 은 코스닥 소속이므로 **코스닥 집계 시 반드시 함께 세어라**.
+EXCHANGES = ["KOSPI", "KOSDAQ", "KOSDAQ GLOBAL"]
 
 
 def _cap_bucket(cap_eok):
@@ -747,12 +773,16 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
             return float(vols[i]) if (0 <= i < len(vols) and vols[i] is not None) else None
         except Exception:
             return None
+    # ★v10.0 (A18): 봉이 모자라면 '짧은 평균'을 20일 평균인 척 내보내지 않는다.
+    #   예전엔 6봉만 있어도 그 평균을 avg_volume_20d 로 실었다(이름과 다른 값이 회고 임계의
+    #   분모로 쓰임). 이제 20봉 미만이면 None — 결측이 조용한 오류보다 낫다.
+    #   가격창 앵커 고정(fsc_collect.PRE_ENTRY_LOOKBACK_DAYS)으로 정상 데이터에선 발동하지 않는다.
+    _MIN_VOL_BARS = 20
     pre_vols = [x for x in vols[max(0, start - 20):start + 1] if x is not None]  # 진입 직전까지 ~20일
-    avg_vol = (sum(pre_vols) / len(pre_vols)) if pre_vols else None
+    avg_vol = (sum(pre_vols) / len(pre_vols)) if len(pre_vols) >= _MIN_VOL_BARS else None
     # #A6: 비율(pre_*_ratio) 분모용 — 추천일 '당일' 거래량 제외(pre_ 명명 준수, 경미한 룩어헤드 제거).
-    # avg_volume_20d(라벨용, 당일 포함)는 기존 동작 보존 — 회고가 축적한 vol_ratio 해석과의 호환.
     _prior = [x for x in vols[max(0, start - 20):start] if x is not None]
-    avg_vol_ex = (sum(_prior) / len(_prior)) if _prior else None
+    avg_vol_ex = (sum(_prior) / len(_prior)) if len(_prior) >= _MIN_VOL_BARS else None
     entry_vol = _v(start)
     peak_vol = _v(start + peak_k)
     worst_k = min(range(1, len(rets)), key=lambda k: rets[k]) if len(rets) > 1 else 0
@@ -1156,7 +1186,9 @@ def main():
             "pre_usdkrw_chg5d": "[진입피처·거시] 동결 원/달러 5일 변화율(%, +면 원화약세=외인 위험회피)",
             "market_cap_eok": "[메타·#E] 현재 시총(억원) — ⚠️조회시점 값(진입시점 아님). 버킷 분류 전용, 수익률 크기 회귀 금지",
             "cap_bucket": "[메타·#E] 메가(10조+)/대형(1조+)/중형(3천억+)/소형 — '주도주 예외'(반도체·바이오 대장) 정량 검증용(§3.16)",
-            "exchange": "[메타·#E] KOSPI/KOSDAQ — 시장별 분해(B6/B14: 대형주 레짐과 코스닥은 따로 논다 검증용)",
+            "exchange": ("[메타·#E] KOSPI / KOSDAQ / **KOSDAQ GLOBAL**(3종 — categorical_values 참조) "
+                         "— 시장별 분해(B6/B14: 대형주 레짐과 코스닥은 따로 논다 검증용). "
+                         "★코스닥 집계는 KOSDAQ + KOSDAQ GLOBAL 을 합산하라"),
             "avg_volume_20d_ex_entry": "[라벨·#A6] 추천일 '당일 제외' 직전 20일 평균 거래량 — pre_*_ratio 의 분모(룩어헤드 제거판)",
             "kospi_ret_h_pct": "[라벨·#R1] 같은 보유창(진입일 종가->T+h)의 KOSPI 수익률(%) — 시장 기여분",
             "alpha_h_pct": "[라벨·#R1] ret_h - kospi_ret_h = 지수 차감 초과수익(%). 음수 크면 종목선택 실패, ret_h 음수인데 alpha>=0 이면 시장베타가 주범(처방: 픽 억제가 아니라 노출 축소/헤지)",
@@ -1202,6 +1234,18 @@ def main():
         #   오인하거나(2026-07-24 회차) 반대로 못 알아챈다(07-19 누락은 6일간 미발견).
         #   → pred_date 별 커버리지를 메타로 노출해 회고가 즉시 판정하게 한다.
         "snapshot_coverage": _snapshot_coverage(rows),
+        # ★A19: 범주형 허용값 — 분석이 접두/부분 매칭으로 추측하지 않도록 명시.
+        "categorical_values": {
+            "cap_bucket": CAP_BUCKETS,
+            "exchange": EXCHANGES,
+            "timing": ["임박", "단기", "중기"],
+            "kind": ["pick", "short"],
+            "label_status": ["matured", "maturing", "no_label"],
+            "_src_kind": ["prediction", "archive"],
+            "note": ("문자열 완전일치로 집계하라. ★'KOSDAQ GLOBAL' 은 코스닥 소속이므로 "
+                     "코스닥 집계에 반드시 포함시켜라(과거 회차가 이를 빠뜨려 코스닥 열위를 "
+                     "과장했다). cap_bucket 도 '메가' 접두가 아니라 '메가(10조+)' 전체와 비교하라."),
+        },
         # #8 종목 단위 유효표본(비독립성) — 명목 N(rows)보다 신뢰구간이 좁게 과대평가되지 않게.
         "n_unique_tickers": len({r.get("ticker") for r in rows if r.get("ticker")}),
         "src_kind_weight": {"prediction": 1.0, "archive": 0.6},   # #3 회고가 archive를 한 단계 낮춰 가중

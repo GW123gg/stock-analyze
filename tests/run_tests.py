@@ -198,6 +198,12 @@ def test_compute_labels_golden():
         check("labels: 스냅샷 커버리지 — 전부 정상이면 빈 목록",
               rl._snapshot_coverage([{"pred_date": "2026-07-20",
                                       "pre_regime_kind": "x"}])["dates_missing_after_start"] == [])
+        # ★A19: 메타에 싣는 허용값 enum 이 실제 함수 반환값과 어긋나면 회고가 또 오집계한다.
+        _produced = {rl._cap_bucket(v) for v in (200000, 50000, 5000, 100)}
+        check("labels: CAP_BUCKETS enum 이 _cap_bucket 실제 반환과 일치",
+              _produced == set(rl.CAP_BUCKETS), f"{sorted(_produced)} vs {sorted(rl.CAP_BUCKETS)}")
+        check("labels: EXCHANGES 에 KOSDAQ GLOBAL 포함(코스닥 누락 사고 방지)",
+              "KOSDAQ GLOBAL" in rl.EXCHANGES and "KOSPI" in rl.EXCHANGES)
 
         # 익절 먼저 닿는 경로: D+1 +13% -> tp12 룰이면 D+1 실제 종가 +13 반환
         closes2 = [100.0, 113.0, 108.0, 105.0, 104.0, 103.0]

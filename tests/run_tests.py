@@ -182,6 +182,22 @@ def test_compute_labels_golden():
         snap_missing = [c for c in rl.SNAPSHOT_MARKET_COLS if c not in set(rl.FEATURE_COLS)]
         check("labels: SNAPSHOT_MARKET_COLS 전부 FEATURE_COLS 등록(무음 no-op 방지)",
               not snap_missing, str(snap_missing))
+        # v10.0 국면 스냅샷 커버리지: 도입일 이전 결측은 '정상', 이후 결측만 '결함'
+        cov = rl._snapshot_coverage([
+            {"pred_date": "2026-07-15", "pre_regime_kind": None},     # 도입 전 = 정상
+            {"pred_date": "2026-07-18", "pre_regime_kind": "공포"},
+            {"pred_date": "2026-07-19", "pre_regime_kind": None},     # 도입 후 결측 = 결함
+            {"pred_date": "2026-07-20", "pre_regime_kind": "공포"},
+        ])
+        check("labels: 스냅샷 커버리지 — 정상일 목록",
+              cov["dates_with_snapshot"] == ["2026-07-18", "2026-07-20"],
+              str(cov["dates_with_snapshot"]))
+        check("labels: 스냅샷 커버리지 — 도입 후 누락만 결함으로",
+              cov["dates_missing_after_start"] == ["2026-07-19"],
+              str(cov["dates_missing_after_start"]))
+        check("labels: 스냅샷 커버리지 — 전부 정상이면 빈 목록",
+              rl._snapshot_coverage([{"pred_date": "2026-07-20",
+                                      "pre_regime_kind": "x"}])["dates_missing_after_start"] == [])
 
         # 익절 먼저 닿는 경로: D+1 +13% -> tp12 룰이면 D+1 실제 종가 +13 반환
         closes2 = [100.0, 113.0, 108.0, 105.0, 104.0, 103.0]

@@ -518,6 +518,39 @@ LABEL_COLS = [
     # 투자자별 순매수(보유기간, 억원) — 누가 사고 팔았나
     "flow_foreign_eok", "flow_inst_eok", "flow_indiv_eok",
 ]
+SNAPSHOT_START_DATE = "2026-07-18"   # signals_snapshot_* 도입일. 그 이전 결측은 '정상'이다.
+
+
+def _snapshot_coverage(rows):
+    """pred_date 별 국면 스냅샷(pre_regime_kind) 커버리지 요약.
+
+    회고가 '결측=결함'인지 '결측=정상(기능 도입 전)'인지 스스로 판정할 수 있게 만드는 메타.
+    missing_dates 는 **도입일 이후인데도 비어 있는 날** — 이것만이 진짜 조사 대상이다.
+    """
+    by_date = {}
+    for r in (rows or []):
+        d = r.get("pred_date")
+        if not d:
+            continue
+        has = r.get("pre_regime_kind") is not None
+        slot = by_date.setdefault(d, [0, 0])
+        slot[0] += 1
+        if has:
+            slot[1] += 1
+    missing = sorted(d for d, (tot, hit) in by_date.items()
+                     if hit == 0 and d >= SNAPSHOT_START_DATE)
+    covered = sorted(d for d, (tot, hit) in by_date.items() if hit > 0)
+    return {
+        "snapshot_start_date": SNAPSHOT_START_DATE,
+        "dates_with_snapshot": covered,
+        "dates_missing_after_start": missing,
+        "note": ("dates_missing_after_start 가 비어 있으면 국면 스냅샷은 정상이다. "
+                 f"{SNAPSHOT_START_DATE} 이전 pred_date 의 pre_* 국면 결측은 기능 도입 전이라 "
+                 "정상이며 결함으로 보고하지 마라. 목록에 날짜가 있으면 그날 snapshot_signals 가 "
+                 "돌지 않았다는 뜻(소급 복구 불가 — 루트 신호는 이미 덮어써졌다)."),
+    }
+
+
 BASE_COLS = [
     # 식별자(#6/#8) — 중복·다중horizon·종목클러스터 인지용
     "rec_id", "parent_rec_id", "ticker_rec_seq",
@@ -1164,6 +1197,11 @@ def main():
         "n_matured": n_matured,
         "n_profit_take": n_pt,
         "n_archive_rows": sum(1 for r in rows if r.get("_src_kind") == "archive"),
+        # ★국면 스냅샷 커버리지(v10.0): 세션에 signals_snapshot_* 이 동결되지 않으면 pre_regime_kind
+        #   등 F1/F8 국면 입력이 통째로 빈다. 그 사실이 '조용히' 지나가면 회고가 결측을 결함으로
+        #   오인하거나(2026-07-24 회차) 반대로 못 알아챈다(07-19 누락은 6일간 미발견).
+        #   → pred_date 별 커버리지를 메타로 노출해 회고가 즉시 판정하게 한다.
+        "snapshot_coverage": _snapshot_coverage(rows),
         # #8 종목 단위 유효표본(비독립성) — 명목 N(rows)보다 신뢰구간이 좁게 과대평가되지 않게.
         "n_unique_tickers": len({r.get("ticker") for r in rows if r.get("ticker")}),
         "src_kind_weight": {"prediction": 1.0, "archive": 0.6},   # #3 회고가 archive를 한 단계 낮춰 가중
@@ -1189,6 +1227,12 @@ def main():
         log.info("[retro] 저장: %s / %s", out_json, out_csv)
         log.info("[retro] 예측일 %d개 · 행 %d개(만기도달 %d · 차익실현형 %d) · 무결성=%s",
                  n_pred, len(rows), n_matured, n_pt, "OK" if ok else "불일치(경고)")
+        # ★국면 스냅샷 누락을 '그날' 알린다(07-19 누락이 6일간 미발견됐던 사고 방지).
+        _miss = (payload.get("snapshot_coverage") or {}).get("dates_missing_after_start") or []
+        if _miss:
+            log.warning("[retro] ★국면 스냅샷 누락 pred_date %d일: %s "
+                        "— 그날 snapshot_signals 미실행(소급 복구 불가). "
+                        "회고의 국면별 분해가 그만큼 빈다.", len(_miss), ", ".join(_miss))
         if not ok:
             log.warning("[retro] 저장 무결성 불일치 — 다음 push 가 검증에서 막을 수 있음")
     except Exception as e:

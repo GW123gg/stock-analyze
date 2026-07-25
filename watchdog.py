@@ -110,6 +110,11 @@ def launch_supervisor() -> bool:
 
 
 def main():
+    # ★킬스위치 존중(2026-07-25): 데몬 상시 오프 모드면 '죽어 있는 게 정상'이라 되살리지 않는다.
+    #   (supervisor.main 도 같은 플래그로 자기 실행을 막지만, 여기서 먼저 끊어야 재가동 시도가
+    #    5분마다 로그를 더럽히지 않는다.) 재활성은 SUPERVISOR_DISABLED.flag 삭제.
+    if os.path.isfile(os.path.join(sv.BASE_DIR, "SUPERVISOR_DISABLED.flag")):
+        return
     healthy, reason = supervisor_healthy()
     if healthy:
         # 정상일 땐 로그 스팸 방지 위해 조용히 종료

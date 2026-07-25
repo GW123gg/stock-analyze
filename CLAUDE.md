@@ -1,7 +1,8 @@
 # stock_research — 한국주식 리서치 파이프라인 (라이브 프로덕션)
 
 매일 아침 뉴스·수급을 수집→분석→추천 메일 발송하는 **실운영 시스템**이다. git 있음(작업 전 커밋 확인).
-supervisor 데몬이 상주할 수 있다(현재는 온디맨드 MCP 전환 중). **여기서의 실수는 실제 발송 메일·회고 데이터셋을 오염시킨다.**
+**운영 모드 = 코워크 예정작업 온디맨드(2026-07-25 전환 완료). supervisor 데몬은 상시 오프다** —
+예정작업(터미널 MCP)이 수집·분석·발송을 직접 실행한다. **여기서의 실수는 실제 발송 메일·회고 데이터셋을 오염시킨다.**
 **파일별 역할·입출력·데이터 흐름 전체 지도는 `CODEMAP.md`** — 코드 탐색 전에 먼저 읽어라(재탐색 낭비 방지).
 
 ## ★ 절대 규칙 (위반 금지)
@@ -9,6 +10,9 @@ supervisor 데몬이 상주할 수 있다(현재는 온디맨드 MCP 전환 중)
 1. **비밀 파일 내용 출력·전송·커밋 금지**: `*_api.txt`(dart/fsc/mirae/naver/gemini/ecos/gdelt/apify)·`gemini_keys.txt`·`mail_config.txt(.full)`·`appscript_config.txt`·`krx_account.txt`·`gmail_credentials.json`. 존재 확인은 크기만. `.gitignore`가 `*.txt` 전체를 차단하니 **git add -f 금지**, 커밋 전 `git status`로 비밀 미포함 확인.
 2. **콘솔에 4바이트 이모지 출력 금지**(cp949 크래시). 리포트·메일 본문도 이모지 금지, 기호는 BMP(▲▼)만. 파일 IO는 UTF-8, JSON은 `ensure_ascii=False`.
 3. **supervisor/데몬을 임의로 재시작·종료하지 마라**(사용자 확인 필요). 종료는 `stop_supervisor.bat`(lock PID 기반)로만.
+   **현재 데몬은 상시 오프**: `SUPERVISOR_DISABLED.flag`(코드 킬스위치 — supervisor·watchdog 이 시작 즉시 종료) +
+   Startup 바로가기 `.lnk.off` + 예약작업 3종 Disabled. **이 플래그를 임의로 지우지 마라**(지우면 데몬이 부활해
+   예정작업과 세션이 이중 생성된다). 데몬 복귀는 사용자 지시가 있을 때만.
 4. **`output/_archive`·`_designtest`·`_retired`·다른 날짜 세션을 분석·수정하지 마라.**
 5. **추측 금지**: CLI 인자·파일 위치·함수 동작이 불확실하면 **먼저 grep/Read로 코드를 확인**하라. "아마 이럴 것"으로 실행하지 마라(아래 CLI 진실표의 함정들이 그렇게 생겼다).
 6. 라이브 파일 수정 전 `_backup/`에 타임스탬프 백업(또는 git 커밋), 수정 후 반드시 [검증 게이트] 통과.

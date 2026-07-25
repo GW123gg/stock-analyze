@@ -1145,7 +1145,23 @@ def main():
                     help=f"매일 수집 시각 HH:MM. 생략 시 코드 상단 MORNING_TIME({MORNING_TIME}) 사용")
     ap.add_argument("--no-morning", action="store_true", help="자동 수집 비활성(감시만)")
     ap.add_argument("--once", action="store_true", help="1회만 처리 후 종료(테스트)")
+    ap.add_argument("--ignore-disabled", action="store_true",
+                    help="SUPERVISOR_DISABLED.flag 를 무시하고 강제 실행(일시 점검용)")
     args = ap.parse_args()
+
+    # ★킬스위치(2026-07-25, 사용자 지시): 운영 모드가 '코워크 예정작업 온디맨드'로 바뀌어 데몬은
+    #   상시 오프다. OS 자동시작(Startup 바로가기·예약작업)은 이미 껐지만, 그것들이 복구되거나
+    #   누가 .bat 을 더블클릭해도 데몬이 살아나지 않도록 코드 레벨에서 한 번 더 막는다.
+    #   재활성: 이 파일을 지우면 즉시 원복(내용 무관, 존재 자체가 신호).
+    _disabled = os.path.join(BASE_DIR, "SUPERVISOR_DISABLED.flag")
+    if os.path.isfile(_disabled) and not args.ignore_disabled:
+        log("=" * 60)
+        log("supervisor 실행 중단 — SUPERVISOR_DISABLED.flag 존재(데몬 상시 오프 모드)")
+        log("  현재 운영: 코워크 예정작업 온디맨드(수집·분석·발송을 예정작업이 직접 실행)")
+        log(f"  데몬을 다시 쓰려면 이 파일을 삭제하라: {_disabled}")
+        log("  일시 강제 실행: python supervisor.py --ignore-disabled")
+        log("=" * 60)
+        return
 
     interval = max(5, args.interval)
     morning_enabled = not args.no_morning

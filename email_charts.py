@@ -144,10 +144,15 @@ def range_gauge(low, current, high, low_label="지지", high_label="저항",
         f'</tr></table>' + _caption(caption))
 
 
-def compare_bars(items, title="", caption="", value_suffix="", color=C_BAR) -> str:
-    """[(라벨, 값), ...] → 가로 비교 막대. 최대값 기준 상대 폭. 빈 입력이면 ''.
+def compare_bars(items, title="", caption="", value_suffix="", color=C_BAR,
+                 axis_max=None) -> str:
+    """[(라벨, 값), ...] → 가로 비교 막대. 빈 입력이면 ''.
 
-    값은 0 이상 숫자만(음수 섞이면 폭 계산이 무의미 → 절대값 기준 + 부호는 텍스트로).
+    axis_max: 축 상한을 '고정'한다(예: 확신도는 스키마 상한 0.8).
+      None 이면 최대값 기준 상대 폭 — 값들이 촘촘할 때(예: 확신도 0.42~0.50) **차이를 과장**한다.
+      실측(2026-07-25 조사): 픽 확신도 (max-min)이 0.05~0.25(중앙값 0.13)라 상대 스케일이면
+      0.42가 0.50 대비 84% 막대로 보여 '큰 차이'로 오독된다 → 고정 축이 정직하다.
+    값은 절대값으로 폭을 잡고 부호는 텍스트로 보인다(음수 혼재 시 폭 비교가 무의미하므로).
     """
     rows = []
     for it in (items or []):
@@ -168,7 +173,13 @@ def compare_bars(items, title="", caption="", value_suffix="", color=C_BAR) -> s
     if dropped:
         _more = f"외 {dropped}개 생략(상위 {_MAX_ROWS}개만 표시)"
         caption = f"{caption} · {_more}" if caption else _more
-    peak = max(abs(v) for _, v in rows) or 1.0
+    _fixed = _num(axis_max)
+    if _fixed is not None and _fixed > 0:
+        peak = _fixed
+        _ax = f"축 0~{_fixed:g}{value_suffix} 고정"
+        caption = f"{caption} · {_ax}" if caption else _ax
+    else:
+        peak = max(abs(v) for _, v in rows) or 1.0
     out = []
     for label, v in rows:
         pc = int(round(abs(v) / peak * 100))

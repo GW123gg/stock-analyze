@@ -3282,8 +3282,10 @@ def _dashboard_html(session_dir) -> str:
                 except (TypeError, ValueError):
                     continue
             _items.sort(key=lambda t: -t[1])
-            conv_chart = _cbars(_items, title="픽 확신도 비교",
-                                caption="막대가 길수록 상대적으로 확신이 큰 픽(절대 성공률이 아님)")
+            # axis_max=0.8: [7.5] 스키마의 픽 확신 상한. 상대 스케일이면 0.42~0.50 처럼
+            # 촘촘한 값이 '큰 차이'로 과장된다(2026-07-25 조사 실측) → 고정 축으로 정직하게.
+            conv_chart = _cbars(_items, title="픽 확신도 비교", axis_max=0.8,
+                                caption="막대가 길수록 확신이 큰 픽(절대 성공률이 아님)")
     except Exception as e:
         log.warning(f"[render] 확신도 비교 차트 생략({type(e).__name__})")
     picks = picks + conv_chart
@@ -3449,6 +3451,20 @@ def render_report_html(session_dir: str) -> str:
         html_path = os.path.join(session_dir, "03_final_report.html")
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
+        # ★Gmail 클리핑 경고(v10.0): 본문이 ~102KB 를 넘으면 Gmail 이 뒷부분을 잘라
+        #   "메시지 일부가 표시되지 않았습니다"로 접는다 = 독자가 결론·부록을 못 본다.
+        #   실측(2026-07-25): 최근 발송본 중 6건이 임계 초과(최대 150KB)였다.
+        #   차단하지 않고 경고만 한다 — 발송은 되게 하되 다음 회차에 분량을 줄이라는 신호.
+        try:
+            _bytes = len(html.encode("utf-8"))
+            if _bytes > 102400:
+                log.warning(
+                    f"[render] ★메일 본문 {_bytes:,}B — Gmail 클리핑 임계(102,400B) 초과. "
+                    f"수신자에게 뒷부분이 접힌다. [7.0] 계약대로 본문을 줄이고 부록을 압축하라.")
+            elif _bytes > 92160:
+                log.info(f"[render] 메일 본문 {_bytes:,}B — 클리핑 임계(102,400B)에 근접")
+        except Exception:
+            pass
         return html_path
     except Exception as e:
         log.warning(f"[render] HTML 변환 실패: {e}")

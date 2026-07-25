@@ -407,6 +407,16 @@ def test_email_charts():
     check("charts: bar 절단 시 생략 개수 명시", "외 18개 생략" in many, many[-160:])
     check("charts: bar 상한 이내면 절단 문구 없음",
           "생략" not in ec.compare_bars([("A", 1), ("B", 2)]))
+    # ★고정 축: 촘촘한 값(확신도 0.42~0.50)을 상대 스케일로 그리면 차이가 과장된다.
+    #   axis_max 를 주면 '가능 범위 대비 위치'를 보여줘 오독을 막는다(2026-07-25 조사 반영).
+    _rel = _re.findall(r'width="(\d+)%" bgcolor', ec.compare_bars([("A", .5), ("B", .42)]))
+    _fix = _re.findall(r'width="(\d+)%" bgcolor',
+                       ec.compare_bars([("A", .5), ("B", .42)], axis_max=0.8))
+    check("charts: 상대 스케일은 최대값이 100%", _rel[:1] == ["100"], str(_rel))
+    check("charts: 고정 축이면 상한 대비 비율(<100%)",
+          _fix and int(_fix[0]) < 80 and int(_fix[0]) > 50, str(_fix))
+    check("charts: 고정 축이면 축 범위를 캡션에 명시",
+          "축 0~0.8" in ec.compare_bars([("A", .5)], axis_max=0.8))
     # RR: 정상 / 순서 뒤집힘(숏 등) 생략
     r = ec.rr_bar(100, 112, 95)
     check("charts: rr 정상 + RR 표기", "RR" in r and "진입" in r)

@@ -2828,13 +2828,53 @@ def _colorize_report_html(html: str) -> str:
     return html
 
 
+_CHART_TOKEN = "ZZCHARTBLOCK%dZZ"
+_CHART_FENCE_RE = re.compile(r"^[ \t]*```[ \t]*chart[ \t]*\r?\n(.*?)^[ \t]*```[ \t]*$",
+                             re.S | re.M | re.I)
+
+
+def _extract_chart_fences(md_text: str):
+    """리포트의 ```chart 블록을 자리표시자로 치환하고 {토큰: 차트HTML} 을 함께 반환한다.
+
+    [왜 후치환인가] 차트 HTML 을 마크다운에 그대로 넣으면 nl2br 이 <br> 을 끼워넣거나
+    _colorize_report_html 이 인라인 스타일의 숫자·기호를 색칠해 레이아웃이 깨진다.
+    → 변환 '전'에 토큰으로 빼두고, 변환·색칠이 모두 끝난 '뒤'에 원본 HTML 로 되돌린다.
+    차트 렌더가 빈 문자열이면(데이터 결측) 블록 자체를 지운다 — 깨진 차트를 내보내지 않는다.
+    """
+    charts = {}
+
+    def _sub(m):
+        try:
+            from email_charts import render_chart_fence
+            html = render_chart_fence(m.group(1))
+        except Exception:
+            html = ""
+        if not html:
+            return ""                       # 결측·오형식 → 블록 삭제(본문 흐름 유지)
+        tok = _CHART_TOKEN % len(charts)
+        charts[tok] = html
+        return f"\n\n{tok}\n\n"
+
+    return _CHART_FENCE_RE.sub(_sub, md_text or ""), charts
+
+
+def _restore_chart_fences(body_html: str, charts: dict) -> str:
+    """마크다운 변환·색칠이 끝난 HTML 에서 자리표시자를 차트 HTML 로 되돌린다."""
+    for tok, html in (charts or {}).items():
+        # markdown 이 토큰을 <p> 로 감싸므로 그 형태를 먼저 치환(빈 <p> 잔재 방지)
+        body_html = body_html.replace(f"<p>{tok}</p>", html).replace(tok, html)
+    return body_html
+
+
 def _markdown_to_html(md_text: str) -> str:
     """
     마크다운 리포트를 Gmail에서 깔끔히 렌더링되는 HTML로 변환.
     - markdown 패키지가 있으면 사용(표/펜스코드 확장), 없으면 자체 변환기로 폴백.
     - Gmail은 <style> 블록을 일부 제거하므로 표/제목 등에 '인라인 스타일'을 직접 주입.
     - 이모지 대신 '색'으로 신호를 강조한다(_colorize_report_html).
+    - v10.0: ```chart 블록 → 이메일 안전 막대차트(email_charts). 변환 전 토큰화 → 변환 후 복원.
     """
+    md_text, _charts = _extract_chart_fences(md_text)
     body_html = None
     try:
         import markdown as _mdlib
@@ -2873,6 +2913,8 @@ def _markdown_to_html(md_text: str) -> str:
 
     # ── 의미색 입히기(이모지 대신 색으로 신호 강조) ──
     body_html = _colorize_report_html(body_html)
+    # ── 차트 복원(색칠 뒤 — 차트의 인라인 스타일이 색칠에 훼손되지 않게) ──
+    body_html = _restore_chart_fences(body_html, _charts)
 
     return (
         '<div style="font-family:\'Apple SD Gothic Neo\',\'Malgun Gothic\','
@@ -3070,8 +3112,10 @@ def _fmt_pct(v) -> tuple:
     return f"{sign}{f:g}%", color
 
 
-def _market_card(title, call) -> str:
-    """시장(코스피/코스닥) 방향성 카드: 방향 + 목표% + 확신도 막대 + 무효화."""
+def _market_card(title, call, current_level=None) -> str:
+    """시장(코스피/코스닥) 방향성 카드: 방향 + 목표% + 확신도 막대 + 무효화.
+    v10.0: prob 3종이 있으면 확률 막대, 지지/저항+현재레벨이 있으면 레벨 게이지를 자동 추가
+    (분석가가 아무 것도 안 해도 붙는다 — 결측이면 조용히 생략)."""
     if not isinstance(call, dict):
         return ""
     d = str(call.get("dir", "")).lower()
@@ -3093,6 +3137,17 @@ def _market_card(title, call) -> str:
     comment_html = (f'<div style="margin-top:9px;background:#ffffff;border:1px solid #e6eaf1;'
                     f'border-radius:8px;padding:8px 10px;font-size:12px;color:#46506a;'
                     f'line-height:1.55;">{comment}</div>') if comment else ""
+    # v10.0 자동 차트: 확률 3종 막대 + 지지/현재/저항 게이지(둘 다 데이터 있을 때만)
+    charts_html = ""
+    try:
+        from email_charts import prob_bar as _pbar, range_gauge as _gauge
+        _p = _pbar(call.get("prob_up"), call.get("prob_flat"), call.get("prob_down"),
+                   title="방향 확률")
+        _g = _gauge(call.get("key_support"), current_level, call.get("key_resistance"),
+                    title="레벨 위치")
+        charts_html = _p + _g
+    except Exception as e:
+        log.warning(f"[render] 시장카드 차트 생략({type(e).__name__})")
     return (
         f'<td width="50%" valign="top" style="padding:5px;">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -3103,7 +3158,7 @@ def _market_card(title, call) -> str:
         f'<div style="margin:5px 0 10px;"><span style="font-size:20px;font-weight:800;'
         f'color:{color};">{label}</span>{tgt_html}</div>'
         f'<div style="font-size:11px;color:#56607a;margin-bottom:4px;">{conv_txt}</div>'
-        f'{_meter_bar(pct, color)}{comment_html}{inval_html}'
+        f'{_meter_bar(pct, color)}{charts_html}{comment_html}{inval_html}'
         f'</td></tr></table></td>'
     )
 
@@ -3196,13 +3251,42 @@ def _dashboard_html(session_dir) -> str:
     """predictions.json → 시장 방향성 카드 + 핵심 픽 카드. 데이터 없으면 ''(생략)."""
     pred = _load_json_safe(os.path.join(session_dir, "predictions.json"))
     mc = pred.get("market_call") if isinstance(pred.get("market_call"), dict) else {}
-    k = _market_card("KOSPI · 코스피", mc.get("kospi")) if mc else ""
-    q = _market_card("KOSDAQ · 코스닥", mc.get("kosdaq")) if mc else ""
+    # 레벨 게이지용 '현재 지수'는 market_context.kr_index 에서 읽는다(predictions 엔 없는 값).
+    # 없으면 None → 게이지만 생략되고 나머지 카드는 그대로(무해).
+    _kr = {}
+    try:
+        _ctx = _load_json_safe(os.path.join(session_dir, "market_context.json"))
+        _kr = _ctx.get("kr_index") if isinstance(_ctx.get("kr_index"), dict) else {}
+    except Exception:
+        _kr = {}
+    k = _market_card("KOSPI · 코스피", mc.get("kospi"),
+                     _kr.get("kospi_close") or _kr.get("asof_close")) if mc else ""
+    q = _market_card("KOSDAQ · 코스닥", mc.get("kosdaq"), _kr.get("kosdaq_close")) if mc else ""
     cards = ""
     if k or q:
         cards = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
                  f'style="margin:2px 0;"><tr>{k}{q}</tr></table>')
     picks = _top_picks_html(pred.get("picks"))
+    # v10.0: 픽이 4개 이상이면 '확신도 비교 막대'를 덧붙인다(카드는 상위 3개만 보여주므로
+    # 나머지가 안 보인다). 회고가 요구한 '픽 간 상대 순위'를 독자가 한눈에 보게 하는 목적.
+    conv_chart = ""
+    try:
+        _pk = [p for p in (pred.get("picks") or []) if isinstance(p, dict)]
+        if len(_pk) >= 4:
+            from email_charts import compare_bars as _cbars
+            _items = []
+            for p in _pk:
+                try:
+                    _items.append((str(p.get("name") or p.get("ticker") or "?"),
+                                   round(float(p.get("conviction")), 2)))
+                except (TypeError, ValueError):
+                    continue
+            _items.sort(key=lambda t: -t[1])
+            conv_chart = _cbars(_items, title="픽 확신도 비교",
+                                caption="막대가 길수록 상대적으로 확신이 큰 픽(절대 성공률이 아님)")
+    except Exception as e:
+        log.warning(f"[render] 확신도 비교 차트 생략({type(e).__name__})")
+    picks = picks + conv_chart
     if not cards and not picks:
         return ""
     regime = _esc(pred.get("regime", ""))

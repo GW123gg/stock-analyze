@@ -370,13 +370,78 @@ def test_new_collectors_pure():
 
 
 # =====================================================================
+# 8. email_charts — 이메일 안전 차트(순수함수) · 결측 시 생략 계약 (v10.0)
+# =====================================================================
+def test_email_charts():
+    import email_charts as ec
+    # 확률 막대: 정상 / 결측 / 합 0 / 음수
+    h = ec.prob_bar(0.38, 0.18, 0.44, title="방향 확률")
+    check("charts: prob 정상 렌더", "방향 확률" in h and "상승 38%" in h, h[:80])
+    check("charts: prob 0~100 스케일도 동일 처리",
+          "상승 38%" in ec.prob_bar(38, 18, 44))
+    check("charts: prob 결측이면 생략", ec.prob_bar(None, 0.2, 0.3) == "")
+    check("charts: prob 합 0 이면 생략", ec.prob_bar(0, 0, 0) == "")
+    check("charts: prob 음수면 생략", ec.prob_bar(-0.1, 0.5, 0.6) == "")
+    # 반올림 오차가 나도 합은 항상 100%
+    h2 = ec.prob_bar(1 / 3, 1 / 3, 1 / 3)
+    import re as _re
+    # 바깥 table 의 width="100%" 는 빼고 '세그먼트 td' 의 폭만 합산
+    pcts = [int(x) for x in _re.findall(r'<td width="(\d+)%" bgcolor=', h2)]
+    check("charts: prob 세그먼트 폭 합계 100%",
+          len(pcts) == 3 and sum(pcts) == 100, str(pcts))
+    # 게이지: 정상 / 역전 / 범위 밖(클램프)
+    check("charts: gauge 정상", "현재" in ec.range_gauge(6000, 6516, 6820))
+    check("charts: gauge low>=high 생략", ec.range_gauge(7000, 6516, 6000) == "")
+    check("charts: gauge 결측 생략", ec.range_gauge(6000, None, 6820) == "")
+    g = ec.range_gauge(6000, 9999, 6820)      # 범위 위로 벗어남 → 클램프되어 렌더
+    check("charts: gauge 범위밖 클램프 렌더", g != "" and 'width="97%"' in g)
+    # 비교 막대
+    b = ec.compare_bars([("셀트리온", 0.5), ("NAVER", 0.42)], title="확신도")
+    check("charts: bar 라벨·값 노출", "셀트리온" in b and "0.5" in b)
+    check("charts: bar 빈 입력 생략", ec.compare_bars([]) == "")
+    check("charts: bar 숫자 아닌 값 무시", ec.compare_bars([("A", "없음")]) == "")
+    many = ec.compare_bars([(f"종목{i}", i) for i in range(30)])
+    # 행마다 바깥 <tr> 1개 + 막대용 중첩 <tr> 1개 = 2개씩. 12행 상한이면 최대 24.
+    check("charts: bar 행수 상한 12행", many.count("<tr>") <= 24, str(many.count("<tr>")))
+    # ★침묵 절단 금지: 잘렸으면 몇 개 생략됐는지 반드시 밝힌다
+    check("charts: bar 절단 시 생략 개수 명시", "외 18개 생략" in many, many[-160:])
+    check("charts: bar 상한 이내면 절단 문구 없음",
+          "생략" not in ec.compare_bars([("A", 1), ("B", 2)]))
+    # RR: 정상 / 순서 뒤집힘(숏 등) 생략
+    r = ec.rr_bar(100, 112, 95)
+    check("charts: rr 정상 + RR 표기", "RR" in r and "진입" in r)
+    check("charts: rr 순서 뒤집히면 생략", ec.rr_bar(100, 95, 112) == "")
+    # 스파크라인
+    s = ec.sparkbars([1, 2, 3, 2, 4])
+    check("charts: spark 정상", "현재" in s)
+    check("charts: spark 1개면 생략", ec.sparkbars([1]) == "")
+    check("charts: spark 전부 같은 값도 렌더(0나눗셈 방어)", ec.sparkbars([5, 5, 5]) != "")
+    # 펜스 파서
+    f = "type: bar\ntitle: T\ndata: A=1, B=2"
+    check("charts: fence bar", "T" in ec.render_chart_fence(f))
+    check("charts: fence prob(한글 키)",
+          "상승" in ec.render_chart_fence("type: prob\ndata: 상승=0.4, 횡보=0.2, 하락=0.4"))
+    check("charts: fence 미지원 타입 생략", ec.render_chart_fence("type: pie\ndata: A=1") == "")
+    check("charts: fence 빈 입력 생략", ec.render_chart_fence("") == "")
+    check("charts: fence 깨진 입력 생략", ec.render_chart_fence("!!!@@@###") == "")
+    # 이메일 안전성: 위험 태그가 절대 나오면 안 된다
+    allhtml = h + b + r + s + g
+    for bad in ("<script", "<svg", "<img", "javascript:", "data:image"):
+        check(f"charts: 위험요소 없음({bad})", bad not in allhtml.lower())
+    # XSS/깨짐 방지: 라벨 이스케이프
+    esc = ec.compare_bars([("<b>x</b>", 1)])
+    check("charts: 라벨 HTML 이스케이프", "&lt;b&gt;" in esc and "<b>" not in esc)
+
+
+# =====================================================================
 def main():
     print("=" * 60)
     print("stock_research 골든 테스트 (네트워크 0 · 라이브 파일 무수정)")
     print("=" * 60)
     for fn in (test_validate_predictions, test_norm_tag, test_compute_labels_golden,
                test_pre_entry_snapshot_first, test_retro_forward_helpers, test_snapshot_signals,
-               test_resolve_session_multisession, test_new_collectors_pure):
+               test_resolve_session_multisession, test_new_collectors_pure,
+               test_email_charts):
         try:
             fn()
         except Exception as e:

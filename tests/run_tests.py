@@ -50,7 +50,9 @@ def check(name, cond, detail=""):
 def test_validate_predictions():
     from common import validate_predictions as v
     ok_pick = {"ticker": "005930", "tag": "단기스윙", "timing": "단기", "conviction": 0.5,
-               "preprice": "부분", "entry_ref": 70000, "horizon_days": 5}
+               "preprice": "부분", "entry_ref": 70000, "horizon_days": 5,
+               # v10.1 시간축 전망(픽 필수)
+               "path_view": "눌림후상승", "expected_peak_days": 4}
     ok_short = {"ticker": "000660", "timing": "단기", "conviction": 0.5,
                 "entry_ref": 100000, "horizon_days": 5}
     check("validate: 정상 픽+숏 통과", v({"picks": [ok_pick], "shorts": [ok_short]}) == [])
@@ -90,7 +92,28 @@ def test_validate_predictions():
                "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
     check("v9.7: conviction!=max(prob) 차단(±0.05)", any("max(prob)" in e for e in v(bad)))
     bad_h = dict(ok_pick, horizon_days=10)
-    check("v9.7: horizon_days enum(1|5|20) 차단", any("1|5|20" in e for e in v({"picks": [bad_h]})))
+    check("v9.7: horizon_days enum 차단", any("1|5|20|40" in e for e in v({"picks": [bad_h]})))
+    # ── v10.1 시간축 전망(사용자 요청: 얼마 뒤에 오를까 / 단기 조정 / 1~2달) ──
+    check("v10.1: horizon 40(장기 2개월) 허용",
+          v({"picks": [dict(ok_pick, timing="장기", horizon_days=40, expected_peak_days=30)]}) == [])
+    check("v10.1: timing '장기' 허용", v({"picks": [dict(ok_pick, timing="장기")]}) == [])
+    check("v10.1: path_view 누락 차단(픽 필수)",
+          any("'path_view'" in e for e in v({"picks": [{k: x for k, x in ok_pick.items()
+                                                        if k != "path_view"}]})))
+    check("v10.1: expected_peak_days 누락 차단(픽 필수)",
+          any("expected_peak_days" in e for e in v({"picks": [{k: x for k, x in ok_pick.items()
+                                                               if k != "expected_peak_days"}]})))
+    check("v10.1: path_view enum 차단",
+          any("즉시상승" in e for e in v({"picks": [dict(ok_pick, path_view="급등")]})))
+    check("v10.1: expected_peak_days > horizon 차단(채점 창 밖)",
+          any("초과" in e for e in v({"picks": [dict(ok_pick, expected_peak_days=9)]})))
+    check("v10.1: expected_gain_pct 음수 차단",
+          any("양수" in e for e in v({"picks": [dict(ok_pick, expected_gain_pct=-3)]})))
+    check("v10.1: expected_pullback_pct 양수 차단",
+          any("음수" in e for e in v({"picks": [dict(ok_pick, expected_pullback_pct=5)]})))
+    check("v10.1: 정상 경로 필드 전체 통과",
+          v({"picks": [dict(ok_pick, expected_gain_pct=8.5, expected_pullback_pct=-4.0)]}) == [])
+    check("v10.1: 숏은 경로 필드 없어도 통과(선택)", v({"picks": [], "shorts": [ok_short]}) == [])
     # v9.8 감사 반영 — dir enum·존재 검사, 관망일 market_call 위반 보존
     bad = dict(base_mc, market_call={"kospi": {"dir": "flat",  # 오타(neutral 이어야)
                "prob_up": 0.2, "prob_flat": 0.6, "prob_down": 0.2}})
@@ -387,6 +410,113 @@ def test_new_collectors_pure():
     check("earnings: 날짜 구분 반영", ev[0]["date"] == "2026-07-20" and ev[1]["date"] == "2026-07-21")
     check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
     check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
+
+    # ── v10.1 공매도 공표지연 컷(A25) — 룩어헤드 차단 로직을 스텁으로 실검증 ──
+    #   라이브에서는 세션 스냅샷 우선(#C1) + KRX 차단이라 이 폴백 경로가 잘 안 타므로,
+    #   합성 DataFrame 으로 '최근 N행 제거'가 실제로 동작하는지 못 박아 둔다.
+    try:
+        import pandas as _pd
+        import short_collect as _sc
+        _idx = _pd.to_datetime(["2026-07-13", "2026-07-14", "2026-07-15",
+                                "2026-07-16", "2026-07-17", "2026-07-20"])
+        _df = _pd.DataFrame({"비중": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                             "공매도잔고": [100, 200, 300, 400, 500, 600]}, index=_idx)
+
+        class _KrxStub:
+            @staticmethod
+            def get_shorting_balance_by_date(b, e, t):
+                return _df.copy()
+
+        _old_krx, _old_cache = _sc._krx, dict(_sc._SHORT_ASOF_CACHE)
+        try:
+            _sc._krx = _KrxStub()
+            _sc._SHORT_ASOF_CACHE.clear()
+            # asof=07-21 → 거래일 컷으로 6행 전부 생존 → 공표지연 3행 제거 → 마지막은 07-15(비중 3.0)
+            _lag = _sc.get_short_asof("005930", "20260721", pub_lag_rows=3)
+            _sc._SHORT_ASOF_CACHE.clear()
+            _nolag = _sc.get_short_asof("005930", "20260721", pub_lag_rows=0)
+            check("shortlag: 지연 보정 시 최근 3행 제외(07-15 값)",
+                  _lag.get("pre_short_balance_ratio") == 3.0, str(_lag))
+            check("shortlag: 보정 없으면 최신행(07-20 값)",
+                  _nolag.get("pre_short_balance_ratio") == 6.0, str(_nolag))
+            check("shortlag: 보정판이 미보정판과 다르다(룩어헤드 제거 증거)",
+                  _lag.get("pre_short_balance_ratio") != _nolag.get("pre_short_balance_ratio"))
+            # 캐시 키에 지연값이 포함돼야 서로 오염되지 않는다
+            check("shortlag: 캐시 키에 지연 파라미터 포함",
+                  any(len(k) == 3 for k in _sc._SHORT_ASOF_CACHE))
+            # 행이 모자라면 보정을 포기(결측보다 낫다)
+            _sc._SHORT_ASOF_CACHE.clear()
+            _small = _df.iloc[:2]
+
+            class _KrxSmall:
+                @staticmethod
+                def get_shorting_balance_by_date(b, e, t):
+                    return _small.copy()
+            _sc._krx = _KrxSmall()
+            _r = _sc.get_short_asof("005930", "20260721", pub_lag_rows=3)
+            check("shortlag: 표본 부족 시 보정 포기(값 유지)",
+                  _r.get("pre_short_balance_ratio") == 2.0, str(_r))
+        finally:
+            _sc._krx = _old_krx
+            _sc._SHORT_ASOF_CACHE.clear()
+            _sc._SHORT_ASOF_CACHE.update(_old_cache)
+    except ImportError:
+        print("[SKIP] shortlag: pandas 없음")
+
+    # ── v10.1 야간선물(코스피200 선물) — 파싱 + 세션 판정 ──
+    import night_futures_collect as nfc
+    _pg = ('<span data-test="instrument-price-last">1,034.05</span>'
+           '<span data-test="instrument-price-change">-29.45</span>'
+           '<span data-test="instrument-price-change-percent">(-2.77%)</span>'
+           '<div><span data-test="trading-state-label">닫음</span>·'
+           '<time dateTime="2026-07-24T05:00:00.000Z" data-test="trading-time-label">24/07</time></div>')
+    q = nfc.parse_quote(_pg)
+    check("nightfut: 가격·등락 파싱", q["last"] == 1034.05 and q["change_pct"] == -2.77, str(q))
+    check("nightfut: 세션 라벨(data-test 기반)", q["session_text"] == "닫음 · 24/07", str(q.get("session_text")))
+    check("nightfut: ISO 최종체결 시각", q["last_trade_utc"] == "2026-07-24T05:00:00.000Z")
+    check("nightfut: 빈 페이지 -> 전부 None", nfc.parse_quote("")["last"] is None)
+    check("nightfut: 구조 변경 시 조용히 None", nfc.parse_quote("<html>바뀜</html>")["last"] is None)
+    # 세션 판정: 야간 18:00~06:00 / 주간 09:00~15:45 / 그 사이는 off
+    for _iso, _exp in (("2026-07-27T21:10:00.000Z", "night"),   # KST 06:10 — 야간 종료권
+                       ("2026-07-27T10:00:00.000Z", "night"),   # KST 19:00 — 야간 개시
+                       ("2026-07-24T05:00:00.000Z", "day"),     # KST 14:00 — 주간
+                       ("2026-07-24T23:30:00.000Z", "off")):    # KST 08:30 — 비거래 구간
+        _k, _s = nfc.kst_session_info(_iso)
+        check(f"nightfut: 세션 판정 {_iso[11:16]}Z -> {_exp}", _s == _exp, f"{_k} {_s}")
+    check("nightfut: 시각 없으면 unknown", nfc.kst_session_info(None)[1] == "unknown")
+    check("nightfut: last 없으면 페이로드 생략", nfc.build_payload({"last": None}, 1000) == {})
+    _pl = nfc.build_payload(q, 1055.58)
+    check("nightfut: 지수 대비 괴리 계산", _pl["vs_index_pct"] == -2.04, str(_pl.get("vs_index_pct")))
+    check("nightfut: 세션 판정이 페이로드에 포함", _pl["session_guess"] == "day")
+
+    # ── v10.1 메일 수급표 단위(원→억) — 10^8 배 부풀림 회귀 방지 ──
+    #   force_scores.detail 의 순매수는 '원' 단위다(force_analysis.score_supply 도크).
+    #   억원으로 오인해 그대로 표기하면 '+3803330조' 같은 값이 메일로 나간다(2026-07-26 실측 사고).
+    import tempfile as _tf
+    _sd = _tf.mkdtemp(prefix="pv_")
+    try:
+        json.dump({"picks": [{"ticker": "068270", "name": "셀트리온"}], "shorts": []},
+                  open(os.path.join(_sd, "predictions.json"), "w", encoding="utf-8"),
+                  ensure_ascii=False)
+        json.dump({"tickers": [{"ticker": "068270", "detail": {
+            "price_change_pct": -1.82,
+            "foreign_5d": 38033303000.0,     # 380.3억원
+            "inst_5d": 32082121000.0,        # 320.8억원
+            "indiv_5d": None}}]},
+            open(os.path.join(_sd, "force_scores.json"), "w", encoding="utf-8"),
+            ensure_ascii=False)
+        import research_agent as _ra
+        _md = _ra._prev_day_change_md(_sd)
+        check("메일수급: 원→억 환산(380억)", "+380억" in _md, _md[-200:])
+        # ★데이터 행만 검사한다(산문의 '구조'에도 '조'가 들어가 오탐이 난다 — 2026-07-26)
+        _datarow = [l for l in _md.splitlines() if "셀트리온" in l]
+        check("메일수급: 데이터 행에 조 단위 폭주 없음",
+              _datarow and "조" not in _datarow[0], str(_datarow))
+        check("메일수급: 기관도 억 단위(320억)", _datarow and "+321억" in _datarow[0], str(_datarow))
+        check("메일수급: 결측은 대시", "—" in _md)
+        check("메일수급: 전일 등락률 유지", "-1.82%" in _md)
+    finally:
+        shutil.rmtree(_sd, ignore_errors=True)
 
     import vkospi_collect as vc
     items = [{"idxNm": "코스피 200 변동성지수", "basDt": "20260717", "clpr": "27.5"},

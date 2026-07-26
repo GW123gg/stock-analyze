@@ -596,6 +596,11 @@ def run_morning_pipeline(guard_dup: bool = False):
     _run_step("step14.5 vkospi_collect",
               [py, os.path.join(BASE_DIR, "vkospi_collect.py")], timeout=120)
 
+    # step14.55: 코스피200 선물(야간 세션 포함) — 간밤 지수 호가 → 루트 night_futures.json
+    #   개별종목은 야간 거래가 없어 '지수 방향 추정 전용'([5.14]). 실패 시 graceful.
+    _run_step("step14.55 night_futures",
+              [py, os.path.join(BASE_DIR, "night_futures_collect.py")], timeout=120)
+
     # step14.6: 신용잔고(빚투)·증시자금 — 금투협 freesis 공개 JSON → 루트 credit_balance.json
     #   레버리지 과열/디레버리징 국면 신호([5.12]). 키 불필요, 실패 시 graceful.
     _run_step("step14.6 credit_collect",
@@ -1070,8 +1075,14 @@ def one_cycle(cfg: dict, state: dict):
         log(f"🚨 수동 회고 트리거 예외(계속): {type(e).__name__}: {e}")
 
     # 2) COLLECT_DONE.flag → force_analysis (force_scores.json 생성)
+    #   ★A17 잔여(2026-07-26 처리): force_analysis 는 종목당 수십 초가 걸려 한 사이클이
+    #     HEARTBEAT_STALE_SEC(900s)를 넘길 수 있다 → watchdog 이 '프리즈'로 오판해 살아있는
+    #     supervisor 를 죽이고 재기동한다. 긴 스텝 '직전·직후'에 하트비트를 찍어 오살을 막는다.
+    #     (데몬 오프 기간에 수정 — 가동 중 워치독을 건드리지 않는 최저위험 시점)
     try:
+        write_heartbeat()
         n = wanalyze.cycle(cfg["tickers"])
+        write_heartbeat()
         if n:
             log(f"📊 force_analysis 처리: {n}건")
     except Exception as e:

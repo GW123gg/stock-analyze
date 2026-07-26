@@ -3389,26 +3389,78 @@ def _prev_day_change_md(session_dir: str) -> str:
         if not chg:
             return ""
 
+        # ★v10.1: 종목별 '진입 직전 5일 투자자별 순매수'(외국인/기관/개인)를 같은 표에 병기.
+        #   force_scores.detail 에 이미 있는 값만 쓴다(새 API 호출·룩어헤드 0). 억원 단위.
+        #   회고 실측: flow_data.json 의 종목별 수급은 KRX 다운 시 통째로 비지만(0/59 인 날 존재)
+        #   force_scores 는 57/58 로 안정적이라 이쪽을 1순위로 쓴다.
+        flow = {}
+        if os.path.exists(fs):
+            try:
+                with open(fs, encoding="utf-8") as f:
+                    d = json.load(f)
+                for t in (d.get("tickers") or []):
+                    tk = _t6(t.get("ticker"))
+                    det = t.get("detail") or {}
+                    if not tk:
+                        continue
+                    row = {k: det.get(k) for k in ("foreign_5d", "inst_5d", "indiv_5d")}
+                    if any(v is not None for v in row.values()):
+                        flow[tk] = row
+            except Exception:
+                pass
+
         def _fmt(pct):
             arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "–")
             return f"{arrow} {pct:+.2f}%"
 
-        rows = ["", "### 추천 종목 전일 등락률 — 선반영 점검 (추천 직전 거래일 종가 기준)",
-                "> 추천 직전 거래일 종가 등락률입니다. 이미 큰 폭 오른(내린) 종목은 재료가 "
-                "주가에 **선반영**됐을 수 있으니 추격 진입에 유의하세요.",
-                "",
-                "| 구분 | 종목 (티커) | 전일 등락률 |",
-                "|:---:|:---|:---:|"]
+        def _eok(v):
+            """★force_scores.detail 의 순매수 단위는 '원'이다(force_analysis.score_supply 도크 확인).
+            원 → 억원(1e8)으로 환산해 표기한다. 억원으로 착각하면 10^8 배 부풀려진다(2026-07-26 실측 오류).
+            """
+            try:
+                won = float(v)
+            except (TypeError, ValueError):
+                return "—"
+            eok = won / 1e8                       # 원 → 억원
+            if abs(eok) >= 10000:                 # 1조 이상은 조 단위로
+                return f"{eok / 10000:+.2f}조"
+            if abs(eok) < 1:                      # 1억 미만은 반올림하면 0억이 되어 오해 소지
+                return f"{eok:+.2f}억"
+            return f"{eok:+,.0f}억"
+
+        has_flow = bool(flow)
+        rows = ["", "### 추천 종목 전일 등락률 · 수급 — 선반영 점검 (추천 직전 거래일 기준)",
+                "> 전일 등락률과 **직전 5거래일 투자자별 순매수**입니다. 이미 큰 폭 오른(내린) 종목은 "
+                "재료가 주가에 **선반영**됐을 수 있고, 외국인이 팔고 개인이 받는 구조는 분배 국면 "
+                "합류 위험이 있으니 함께 보세요.",
+                ""]
+        if has_flow:
+            rows.append("| 구분 | 종목 (티커) | 전일 등락률 | 외국인 5일 | 기관 5일 | 개인 5일 |")
+            rows.append("|:---:|:---|:---:|---:|---:|---:|")
+        else:
+            rows.append("| 구분 | 종목 (티커) | 전일 등락률 |")
+            rows.append("|:---:|:---|:---:|")
+
+        def _line(kind, item):
+            tk = _t6(item.get("ticker"))
+            nm = item.get("name") or tk or "?"
+            v = chg.get(tk)
+            base = f"| {kind} | {nm} ({tk or '—'}) | {_fmt(v) if v is not None else '—'} |"
+            if not has_flow:
+                return base
+            fl = flow.get(tk) or {}
+            return (base + f" {_eok(fl.get('foreign_5d'))} |"
+                           f" {_eok(fl.get('inst_5d'))} |"
+                           f" {_eok(fl.get('indiv_5d'))} |")
+
         for p in picks:
-            tk = _t6(p.get("ticker"))
-            nm = p.get("name") or tk or "?"
-            v = chg.get(tk)
-            rows.append(f"| 롱 | {nm} ({tk or '—'}) | {_fmt(v) if v is not None else '—'} |")
+            rows.append(_line("롱", p))
         for s in shorts:
-            tk = _t6(s.get("ticker"))
-            nm = s.get("name") or tk or "?"
-            v = chg.get(tk)
-            rows.append(f"| 숏 | {nm} ({tk or '—'}) | {_fmt(v) if v is not None else '—'} |")
+            rows.append(_line("숏", s))
+        if has_flow:
+            rows.append("")
+            rows.append("> 순매수는 **직전 5거래일 합계**(억원)입니다. 개인 수급은 KRX 대신 대체 소스로 "
+                        "복원한 날 비어 있을 수 있습니다(—).")
         rows.append("")
         return "\n".join(rows)
     except Exception as e:

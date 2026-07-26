@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-snapshot_signals.py ─ 루트 저장 신호 5종을 '오늘 세션'에 동결(freeze) 복사
+snapshot_signals.py ─ 루트 저장 신호 6종을 '오늘 세션'에 동결(freeze) 복사
 
 [왜 필요한가 — 회고 12회차 감사 결과]
   deriv_sentiment/ecos_macro/vkospi/market_caution/credit_balance 5종은 루트에 저장되고 매일 덮어써진다.
@@ -18,7 +18,7 @@ snapshot_signals.py ─ 루트 저장 신호 5종을 '오늘 세션'에 동결(f
   - 콘솔 ASCII 태그([snapshot])만, 이모지 금지. UTF-8 IO, ensure_ascii=False.
 
 [사용법]
-  python snapshot_signals.py            # 루트 5종 → 오늘 세션에 동결
+  python snapshot_signals.py            # 루트 6종 → 오늘 세션에 동결
   python snapshot_signals.py --check    # 무엇이 복사될지 점검만(쓰기 없음)
 """
 import os
@@ -40,9 +40,10 @@ log = logging.getLogger("snapshot")
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
 
-# 루트에 저장되는 국면·거시 신호(세션 아님) — CLAUDE.md/CODEMAP.md 의 '루트 저장 5종'과 동일
+# 루트에 저장되는 국면·거시 신호(세션 아님) — CLAUDE.md/CODEMAP.md 의 '루트 저장 6종'과 동일
 ROOT_SIGNALS = ["deriv_sentiment.json", "ecos_macro.json", "vkospi.json", "market_caution.json",
-                "credit_balance.json"]   # v9.8: 신용잔고(빚투) 국면 신호 — 회고 pre_margin_* 원천
+                "credit_balance.json",   # v9.8: 신용잔고(빚투) — 회고 pre_margin_* 원천
+                "night_futures.json"]    # v10.1: 코스피200 선물(야간) — 간밤 지수 호가
 PREFIX = "signals_snapshot_"
 
 from common import save_json_atomic
@@ -67,7 +68,7 @@ def _load(path):
 
 
 def snapshot(session_dir, check_only=False):
-    """루트 5종 → session_dir/signals_snapshot_<name>.json. 복사한 파일명 리스트 반환."""
+    """루트 6종 → session_dir/signals_snapshot_<name>.json. 복사한 파일명 리스트 반환."""
     done = []
     for fn in ROOT_SIGNALS:
         src = os.path.join(HERE, fn)
@@ -104,7 +105,7 @@ def snapshot(session_dir, check_only=False):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="루트 신호 5종을 오늘 세션에 동결 복사")
+    ap = argparse.ArgumentParser(description="루트 신호 6종을 오늘 세션에 동결 복사")
     ap.add_argument("--check", action="store_true", help="복사 대상만 점검(쓰기 없음)")
     ap.add_argument("--session", default="", help="세션 폴더 직접 지정(기본: 오늘 최신)")
     args = ap.parse_args()

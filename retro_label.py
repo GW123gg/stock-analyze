@@ -598,6 +598,10 @@ BASE_COLS = [
     "rec_id", "parent_rec_id", "ticker_rec_seq",
     "pred_date", "kind", "ticker", "name", "tag", "timing", "horizon",
     "conviction", "entry_ref", "entry_ref_estimated", "preprice", "flow_unit_check", "thesis",
+    # ★v10.1 시간축 전망(예측) — 아래 '실측' 라벨과 1:1 대응해 회고가 채점한다:
+    #   path_view/expected_peak_days ↔ days_to_peak, expected_gain_pct ↔ peak_gain_pct,
+    #   expected_pullback_pct ↔ max_drawdown_pct. 2026-07-26 이전 추천은 전부 null(정상).
+    "path_view", "expected_peak_days", "expected_gain_pct", "expected_pullback_pct",
 ]
 
 
@@ -908,6 +912,11 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         "entry_ref": entry_ref, "entry_ref_estimated": bool(item.get("entry_ref_estimated")),
         "preprice": item.get("preprice"),
         "thesis": (str(item.get("thesis") or "")[:200]),
+        # v10.1 시간축 예측(있는 행만 — 도입 전 추천은 null 이 정상)
+        "path_view": item.get("path_view"),
+        "expected_peak_days": item.get("expected_peak_days"),
+        "expected_gain_pct": item.get("expected_gain_pct"),
+        "expected_pullback_pct": item.get("expected_pullback_pct"),
     }
     # 피처(추천 시점 스냅샷)
     f = feats.get(code, {})

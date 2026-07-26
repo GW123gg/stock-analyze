@@ -131,10 +131,18 @@ def resolve_session(output_dir, fallback_age_h=6, prefer_sameday_earliest=False)
 #   "모든 픽에 timing·conviction·preprice·horizon_days·entry_ref 를 반드시" / "숏도 timing·conviction 필수".
 #   preprice(강함|부분|미반영)는 '선반영' 개념이라 픽 전용이고 숏 스키마엔 아예 없다.
 #   (실측: 2026-07-11·07-16 세션의 숏은 preprice 가 없는 게 계약상 정상 — 여기서 요구하면 정상 발송을 오차단한다.)
-PRED_REQUIRED_PICK = ("ticker", "tag", "timing", "conviction", "preprice", "entry_ref", "horizon_days")
+# ★v10.1 시간축 전망(사용자 요청 2026-07-26): "얼마 뒤에 오를까 / 단기 조정이 있을까 / 1~2달 내에는".
+#   회고는 이미 경로를 '측정'하고 있었다(days_to_peak·peak_gain_pct·max_drawdown_pct)는데 예측 쪽
+#   대응 필드가 0개였다 — 즉 언제 오를지는 한 번도 예측·채점된 적이 없다. 그 공백을 메운다.
+#   path_view·expected_peak_days 를 픽 필수로 둔 이유: timing 이 8회차 동안 '선택'이라 방치됐다가
+#   게이트로 강제한 뒤에야 채워진 전례(A4)가 있다.
+PRED_PATH_VIEWS = ("즉시상승", "눌림후상승", "계단식", "횡보후상승", "이벤트대기")
+PRED_REQUIRED_PICK = ("ticker", "tag", "timing", "conviction", "preprice", "entry_ref",
+                      "horizon_days", "path_view", "expected_peak_days")
 PRED_REQUIRED_SHORT = ("ticker", "timing", "conviction", "entry_ref", "horizon_days")
-PRED_TIMINGS = ("임박", "단기", "중기")
+PRED_TIMINGS = ("임박", "단기", "중기", "장기")     # v10.1: 장기(2개월·T+40) 추가
 PRED_PREPRICES = ("강함", "부분", "미반영")
+PRED_HORIZONS = (1, 5, 20, 40)                      # v10.1: 40거래일(약 2개월) 추가
 
 
 def validate_predictions(payload):
@@ -219,7 +227,41 @@ def validate_predictions(payload):
                     errs.append(f"{kind}[{i}] {tag}: '{k}' 누락/null")
             t = it.get("timing")
             if t is not None and str(t).strip() and str(t).strip() not in PRED_TIMINGS:
-                errs.append(f"{kind}[{i}] {tag}: timing '{t}' 은 임박/단기/중기 중 하나여야 함")
+                errs.append(f"{kind}[{i}] {tag}: timing '{t}' 은 "
+                            f"{'/'.join(PRED_TIMINGS)} 중 하나여야 함")
+            # ★v10.1 시간축 전망(픽 필수·숏 선택) — 회고의 경로 실측 라벨과 1:1 대응해 채점된다.
+            pv = it.get("path_view")
+            if pv is not None and str(pv).strip() and str(pv).strip() not in PRED_PATH_VIEWS:
+                errs.append(f"{kind}[{i}] {tag}: path_view '{pv}' 은 "
+                            f"{'/'.join(PRED_PATH_VIEWS)} 중 하나여야 함")
+            epd = it.get("expected_peak_days")     # 채점 대상: 실측 days_to_peak
+            if epd is not None:
+                try:
+                    _e = int(epd)
+                    _hz = int(it.get("horizon_days") or 0)
+                    if _e < 1:
+                        errs.append(f"{kind}[{i}] {tag}: expected_peak_days {epd} 는 1 이상이어야 함")
+                    elif _hz and _e > _hz:
+                        errs.append(f"{kind}[{i}] {tag}: expected_peak_days {epd} 가 "
+                                    f"horizon_days {_hz} 를 초과(채점 창 밖 — 예측이 검증 불가)")
+                except (TypeError, ValueError):
+                    errs.append(f"{kind}[{i}] {tag}: expected_peak_days '{epd}' 이 정수가 아님")
+            eg = it.get("expected_gain_pct")       # 채점 대상: 실측 peak_gain_pct
+            if eg is not None:
+                try:
+                    if float(eg) <= 0:
+                        errs.append(f"{kind}[{i}] {tag}: expected_gain_pct {eg} 는 양수여야 함"
+                                    f"(숏도 '유리한 방향 폭'을 양수로 적는다)")
+                except (TypeError, ValueError):
+                    errs.append(f"{kind}[{i}] {tag}: expected_gain_pct '{eg}' 이 숫자가 아님")
+            ep = it.get("expected_pullback_pct")   # 채점 대상: 실측 max_drawdown_pct
+            if ep is not None:
+                try:
+                    if float(ep) > 0:
+                        errs.append(f"{kind}[{i}] {tag}: expected_pullback_pct {ep} 는 "
+                                    f"0 이하(되돌림 폭은 음수)여야 함")
+                except (TypeError, ValueError):
+                    errs.append(f"{kind}[{i}] {tag}: expected_pullback_pct '{ep}' 이 숫자가 아님")
             if kind == "pick":
                 # v9.7(회고 07-16, 무태그 7회 관찰): tag 는 필수 + enum — 무태그 행은 태그별
                 # 회고 분석에서 영구 제외되므로 발송 전에 막는다(숏은 tag 없음 — 픽 전용).
@@ -254,8 +296,9 @@ def validate_predictions(payload):
             h = it.get("horizon_days")
             if h is not None:
                 try:
-                    if int(h) not in (1, 5, 20):
-                        errs.append(f"{kind}[{i}] {tag}: horizon_days {h} 은 1|5|20 중 하나여야 함([6.5] 타이밍)")
+                    if int(h) not in PRED_HORIZONS:
+                        errs.append(f"{kind}[{i}] {tag}: horizon_days {h} 은 "
+                                    f"{'|'.join(str(x) for x in PRED_HORIZONS)} 중 하나여야 함([6.5] 타이밍)")
                 except (TypeError, ValueError):
                     errs.append(f"{kind}[{i}] {tag}: horizon_days '{h}' 이 정수가 아님")
     return errs

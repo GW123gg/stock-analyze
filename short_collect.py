@@ -103,12 +103,23 @@ def _col(df, *names):
 _SHORT_ASOF_CACHE = {}
 
 
-def get_short_asof(ticker, asof):
-    """진입시점(asof, YYYYMMDD)까지의 공매도 잔고비중(%) + 직전 약10거래일 잔고증감률(%). 룩어헤드 없음.
-    retro_label 진입 피처용 — 만기행의 short feature 를 추천일 기준으로 소급 채운다. 실패 시 빈 dict."""
+# ★공매도 잔고 '공표지연'(회고 A25, 2026-07-26): KRX 잔고는 거래일 기준 T+2~3 뒤에 공표된다.
+#   추천일 아침(06:30)에 실제로 공개돼 있던 값은 asof-1 거래일이 아니라 asof-3 거래일 근처다.
+#   거래일 기준으로만 컷하면 '아직 공개되지 않은 잔고'가 진입 피처에 들어간다(A22 와 같은 룩어헤드).
+PUB_LAG_ROWS = 3          # 보수적 기본값 — 실측 지연 3~4영업일을 덮는다
+
+
+def get_short_asof(ticker, asof, pub_lag_rows=PUB_LAG_ROWS):
+    """진입시점(asof, YYYYMMDD)에 **실제로 공개돼 있던** 공매도 잔고비중(%) + 직전 약10거래일 증감률(%).
+
+    retro_label 진입 피처용 — 만기행의 short feature 를 추천일 기준으로 소급 채운다. 실패 시 빈 dict.
+    pub_lag_rows: 공표지연 보정(최근 N개 거래일 행 제외). 0 이면 지연 보정 없음(옛 동작).
+    ※ 아침 수집 경로(compute_short)는 '최신 공표분'이 맞으므로 이 함수와 무관하다 — 손대지 않는다.
+    """
     if _krx is None:
         return {}
-    key = (str(ticker), str(asof))
+    # 캐시 키에 지연 파라미터 포함 — 안 하면 첫 호출 결과가 다른 설정으로 전파된다.
+    key = (str(ticker), str(asof), int(pub_lag_rows or 0))
     if key in _SHORT_ASOF_CACHE:
         return _SHORT_ASOF_CACHE[key]
     out = {}
@@ -116,11 +127,17 @@ def get_short_asof(ticker, asof):
         cut = datetime.strptime(str(asof), "%Y%m%d")
         bgn = (cut - timedelta(days=LOOKBACK_DAYS)).strftime("%Y%m%d")
         df = _krx.get_shorting_balance_by_date(bgn, str(asof), ticker)
-        # 공매도 잔고는 T+1~2 지연 공시 → 추천일(asof) 당일·이후 행은 진입시점에 미공개.
-        # 룩어헤드 차단: asof 직전 거래일까지만 사용(달력 -1 은 휴일에 부정확하므로 인덱스로 컷).
+        # 1차: 추천일 당일·이후 행 제거(달력 -1 은 휴일에 부정확하므로 인덱스로 컷).
         if df is not None and len(df) > 0:
             try:
                 df = df[df.index < cut]
+            except Exception:
+                pass
+        # 2차: 공표지연 보정 — 최근 N행은 추천 시점에 아직 공개 전이었다.
+        #      단 남는 행이 2개 미만이면 증감률 계산이 불가하므로 보정을 포기한다(결측보다 낫다).
+        if df is not None and len(df) > (pub_lag_rows or 0) + 1 and pub_lag_rows:
+            try:
+                df = df.iloc[:-int(pub_lag_rows)]
             except Exception:
                 pass
         if df is not None and len(df) > 0:

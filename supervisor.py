@@ -563,6 +563,13 @@ def run_morning_pipeline(guard_dup: bool = False):
     _run_step("step9 mirae_collect",
               [py, os.path.join(BASE_DIR, "mirae_collect.py")], timeout=600)
 
+    # step9.5: 카이로스(HTS) 화면 캡처 → 세션폴더 hts_capture.json + hts_captures/*.png
+    #   KRX(data.krx.co.kr) 403 차단으로 공매도·대차잔고는 대체 소스가 아예 없다(2026-07-26 실측).
+    #   원격 노트북의 상시 로그인된 HTS 화면을 tailnet 사설망으로 당겨온다(설정 없으면 무동작).
+    #   ★step10(short_collect)·step12(flow_collect) 보다 앞: 그 수집기들이 KRX 실패 시 참조 가능.
+    _run_step("step9.5 hts_capture",
+              [py, os.path.join(BASE_DIR, "hts_capture_collect.py")], timeout=420)
+
     # step10: 공매도 잔고/추세 → 세션폴더 short.json (KRX, krx_account.txt 로그인 시)
     #   공매도 잔고 비중·증감 = 하락 베팅·되돌림 압력. 차익실현 위험 보강([3-차익실현]).
     _run_step("step10 short_collect",

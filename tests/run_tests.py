@@ -411,6 +411,60 @@ def test_new_collectors_pure():
     check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
     check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
 
+    # ── v10.3 HTS 캡처 검증 — '엉뚱한 화면이 조용히 통과'하는 것이 최대 위험 ──
+    #   로그인창·다른 화면·캐시·위변조가 ok 로 새어 나가면 그 숫자가 추천 근거가 된다.
+    try:
+        import hashlib as _hl
+        import struct as _st
+        import zlib as _zl
+        import hts_capture_collect as _H
+        from datetime import datetime as _DT, timedelta as _TD
+
+        def _tiny_png():
+            def _ck(t, d):
+                c = t + d
+                return _st.pack(">I", len(d)) + c + _st.pack(">I", _zl.crc32(c) & 0xffffffff)
+            return (b"\x89PNG\r\n\x1a\n"
+                    + _ck(b"IHDR", _st.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+                    + _ck(b"IDAT", _zl.compress(b"\x00\xff\xff\xff"))
+                    + _ck(b"IEND", b""))
+
+        _png = _tiny_png()
+        _sha = _hl.sha256(_png).hexdigest()
+        _now = _DT.now().strftime("%Y-%m-%d %H:%M")
+        _old = (_DT.now() - _TD(minutes=90)).strftime("%Y-%m-%d %H:%M")
+        _cases = [
+            ("화면번호 일치 → ok", {"marker_text": "[0231] 관심종목 신용/공매도/대차 현황",
+                                "captured_at_kst": _now, "sha256": _sha}, _png, "ok"),
+            ("키워드 일치 → ok", {"marker_text": "관심종목 공매도 잔고 조회",
+                              "captured_at_kst": _now, "sha256": _sha}, _png, "ok"),
+            ("로그인창이 찍힘 → 폐기", {"marker_text": "미래에셋증권 로그인",
+                                "captured_at_kst": _now, "sha256": _sha}, _png, "marker_mismatch"),
+            ("다른 화면이 찍힘 → 폐기", {"marker_text": "[0254] 투자자 일별 매매현황",
+                                 "captured_at_kst": _now, "sha256": _sha}, _png, "marker_mismatch"),
+            ("마커 없음 → 폐기", {"captured_at_kst": _now, "sha256": _sha}, _png, "marker_mismatch"),
+            ("캐시 응답 → stale", {"marker_text": "[0231] 관심종목 공매도",
+                               "captured_at_kst": _old, "sha256": _sha}, _png, "stale"),
+            ("이미지 위변조 → 거부", {"marker_text": "[0231] 관심종목 공매도",
+                               "captured_at_kst": _now, "sha256": "0" * 64}, _png, "agent_error"),
+            ("PNG 아님 → 거부", {"marker_text": "[0231] 관심종목 공매도", "captured_at_kst": _now,
+                             "sha256": _hl.sha256(b"XX").hexdigest()}, b"XX", "agent_error"),
+        ]
+        for _nm, _meta, _b, _want in _cases:
+            _got, _why = _H._verify("short_lend", _meta, _b)
+            check("htscap: %s" % _nm, _got == _want, "실제=%s %s" % (_got, _why[:40]))
+        # 설정 없으면 무동작(노트북 세팅 전에도 파이프라인 무중단)
+        check("htscap: 설정 파일 없으면 빈 dict",
+              _H.load_config(os.path.join(tempfile.mkdtemp(prefix="hc_"), "없는파일.txt")) == {})
+        # 카탈로그 계약: 모든 화면이 번호·이름·검증키워드·용도를 갖춘다
+        _bad = [k for k, v in _H.SCREENS.items()
+                if not (v.get("no") and v.get("name") and v.get("expect") and v.get("why"))]
+        check("htscap: 화면 카탈로그 필수필드 완비", not _bad, str(_bad))
+        check("htscap: 기본 화면 4종이 카탈로그에 존재",
+              all(k in _H.SCREENS for k in _H.DEFAULT_SCREENS), str(_H.DEFAULT_SCREENS))
+    except ImportError:
+        print("[SKIP] htscap: hts_capture_collect import 불가")
+
     # ── v10.2 아카이브 섹션 분류 — '회피 경고' 섹션이 롱 픽으로 채점되던 결함 고정 ──
     #   리포트가 "사지 마라"고 쓴 종목이 추천으로 집계되면 회고 전체가 오염된다.
     try:

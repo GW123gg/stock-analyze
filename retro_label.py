@@ -352,9 +352,25 @@ def _cap_market_of(code):
 #   있었다('메가' vs '메가(10조+)', KOSDAQ 완전일치로 'KOSDAQ GLOBAL' 53건 누락).
 #   → dataset 메타에 그대로 실어 분석이 추측하지 않게 한다. _cap_bucket 리터럴과 동기 유지(하네스 검사).
 CAP_BUCKETS = ["메가(10조+)", "대형(1조+)", "중형(3천억+)", "소형"]
-# exchange 는 FDR StockListing 의 Market 원값을 가공 없이 싣는다(정규화하면 정보가 준다).
-#   'KOSDAQ GLOBAL' 은 코스닥 소속이므로 **코스닥 집계 시 반드시 함께 세어라**.
-EXCHANGES = ["KOSPI", "KOSDAQ", "KOSDAQ GLOBAL"]
+EXCHANGES = ["KOSPI", "KOSDAQ", "KONEX"]
+
+
+def _norm_market(mk):
+    """FDR Market 문자열 정규화 — 분할 집계 방지(accuracy_tracker._norm_tag 와 같은 취지).
+
+    'KOSDAQ GLOBAL' 은 코스닥 안의 우량기업 **세그먼트**일 뿐 별도 시장이 아니다. 정규화 전에는
+    exchange 가 3값으로 쪼개져 코스닥 성과가 두 조각으로 집계됐고, 회고가 매 회차 수동 병합해야
+    했다(실제로 한 회차는 병합을 빠뜨려 코스닥 열위를 과장했다 — A19).
+    KONEX 는 실제 별도 시장이므로 병합하지 않고 보존한다.
+    """
+    s = str(mk or "").strip().upper()
+    if not s:
+        return None
+    if s.startswith("KOSDAQ"):      # KOSDAQ, KOSDAQ GLOBAL
+        return "KOSDAQ"
+    if s.startswith("KOSPI"):       # 미래에 세그먼트 접미사가 붙어도 흡수
+        return "KOSPI"
+    return s                        # KONEX 등 원값 유지
 
 
 def _cap_bucket(cap_eok):
@@ -961,7 +977,7 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         _cap, _mkt = _cap_market_of(code)
         row["market_cap_eok"] = _cap
         row["cap_bucket"] = _cap_bucket(_cap)
-        row["exchange"] = (_mkt or None)
+        row["exchange"] = _norm_market(_mkt)   # A19: KOSDAQ GLOBAL → KOSDAQ 병합(분할 집계 방지)
     except Exception:
         row["market_cap_eok"] = row["cap_bucket"] = row["exchange"] = None
     # #6 rec_id/parent — (ticker,date,kind)=parent(한 추천), +horizon=rec_id(행). 다중horizon·중복 인지용.
@@ -1186,9 +1202,10 @@ def main():
             "pre_usdkrw_chg5d": "[진입피처·거시] 동결 원/달러 5일 변화율(%, +면 원화약세=외인 위험회피)",
             "market_cap_eok": "[메타·#E] 현재 시총(억원) — ⚠️조회시점 값(진입시점 아님). 버킷 분류 전용, 수익률 크기 회귀 금지",
             "cap_bucket": "[메타·#E] 메가(10조+)/대형(1조+)/중형(3천억+)/소형 — '주도주 예외'(반도체·바이오 대장) 정량 검증용(§3.16)",
-            "exchange": ("[메타·#E] KOSPI / KOSDAQ / **KOSDAQ GLOBAL**(3종 — categorical_values 참조) "
-                         "— 시장별 분해(B6/B14: 대형주 레짐과 코스닥은 따로 논다 검증용). "
-                         "★코스닥 집계는 KOSDAQ + KOSDAQ GLOBAL 을 합산하라"),
+            "exchange": ("[메타·#E] KOSPI / KOSDAQ / KONEX — 시장별 분해(B6/B14: 대형주 레짐과 코스닥은 "
+                         "따로 논다 검증용). ★v10.0: 'KOSDAQ GLOBAL'(코스닥 세그먼트)은 **KOSDAQ 으로 "
+                         "정규화**돼 들어온다 — 더는 수동 병합이 필요 없다(과거 회차가 이를 빠뜨려 "
+                         "코스닥 열위를 과장했다). 허용값은 categorical_values 참조"),
             "avg_volume_20d_ex_entry": "[라벨·#A6] 추천일 '당일 제외' 직전 20일 평균 거래량 — pre_*_ratio 의 분모(룩어헤드 제거판)",
             "kospi_ret_h_pct": "[라벨·#R1] 같은 보유창(진입일 종가->T+h)의 KOSPI 수익률(%) — 시장 기여분",
             "alpha_h_pct": "[라벨·#R1] ret_h - kospi_ret_h = 지수 차감 초과수익(%). 음수 크면 종목선택 실패, ret_h 음수인데 alpha>=0 이면 시장베타가 주범(처방: 픽 억제가 아니라 노출 축소/헤지)",

@@ -606,7 +606,8 @@ def aggregate(entries):
         "market": {},      # horizon -> {hit, total}
         "picks": {"total": 0, "hit": 0, "ret_sum": 0.0, "ret_n": 0,
                   "alpha_sum": 0.0, "alpha_n": 0},
-        "shorts": {"total": 0, "hit": 0},
+        "shorts": {"total": 0, "hit": 0, "ret_sum": 0.0, "ret_n": 0,
+                   "alpha_sum": 0.0, "alpha_n": 0, "idx_down": 0, "idx_n": 0},
         "by_tag": {},      # tag -> {total, hit, ret_sum, ret_n, alpha_sum, alpha_n}
         "by_timing": {},   # timing(임박/단기/중기) -> 동일 구조 (T1: 신호별 적중률)
         "calib": {b[0]: {"total": 0, "hit": 0} for b in CALIB_BUCKETS},
@@ -696,10 +697,26 @@ def aggregate(entries):
                 ty["alpha_n"] += 1
 
         elif kind == "short":
+            # ★v10.0(회고 9회 반복 정정): 숏의 '적중률'은 하락장에서 지수 하락 기저율에 먹힌다
+            #   (실측 적중 86% vs always-short 기저 ~91%). 우위는 alpha(지수보다 더 빠진 폭)다.
+            #   → 시장콜(#A14)과 같은 규약으로 alpha·수익률·무정보 기저율을 함께 집계한다.
             s = agg["shorts"]
             s["total"] += 1
             if hit:
                 s["hit"] += 1
+            sr = _safe_float(e.get("return_pct"))
+            if sr is not None:
+                s["ret_sum"] = s.get("ret_sum", 0.0) + sr
+                s["ret_n"] = s.get("ret_n", 0) + 1
+            sa = _safe_float(e.get("alpha_pct"))
+            if sa is not None:
+                s["alpha_sum"] = s.get("alpha_sum", 0.0) + sa
+                s["alpha_n"] = s.get("alpha_n", 0) + 1
+            sk = _safe_float(e.get("kospi_return_pct"))   # always-short 벤치마크
+            if sk is not None:
+                s["idx_n"] = s.get("idx_n", 0) + 1
+                if sk < 0:
+                    s["idx_down"] = s.get("idx_down", 0) + 1
 
     # 예시 종목(최근 픽/숏 중 수익률 극단 몇 개)
     scored = [e for e in rset if e.get("kind") in ("pick", "short")
@@ -843,7 +860,15 @@ def build_scorecard(agg, total_entries, n_added):
     s = agg["shorts"]
     if s["total"] > 0:
         srate = _pct(s["hit"], s["total"])
-        L.append(f"- 숏 적중률: {s['hit']}/{s['total']} ({_fmt_rate(srate)})")
+        _line = f"- 숏 적중률: {s['hit']}/{s['total']} ({_fmt_rate(srate)})"
+        if s.get("idx_n", 0) >= 3:      # always-short 무정보 기저율(같은 창의 지수 하락 빈도)
+            _line += f" | 벤치마크(always-short) {_fmt_rate(_pct(s['idx_down'], s['idx_n']))}"
+        L.append(_line)
+        L.append(f"- 숏 평균 수익률: {_fmt_pct(_pct_avg(s.get('ret_sum', 0.0), s.get('ret_n', 0)))}")
+        L.append(f"- 숏 평균 alpha(코스피 대비): "
+                 f"{_fmt_pct(_pct_avg(s.get('alpha_sum', 0.0), s.get('alpha_n', 0)))}")
+        L.append("  ※ 하락장에선 숏 방향적중이 지수 하락 기저율에 먹힌다 — 숏의 우위는 '적중률'이"
+                 " 아니라 alpha(지수보다 더 빠진 폭)로 판단하라(회고 9회 반복 정정).")
     L.append("")
 
     # 태그별

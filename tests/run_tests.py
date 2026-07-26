@@ -202,8 +202,15 @@ def test_compute_labels_golden():
         _produced = {rl._cap_bucket(v) for v in (200000, 50000, 5000, 100)}
         check("labels: CAP_BUCKETS enum 이 _cap_bucket 실제 반환과 일치",
               _produced == set(rl.CAP_BUCKETS), f"{sorted(_produced)} vs {sorted(rl.CAP_BUCKETS)}")
-        check("labels: EXCHANGES 에 KOSDAQ GLOBAL 포함(코스닥 누락 사고 방지)",
-              "KOSDAQ GLOBAL" in rl.EXCHANGES and "KOSPI" in rl.EXCHANGES)
+        # ★A19 v10.0: KOSDAQ GLOBAL 은 코스닥 세그먼트 → 정규화로 분할 집계를 원천 차단
+        check("norm_market: KOSDAQ GLOBAL -> KOSDAQ", rl._norm_market("KOSDAQ GLOBAL") == "KOSDAQ")
+        check("norm_market: KOSDAQ 유지", rl._norm_market("KOSDAQ") == "KOSDAQ")
+        check("norm_market: KOSPI 유지", rl._norm_market("KOSPI") == "KOSPI")
+        check("norm_market: KONEX 는 별도 시장이라 보존", rl._norm_market("KONEX") == "KONEX")
+        check("norm_market: 공백·None -> None",
+              rl._norm_market(None) is None and rl._norm_market("  ") is None)
+        check("labels: EXCHANGES enum 이 정규화 결과와 일치(GLOBAL 제외)",
+              set(rl.EXCHANGES) == {"KOSPI", "KOSDAQ", "KONEX"}, str(rl.EXCHANGES))
 
         # 익절 먼저 닿는 경로: D+1 +13% -> tp12 룰이면 D+1 실제 종가 +13 반환
         closes2 = [100.0, 113.0, 108.0, 105.0, 104.0, 103.0]

@@ -43,7 +43,11 @@ HORIZON_BY_TAG = {"장전선취매": 1, "단기스윙": 5, "장투가능": 20}
 
 def _section_kind(header):
     h = header
-    if "잡주" in h or "매수 금지" in h or "매수금지" in h:
+    # ★'## 2-주의.' 섹션은 헤더 문구와 무관하게 전부 '추천 표 제외' 섹션이다(상단 [표 형식 가정]과 일치).
+    #   구 구현은 '잡주' 리터럴에만 걸려 '강한 분산 경계(추천 표 제외)'·'매수 회피'·'관망/주의' 같은
+    #   회피 경고 섹션이 롱 pick 으로 채점됐다(실측: 회피 헤더 4종이 pick 으로 분류되고 있었다).
+    if ("잡주" in h or "매수 금지" in h or "매수금지" in h
+            or re.search(r"##\s*2-\s*(주의|⚠)", h)):
         return "exclude"
     if "숏" in h or "short" in h.lower():
         return "short"

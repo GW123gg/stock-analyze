@@ -411,6 +411,90 @@ def test_new_collectors_pure():
     check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
     check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
 
+    # ── v10.2 아카이브 섹션 분류 — '회피 경고' 섹션이 롱 픽으로 채점되던 결함 고정 ──
+    #   리포트가 "사지 마라"고 쓴 종목이 추천으로 집계되면 회고 전체가 오염된다.
+    try:
+        import retro_archive_parse as _rap
+        _excl = [
+            "## 2-주의. 관망/주의 종목 (실적·급등·분배 확인 전 보류)",
+            "## 2-주의. 매수 회피 — 강한 분산(force <= -40) 종목",
+            "## 2-주의. 강한 분산 경계 섹션 (force <= -40 또는 과열 — 추천 표 제외)",
+            "## 2-주의. 주의 종목 (force_score <= -40 — 추천 표 제외)",
+            "## 2-주의. 잡주 (매수 금지)",
+        ]
+        for _h in _excl:
+            check("archsec: 회피 섹션 제외 — %s" % _h[:34],
+                  _rap._section_kind(_h) == "exclude", str(_rap._section_kind(_h)))
+        # 정상 추천 섹션은 pick 으로 남아야 한다(과잉 제외 방지 — 고위험이라고 추천이 아닌 건 아니다)
+        _keep = [
+            "## 2. 타점 진입 대기 종목 TOP",
+            "## 2. 타점 진입 대기 종목 TOP (위험회피 국면 — 소수·소액·분할)",
+            "## 2-중소형. 중소형 고변동성 모멘텀 (고위험 — [단기스윙] 위주)",
+            "## 2-중소형. 중소형 고변동성 모멘텀 (관찰 — 고위험)",
+        ]
+        for _h in _keep:
+            check("archsec: 정상 추천 섹션 유지 — %s" % _h[:34],
+                  _rap._section_kind(_h) == "pick", str(_rap._section_kind(_h)))
+        check("archsec: 숏 섹션은 short",
+              _rap._section_kind("## 3. 투자 주의 & 숏(Short) 전략") == "short")
+    except ImportError:
+        print("[SKIP] archsec: retro_archive_parse import 불가")
+
+    # ── v10.2 DART 포화 플래그 — 100건 상한에 잘린 건수가 '무공시'로 읽히는 것 차단 ──
+    try:
+        import sys as _sys
+        import retro_label as _rl
+        _saved = (_rl._DART_KEY, _rl._CORP_MAP, _rl._disc)
+
+        class _Resp:
+            def __init__(self, j): self._j = j
+            def json(self): return self._j
+
+        class _RqStub:
+            payload = None
+            @staticmethod
+            def get(*a, **k): return _Resp(_RqStub.payload)
+
+        class _DiscStub:
+            @staticmethod
+            def classify(nm): return ("증자(희석)", 1.0)
+
+        _oldrq = _sys.modules.get("requests")
+        try:
+            _rl._DART_KEY = "k" * 40
+            _rl._CORP_MAP = {"005930": "00126380"}
+            _rl._disc = _DiscStub()
+            _sys.modules["requests"] = _RqStub
+            _base = date(2026, 1, 5)
+            _item = {"report_nm": "유상증자결정", "rcept_dt": "20260106"}
+            # 100건 꽉 참 → 포화
+            _RqStub.payload = {"status": "000", "total_count": 250, "list": [_item] * 100}
+            _r = _rl.holding_distribution("005930", _base, 5)
+            check("darttrunc: 100건 포화 시 truncated=True",
+                  _r.get("dist_disc_truncated") is True, str(_r)[:90])
+            check("darttrunc: 포화여도 건수는 실린다(하한값)",
+                  _r.get("dist_disc_count") == 100, str(_r.get("dist_disc_count")))
+            # 소량 → 비포화
+            _RqStub.payload = {"status": "000", "total_count": 3, "list": [_item] * 3}
+            _r2 = _rl.holding_distribution("005930", _base, 5)
+            check("darttrunc: 소량이면 truncated=False",
+                  _r2.get("dist_disc_truncated") is False, str(_r2)[:90])
+            # 013(무공시)은 0 — '확인 불가'(컬럼 부재)와 구분되는 기존 계약 유지
+            _RqStub.payload = {"status": "013"}
+            _r3 = _rl.holding_distribution("005930", _base, 5)
+            check("darttrunc: 무공시는 0 유지(부재와 구분)",
+                  _r3 == {"dist_disc_count": 0}, str(_r3))
+            check("darttrunc: 포화 플래그가 ENRICH_COLS 에 등록됨",
+                  "dist_disc_truncated" in _rl.ENRICH_COLS, str(_rl.ENRICH_COLS))
+        finally:
+            _rl._DART_KEY, _rl._CORP_MAP, _rl._disc = _saved
+            if _oldrq is not None:
+                _sys.modules["requests"] = _oldrq
+            else:
+                _sys.modules.pop("requests", None)
+    except ImportError:
+        print("[SKIP] darttrunc: retro_label import 불가")
+
     # ── v10.1 공매도 공표지연 컷(A25) — 룩어헤드 차단 로직을 스텁으로 실검증 ──
     #   라이브에서는 세션 스냅샷 우선(#C1) + KRX 차단이라 이 폴백 경로가 잘 안 타므로,
     #   합성 DataFrame 으로 '최근 N행 제거'가 실제로 동작하는지 못 박아 둔다.

@@ -481,6 +481,9 @@ def holding_distribution(code, base_date, horizon):
         if j.get("status") != "000":
             return {}
         items = j.get("list", []) or []
+        # page_count=100 상한 — 대형주는 한 페이지가 꽉 차 '못 본 공시'가 생길 수 있다.
+        # 조용히 잘린 채 0/소수 건수로 읽히면 가설 검증이 틀어지므로 포화를 명시한다.
+        _trunc = len(items) >= 100 or int(j.get("total_count") or 0) > 100
     except Exception:
         return {}
     hits = []
@@ -491,7 +494,8 @@ def holding_distribution(code, base_date, horizon):
                          "title": (it.get("report_nm") or "").strip()[:40]})
     return {"dist_disc_count": len(hits),
             "dist_disc_cats": sorted({h["cat"] for h in hits}),
-            "dist_disc_titles": [h["title"] for h in hits[:3]]}
+            "dist_disc_titles": [h["title"] for h in hits[:3]],
+            "dist_disc_truncated": bool(_trunc)}
 
 
 # 진입시점 피처 컬럼(룩어헤드 없음 — 진입규칙에 쓸 수 있는 예측 피처)
@@ -505,7 +509,7 @@ PRE_COLS = [
     "pre_rsi14", "pre_up_streak", "pre_ret_20d_pct", "pre_dist_52w_high_pct", "pre_disparity20", "pre_overheat",
 ]
 # 라벨side 보강 컬럼(보유 후 결과 — 진입규칙 사용 금지). cats/titles 도 CSV 에 포함(JSON 과 일관, 조용한 드롭 방지)
-ENRICH_COLS = ["dist_disc_count", "dist_disc_cats", "dist_disc_titles"]
+ENRICH_COLS = ["dist_disc_count", "dist_disc_cats", "dist_disc_titles", "dist_disc_truncated"]
 # #E 메타 컬럼(현재값 프록시 — 진입시점 아님·버킷 분류 전용): 주도주 예외·KOSPI/KOSDAQ 분해용
 META_COLS = ["market_cap_eok", "cap_bucket", "exchange"]
 # DART 분배공시 매칭 토글(--no-dart 로 끔). 키 없으면 자동 graceful.
@@ -973,10 +977,17 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         row["hit"] = (rh < 0) if kind == "short" else (rh > 0)
     row["_note"] = lab.get("note")
     # 분배성 공시 매칭(#4) — 만기행만(DART 호출 절약), 토글 ON 일 때
-    if DART_ENRICH and lab.get("matured") and base_date is not None:
+    # ★공시창 마감 게이트: 조회 구간 끝(base+horizon+14일)이 아직 안 지났으면 산출 자체를 하지 않는다.
+    #   창이 열려 있는 동안 찍은 0/건수는 '아직 안 들어온 공시'를 무공시로 굳혀 회차마다 값이 흔들렸다.
+    #   미산출 → 컬럼 부재 = '확인 불가'(0 과 구분되는 기존 계약 그대로).
+    _dd_end = (base_date + timedelta(days=int(horizon or 10) + 14)) if base_date is not None else None
+    _dd_closed = (_dd_end is not None and datetime.now().date() >= _dd_end)
+    # 캐리포워드가 '창이 열린 채 찍힌 옛 값'을 되살리면 게이트가 무력화된다 → 창 상태를 행에 남긴다.
+    row["_dd_window_open"] = (not _dd_closed)
+    if DART_ENRICH and lab.get("matured") and base_date is not None and _dd_closed:
         try:
             dd = holding_distribution(code, base_date, horizon)
-            for k in ("dist_disc_count", "dist_disc_cats", "dist_disc_titles"):
+            for k in ENRICH_COLS:      # 하드코딩 튜플 금지 — 컬럼 추가 시 조용히 누락되던 자리
                 if k in dd:
                     row[k] = dd[k]
         except Exception:
@@ -1058,8 +1069,18 @@ def build_rows():
                 if r.get(col) is None and old.get(col) is not None:
                     r[col] = old[col]
                     carried += 1
+            # ENRICH(사후 공시 라벨)도 캐리포워드 — 창이 닫힌 뒤 산출된 값은 불변이므로
+            # DART 키 없음·조회 실패로 이번 회차만 비는 것을 막는다(룩어헤드 아님: 이미 지난 창).
+            # ★조건은 'col not in r'(키 부재)여야 한다 — r.get(col) is None 으로 쓰면 의도된 0 을 덮어쓴다.
+            # ★창이 아직 열린 행은 복원하지 않는다 — 옛 값은 게이트 도입 전 '미마감 상태로 찍힌' 값이라
+            #   되살리면 창 마감 게이트가 무력화된다(창이 닫히는 회차에 새로 산출된다).
+            if not r.get("_dd_window_open"):
+                for col in ENRICH_COLS:
+                    if (col not in r) and (col in old):
+                        r[col] = old[col]
+                        carried += 1
     if carried:
-        log.info("[retro] pre_* 캐리포워드: 이전 dataset 에서 %d개 값 복원", carried)
+        log.info("[retro] pre_*/enrich 캐리포워드: 이전 dataset 에서 %d개 값 복원", carried)
     if n_arch:
         log.info("[retro] 아카이브 리포트 %d일 추가 채점 포함", n_arch)
     # #A10(회고 07-17 요청): market_call 원본을 회고에 전달 — 12회 내내 미조명이던 최악 지표(T+5 23%)의
@@ -1244,7 +1265,8 @@ def main():
             "parent_rec_id": "[식별·#6] ticker_date_kind — 같은 추천의 다중 horizon 행을 묶어 중복 인지",
             "ticker_rec_seq": "[식별·#8] 같은 종목 N번째 추천(같은 종목 최대 9일 중복 → 종목 클러스터로 가중집계)",
             "flow_unit_check": "[위생·#7] 외인수급 단위 sanity(ok/suspect). 억원 가정, 단일종목 5일|50조|·20일|100조| 초과면 suspect",
-            "dist_disc_count": "[라벨·사후] 보유기간 중 분배성 공시(증자/CB/대주주·대량보유 변동) 건수 — '거래량 클라이맥스=분배' 가설 검증(차익실현형과 교차)",
+            "dist_disc_count": "[라벨·사후] 보유기간 중 분배성 공시(증자/CB/대주주·대량보유 변동) 건수 — '거래량 클라이맥스=분배' 가설 검증(차익실현형과 교차). ★0 = DART 로 확인된 무공시, 컬럼 부재 = 확인 불가(조회실패 또는 공시창 미마감 — 창이 닫히기 전에는 산출하지 않는다)",
+            "dist_disc_truncated": "[라벨·사후] DART 조회가 100건 상한에 포화됐는지 — true 면 dist_disc_count 는 하한값이다(대형주에서 발생 가능, 무공시 판정에 쓰지 마라)",
         },
         "feature_cols": FEATURE_COLS + PRE_COLS,
         "pre_entry_feature_cols": PRE_COLS,

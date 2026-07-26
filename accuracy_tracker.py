@@ -857,6 +857,10 @@ def build_scorecard(agg, total_entries, n_added):
         L.append(f"- 적중률: {p['hit']}/{p['total']} ({_fmt_rate(rate)})")
         L.append(f"- 평균 수익률: {_fmt_pct(avg_ret)}")
         L.append(f"- 평균 alpha(코스피 대비): {_fmt_pct(avg_alpha)}")
+        if p.get("alpha_n"):
+            # 숏 주석(아래)과 동형 — '평균 수익률 음수 = 종목선별 실패'라는 오독을 매 회차 차단한다.
+            L.append("  ※ 픽 평균 수익률이 음수여도 alpha>=0 이면 손실은 시장 베타다 —"
+                     " 처방은 '픽 억제'가 아니라 순노출 축소(회고 3회 재현, [0.5]/F8-b).")
     s = agg["shorts"]
     if s["total"] > 0:
         srate = _pct(s["hit"], s["total"])
@@ -932,6 +936,12 @@ def build_scorecard(agg, total_entries, n_added):
     if not any_calib:
         L.append("")
         L.append("- (아직 채점된 표본이 없어 calibration 산출 불가)")
+    # ★표본 수가 줄어도 채점 오류가 아니다 — 회고가 '표본 감소 = 누락'으로 오독한 전례가 있어 명시한다.
+    L.append("")
+    L.append("  ※ 표본 계산은 §1 과 동일하게 '주말·휴장 중복 시장콜을 같은 창 1건으로 접은'"
+             " 뒤 이뤄진다(2026-07-21 채점분부터 calibration 에도 적용). 따라서"
+             f" 신규 채점이 0건이어도 이 규칙 적용·집계창(최근 {RECENT_DAYS} 예측일) 롤링으로"
+             " 표본 수가 줄 수 있다 — 표본 감소만으로 채점 오류를 단정하지 마라.")
     L.append("")
 
     # 예시

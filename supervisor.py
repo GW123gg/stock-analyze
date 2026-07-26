@@ -618,6 +618,13 @@ def run_morning_pipeline(guard_dup: bool = False):
     _run_step("step14.7 earnings_collect",
               [py, os.path.join(BASE_DIR, "earnings_collect.py")], timeout=120)
 
+    # step14.8: 이전 추천 종목 재평가(보유 판단) → 세션 holding_review.json
+    #   "어제 산 걸 계속 들고 있어도 되나"에 답하는 유일한 경로. 회고(retro_label)는 만기 후
+    #   사후채점이라 '지금 보유 중'인 픽에는 답을 못 준다. 판정은 안 하고 사실만 측정([5.16]).
+    #   FDR 로 종목당 1회 조회 → 종목 수에 비례해 느릴 수 있어 타임아웃을 넉넉히 준다.
+    _run_step("step14.8 holding_review",
+              [py, os.path.join(BASE_DIR, "holding_review.py")], timeout=900)
+
     # step15: 시장 국면 복합 게이트 — KOSPI 5일 + 파생 PCR + 외인 risk_off + 환율 합성 → market_caution.json
     #   회고 최강 발견('추천일 시장 과열이 결과 좌우')을 운영화(F1/F6). step12~14 산출물을 읽으므로 맨 뒤.
     _run_step("step15 market_caution",

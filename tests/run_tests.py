@@ -411,6 +411,88 @@ def test_new_collectors_pure():
     check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
     check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
 
+    # ── v10.4 보유 재평가 — 판정이 아니라 '선언한 계약 대비 현재 위치'를 정확히 재는가 ──
+    try:
+        import holding_review as _hr
+        from datetime import date as _d
+
+        def _ser(vals, start_day=2):
+            """[(date, close)] — 2026-01-02 부터 연속 거래일이라 가정(순수 계산 테스트용)."""
+            return [(_d(2026, 1, start_day + i), v) for i, v in enumerate(vals)]
+
+        _pick = {"ticker": "005930", "name": "테스트", "entry_ref": 100.0, "horizon_days": 5,
+                 "target_pct": 8, "stop_pct": -6, "partial_take_pct": 5, "trailing_stop_pct": 4}
+        # 롱: 100 → 110 고점 → 105 마감. 목표(+8) 도달, 손절(-6) 미이탈, 트레일링(고점-4) 도달
+        _r = _hr.review_one(_pick, "pick", "2026-01-01", _ser([102, 110, 105]), [], _d(2026, 1, 4))
+        check("holdrev: 수익률", _r["ret_pct"] == 5.0, str(_r["ret_pct"]))
+        check("holdrev: 고점수익", _r["peak_gain_pct"] == 10.0, str(_r["peak_gain_pct"]))
+        check("holdrev: 고점대비 반납", _r["drawdown_from_peak_pct"] == -4.55,
+              str(_r["drawdown_from_peak_pct"]))
+        check("holdrev: 목표 도달", _r["level_flags"].get("target_hit") is True)
+        check("holdrev: 손절 미이탈", _r["level_flags"].get("stop_hit") is False)
+        check("holdrev: 트레일링 도달(고점10 - 현재5 = 5 >= 4)",
+              _r["level_flags"].get("trailing_hit") is True)
+        check("holdrev: 경과 거래일", _r["elapsed_bdays"] == 3, str(_r["elapsed_bdays"]))
+        check("holdrev: 잔여 거래일", _r["remaining_bdays"] == 2, str(_r["remaining_bdays"]))
+        check("holdrev: 만기 미도달", _r["horizon_expired"] is False)
+
+        # 손절 이탈: 100 → 92 (-8% <= -6%)
+        _r2 = _hr.review_one(_pick, "pick", "2026-01-01", _ser([97, 92]), [], _d(2026, 1, 3))
+        check("holdrev: 손절 이탈 감지", _r2["level_flags"].get("stop_hit") is True)
+        check("holdrev: 현재도 손절 아래", _r2["level_flags"].get("currently_below_stop") is True)
+        # 이탈 후 회복 — stop_hit 은 True 지만 현재는 아래가 아니다(둘을 구분해야 판단이 갈린다)
+        _r3 = _hr.review_one(_pick, "pick", "2026-01-01", _ser([92, 99]), [], _d(2026, 1, 3))
+        check("holdrev: 이탈 이력은 남되", _r3["level_flags"].get("stop_hit") is True)
+        check("holdrev: 현재는 손절 위(회복)", _r3["level_flags"].get("currently_below_stop") is False)
+
+        # ★숏: 가격이 내려야 이익 — 부호 반전이 되는가
+        _short = dict(_pick, target_pct=8, stop_pct=-6)
+        _rs = _hr.review_one(_short, "short", "2026-01-01", _ser([95, 90]), [], _d(2026, 1, 3))
+        check("holdrev: 숏 ret_pct 는 원가격 기준(-10)", _rs["ret_pct"] == -10.0, str(_rs["ret_pct"]))
+        check("holdrev: 숏 favorable 은 +10", _rs["favorable_pct"] == 10.0, str(_rs["favorable_pct"]))
+        check("holdrev: 숏 목표 도달(하락 10 >= 8)", _rs["level_flags"].get("target_hit") is True)
+        check("holdrev: 숏은 손절 미이탈", _rs["level_flags"].get("stop_hit") is False)
+        # 숏이 역행(가격 상승)하면 손절
+        _rs2 = _hr.review_one(_short, "short", "2026-01-01", _ser([104, 108]), [], _d(2026, 1, 3))
+        check("holdrev: 숏 역행 시 손절 감지", _rs2["level_flags"].get("stop_hit") is True)
+
+        # ★계약 미선언 — 플래그를 False 로 채우면 '미이탈'로 오독된다
+        _bare = {"ticker": "000660", "entry_ref": 100.0, "horizon_days": 5}
+        _rb = _hr.review_one(_bare, "pick", "2026-01-01", _ser([70]), [], _d(2026, 1, 2))
+        check("holdrev: 계약 미비면 플래그 키 없음", _rb["level_flags"] == {}, str(_rb["level_flags"]))
+        check("holdrev: 계약 미비 표시", _rb["contract_complete"] is False)
+        check("holdrev: 미비 항목 열거", set(_rb["contract_missing"]) ==
+              {"target_pct", "stop_pct", "partial_take_pct", "trailing_stop_pct"},
+              str(_rb["contract_missing"]))
+        check("holdrev: 계약 없어도 수익률은 잰다", _rb["ret_pct"] == -30.0, str(_rb["ret_pct"]))
+
+        # alpha — 손실이 시장 베타인지 종목 선택 실패인지 가른다
+        _ra = _hr.review_one(_pick, "pick", "2026-01-01", _ser([95]),
+                             _ser([2000.0, 1800.0])[:1] + [], _d(2026, 1, 2))
+        _ra2 = _hr.review_one(_pick, "pick", "2026-01-01", _ser([95]),
+                              [(_d(2026, 1, 2), 1800.0)], _d(2026, 1, 2))
+        check("holdrev: 코스피 1점이면 지수수익 0 → alpha=ret",
+              _ra2.get("alpha_pct") == -5.0, str(_ra2.get("alpha_pct")))
+        _rk = _hr.review_one(_pick, "pick", "2026-01-01",
+                             _ser([95, 90]), [(_d(2026, 1, 2), 100.0), (_d(2026, 1, 3), 80.0)],
+                             _d(2026, 1, 3))
+        check("holdrev: 지수 -20%, 종목 -10% → alpha +10",
+              _rk.get("alpha_pct") == 10.0, str(_rk.get("alpha_pct")))
+
+        # v10.1 시간축 연결 — 예상 고점 시한 경과 + 아직 마이너스
+        _pv = dict(_pick, expected_peak_days=2, path_view="즉시상승", expected_gain_pct=10)
+        _rp = _hr.review_one(_pv, "pick", "2026-01-01", _ser([99, 98, 97]), [], _d(2026, 1, 4))
+        check("holdrev: 고점시한 경과 감지", _rp["path_check"]["peak_overdue"] is True)
+        check("holdrev: 시한경과+마이너스 감지", _rp["path_check"]["overdue_and_negative"] is True)
+        check("holdrev: 기대수익 대비 격차", _rp["path_check"]["gain_vs_expected_pp"] == -11.0,
+              str(_rp["path_check"].get("gain_vs_expected_pp")))
+        # entry_ref 없으면 조용히 0 이 아니라 상태로 남긴다
+        _rn = _hr.review_one({"ticker": "1", "horizon_days": 5}, "pick", "2026-01-01",
+                             _ser([100]), [], _d(2026, 1, 2))
+        check("holdrev: entry_ref 없으면 no_entry_ref", _rn["status"] == "no_entry_ref", _rn["status"])
+    except ImportError:
+        print("[SKIP] holdrev: holding_review import 불가")
+
     # ── v10.3 VKOSPI investing 폴백(A13) — 엉뚱한 지수를 VKOSPI 로 착각하면 국면이 통째로 틀어진다 ──
     try:
         import vkospi_collect as _vk

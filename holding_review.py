@@ -189,6 +189,9 @@ def review_one(pick, kind, pred_date, series, kospi_series, asof_date):
     rec["drawdown_from_peak_pct"] = _pct(last, peak)      # 고점 대비 현재 반납폭(<=0)
 
     # alpha — 같은 창의 코스피 대비 초과. 손실이 '시장 베타'인지 '종목 선택'인지 가른다([0.5]/F8-b)
+    # ★alpha_pct 는 **raw**(ret - kospi) 로 둔다 — retro_label.alpha_h_pct·accuracy_tracker 와
+    #   같은 규약이어야 회고/채점/보유재평가의 숫자가 서로 대조된다. 숏에서는 **음수가 좋다**
+    #   ("지수보다 더 빠진 폭" — accuracy_tracker:701 의 회고 9회 정정).
     if kospi_series:
         k0 = kospi_series[0][1]
         k1 = kospi_series[-1][1]
@@ -197,11 +200,18 @@ def review_one(pick, kind, pred_date, series, kospi_series, asof_date):
         if ret is not None and kret is not None:
             rec["alpha_pct"] = round(ret - kret, 2)
 
-    # 숏은 부호가 반대다 — '유리한 방향'을 따로 명시해 분석가가 헷갈리지 않게 한다
+    # ★방향 보정 쌍 — 숏은 부호가 반대다. raw 와 보정본을 **쌍으로** 두지 않으면 정반대로 읽힌다.
+    #   실사고(2026-07-27): 숏 엘앤에프가 -19.15% 하락(숏에겐 +19.15% 이익)했는데 alpha_pct 는
+    #   raw -11.0 이라, 이 둘을 나란히 보면 "수익은 났는데 시장 대비 뒤졌다"로 **정반대 해석**된다.
+    #   실제로는 지수(-8.15%)보다 11%p 더 빠져 숏이 이긴 것이다.
+    #   → 분석·리포트는 반드시 `*_favorable` 쌍으로만 읽어라.
     if kind == "short":
         rec["favorable_pct"] = round(-ret, 2) if ret is not None else None
+        rec["alpha_favorable_pct"] = (round(-rec["alpha_pct"], 2)
+                                      if rec.get("alpha_pct") is not None else None)
     else:
         rec["favorable_pct"] = ret
+        rec["alpha_favorable_pct"] = rec.get("alpha_pct")
 
     # ── 선언한 계약 대비 도달 플래그(사실) ──
     d = rec["declared"]

@@ -452,6 +452,18 @@ def test_new_collectors_pure():
         check("holdrev: 숏 favorable 은 +10", _rs["favorable_pct"] == 10.0, str(_rs["favorable_pct"]))
         check("holdrev: 숏 목표 도달(하락 10 >= 8)", _rs["level_flags"].get("target_hit") is True)
         check("holdrev: 숏은 손절 미이탈", _rs["level_flags"].get("stop_hit") is False)
+        # ★숏 alpha 부호 — raw 는 retro_label 규약(음수가 좋음), favorable 은 방향 보정
+        _rsa = _hr.review_one(_short, "short", "2026-01-01", _ser([95, 90]),
+                              [(_d(2026, 1, 2), 100.0), (_d(2026, 1, 3), 95.0)], _d(2026, 1, 3))
+        check("holdrev: 숏 alpha_pct 는 raw(-10 - (-5) = -5)",
+              _rsa["alpha_pct"] == -5.0, str(_rsa["alpha_pct"]))
+        check("holdrev: 숏 alpha_favorable 은 부호 반전(+5)",
+              _rsa["alpha_favorable_pct"] == 5.0, str(_rsa["alpha_favorable_pct"]))
+        _rla = _hr.review_one(_pick, "pick", "2026-01-01", _ser([95, 90]),
+                              [(_d(2026, 1, 2), 100.0), (_d(2026, 1, 3), 95.0)], _d(2026, 1, 3))
+        check("holdrev: 롱은 두 alpha 가 같다",
+              _rla.get("alpha_pct") == _rla.get("alpha_favorable_pct") == -5.0,
+              "%s vs %s" % (_rla.get("alpha_pct"), _rla.get("alpha_favorable_pct")))
         # 숏이 역행(가격 상승)하면 손절
         _rs2 = _hr.review_one(_short, "short", "2026-01-01", _ser([104, 108]), [], _d(2026, 1, 3))
         check("holdrev: 숏 역행 시 손절 감지", _rs2["level_flags"].get("stop_hit") is True)

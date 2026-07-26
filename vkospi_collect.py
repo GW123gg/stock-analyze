@@ -127,9 +127,8 @@ def fetch_items(key: str, begin: str, end: str, num_rows: int = 200) -> list:
         return []
 
 
-def build_payload(items: list) -> dict:
-    """API item 리스트 → vkospi.json payload. 데이터 없으면 {}.
-    임계 라벨은 정성 판단의 '출발점' 어림값이다(기계 적용 금지)."""
+def items_to_rows(items: list) -> dict:
+    """API item 리스트 → {날짜: 종가}. 파싱 실패 항목은 건너뛴다(순수함수)."""
     rows = {}
     for it in items:
         try:
@@ -142,6 +141,15 @@ def build_payload(items: list) -> dict:
                 rows[f"{d[:4]}-{d[4:6]}-{d[6:]}"] = round(c, 2)
         except Exception:
             continue
+    return rows
+
+
+def build_payload(items: list, rows: dict = None, source: str = "fsc_index") -> dict:
+    """API item 리스트(또는 rows 직접 주입) → vkospi.json payload. 데이터 없으면 {}.
+    임계 라벨은 정성 판단의 '출발점' 어림값이다(기계 적용 금지).
+    rows 를 주면 items 대신 그것을 쓴다(investing 폴백·캐시 병합 경로)."""
+    if rows is None:
+        rows = items_to_rows(items)
     if not rows:
         return {}
     series = sorted(rows.items())                      # 오래된 → 최신
@@ -160,9 +168,9 @@ def build_payload(items: list) -> dict:
         label = "안정(저변동성 — 안도 국면)"
     else:
         label = "보통"
-    return {
+    out = {
         "asof_date": last_d,
-        "source": "fsc_index",
+        "source": source,
         "latest": {"value": last_c, "chg_pct": chg, "d5_chg_pct": d5},
         "pct_rank_60d": pct_rank,
         "level_label": label,
@@ -170,6 +178,85 @@ def build_payload(items: list) -> dict:
         "note": "임계값(25/20/14, d5 +30%)은 정성 판단의 출발점 어림값 — 맥락과 함께 해석",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
+    # ★표본이 얕으면 백분위·5일변화가 무의미하다 — 조용히 숫자를 내놓지 말고 명시한다.
+    #   (investing 폴백은 하루 1점씩만 쌓이므로 초기엔 series 가 짧다)
+    out["n_points"] = len(series)
+    if len(look) < 20:
+        out["pct_rank_60d"] = None
+        out["pct_rank_note"] = "표본 %d일(<20)로 백분위 산출 불가 — 절대수준만 보라" % len(look)
+    if len(closes) < 6:
+        out["latest"]["d5_chg_pct"] = None
+    return out
+
+
+# =====================================================================
+# investing 폴백 — FSC 활용신청 전이거나 KRX/FSC 가 막혔을 때
+#   2026-07-26 배경: data.krx.co.kr 이 403 으로 차단되고 FSC '지수시세정보'는 활용신청 전이라
+#   VKOSPI 가 전량 결측이었다(원장 A13). 하필 코스피가 7월 고점 대비 -19% 로 빠지고 일간 ±5~6%
+#   등락하는 최고 변동성 구간이라, 공포 국면 판별(F1)이 통째로 눈을 감고 있었다.
+#   ※ 이 경로는 '최신 1점'만 준다 → 매일 실행하며 기존 series 에 누적 병합해 스스로 복구한다.
+INVESTING_URL = "https://kr.investing.com/indices/kospi-volatility"
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+
+def _investing_html(url=INVESTING_URL) -> str:
+    """requests → curl 폴백(investing 이 python TLS 지문을 403 하는 경우가 있다)."""
+    if requests is not None:
+        try:
+            r = requests.get(url, headers={"User-Agent": UA}, timeout=20)
+            if r.status_code == 200 and len(r.text) > 2000:
+                return r.text
+        except Exception:
+            pass
+    try:
+        import subprocess
+        r = subprocess.run(["curl", "-sL", "--max-time", "20", "-A", UA, url],
+                           capture_output=True, timeout=25)
+        return r.stdout.decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def parse_investing(html_text: str) -> dict:
+    """investing VKOSPI 페이지 → {날짜: 종가} 1점. 실패 시 {} (순수함수 — 테스트 가능).
+    ★종목 확인을 반드시 한다 — 다른 지수 페이지를 잘못 파싱하면 국면 판정이 통째로 틀어진다."""
+    if not html_text:
+        return {}
+    import re as _re
+    # 1) 이 페이지가 정말 VKOSPI 인가(제목/심볼 확인)
+    if not _re.search(r"KSVKOSPI|KOSPI\s*Volatility|코스피\s*변동성", html_text, _re.I):
+        return {}
+    m = _re.search(r'data-test="instrument-price-last"[^>]*>([^<]+)<', html_text)
+    if not m:
+        return {}
+    try:
+        val = round(float(m.group(1).replace(",", "").strip()), 2)
+    except Exception:
+        return {}
+    if not (0 < val < 200):          # 변동성지수의 물리적 범위 — 파싱 사고 차단
+        return {}
+    # 2) 최종 체결 시각(UTC ISO) → KST 날짜. 없으면 오늘로 두지 말고 실패시킨다(시점 날조 금지)
+    t = _re.search(r'<time[^>]*dateTime="([^"]+)"', html_text)
+    if not t:
+        return {}
+    try:
+        iso = t.group(1).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        kst = (dt + timedelta(hours=9)).strftime("%Y-%m-%d") if dt.tzinfo else \
+              dt.strftime("%Y-%m-%d")
+    except Exception:
+        return {}
+    return {kst: val}
+
+
+def load_prev_series(path) -> dict:
+    """기존 vkospi.json 의 series 를 {날짜: 값} 으로 되살린다(폴백이 하루 1점만 주므로 누적용)."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            j = json.load(f)
+        return {str(d): float(v) for d, v in (j.get("series") or []) if d}
+    except Exception:
+        return {}
 
 
 # =====================================================================
@@ -181,26 +268,43 @@ def main():
     args = ap.parse_args()
 
     key, src = load_key()
-    if not key:
-        log.info("키 없음(vkospi_api.txt / fsc_api.txt) — 수집 생략. "
-                 "vkospi_api.txt 에 공공데이터포털 인증키를 넣으면 동작한다.")
-        return 0
-    log.info("키 로드: %s", src)
+    items = []
+    if key:
+        log.info("키 로드: %s", src)
+        end = datetime.now().strftime("%Y%m%d")
+        begin = (datetime.now() - timedelta(days=args.days)).strftime("%Y%m%d")
+        items = fetch_items(key, begin, end)
+    else:
+        log.info("키 없음(vkospi_api.txt / fsc_api.txt) — FSC 생략, investing 폴백 시도")
 
-    end = datetime.now().strftime("%Y%m%d")
-    begin = (datetime.now() - timedelta(days=args.days)).strftime("%Y%m%d")
-    items = fetch_items(key, begin, end)
+    rows = items_to_rows(items)
+    source = "fsc_index"
+    if not rows:
+        # ★폴백: FSC 활용신청 전/차단 시에도 절대수준만은 확보한다(A13 — 전량 결측 방지)
+        fb = parse_investing(_investing_html())
+        if fb:
+            source = "investing_fallback"
+            prev = load_prev_series(args.out)      # 하루 1점씩 누적돼 series 가 스스로 복구된다
+            prev.update(fb)
+            rows = prev
+            log.info("investing 폴백 사용: %s = %.2f (누적 %d점)",
+                     list(fb)[0], list(fb.values())[0], len(rows))
+        else:
+            log.info("investing 폴백도 실패")
+
     if args.check:
-        log.info("check: 응답 item %d건 (변동성 필터 전)", len(items))
+        log.info("check: FSC item %d건 / 최종 rows %d점 (source=%s)", len(items), len(rows), source)
         return 0
-    payload = build_payload(items)
+    payload = build_payload(items, rows=rows, source=source)
     if not payload:
         log.info("VKOSPI 데이터 없음(활용신청 전이거나 응답 비어있음) — 파일 미생성, 정상 종료")
         return 0
     save_json_atomic(args.out, payload)
-    log.info("저장: %s (asof=%s value=%.2f %s | 60d백분위 %.0f%%)",
+    _pr = payload.get("pct_rank_60d")
+    log.info("저장: %s (asof=%s value=%.2f %s | 출처=%s 표본=%d점 | 60d백분위 %s)",
              args.out, payload["asof_date"], payload["latest"]["value"],
-             payload["level_label"], payload["pct_rank_60d"])
+             payload["level_label"], payload.get("source"), payload.get("n_points", 0),
+             ("%.0f%%" % _pr) if _pr is not None else "산출불가(표본부족)")
     return 0
 
 

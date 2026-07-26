@@ -411,6 +411,44 @@ def test_new_collectors_pure():
     check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
     check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
 
+    # ── v10.3 VKOSPI investing 폴백(A13) — 엉뚱한 지수를 VKOSPI 로 착각하면 국면이 통째로 틀어진다 ──
+    try:
+        import vkospi_collect as _vk
+        _good = ('<h1>KOSPI Volatility (KSVKOSPI)</h1>'
+                 '<span data-test="instrument-price-last">78.65</span>'
+                 '<time dateTime="2026-07-24T06:29:59.000Z"></time>' + "x" * 3000)
+        _r = _vk.parse_investing(_good)
+        check("vkfb: 정상 파싱(KST 날짜 환산)", _r == {"2026-07-24": 78.65}, str(_r))
+        # ★다른 지수 페이지를 잘못 열었을 때 — 반드시 거부
+        _wrong = _good.replace("KOSPI Volatility (KSVKOSPI)", "KOSPI 200 Futures")
+        check("vkfb: 다른 지수 페이지 거부", _vk.parse_investing(_wrong) == {},
+              str(_vk.parse_investing(_wrong)))
+        # 값이 물리적 범위를 벗어나면 파싱 사고로 보고 거부
+        _huge = _good.replace(">78.65<", ">2,654.30<")
+        check("vkfb: 범위 이탈 값 거부(지수 오인)", _vk.parse_investing(_huge) == {})
+        _zero = _good.replace(">78.65<", ">0<")
+        check("vkfb: 0 이하 거부", _vk.parse_investing(_zero) == {})
+        # 체결 시각이 없으면 '오늘'로 날조하지 말고 실패 — 시점 날조 금지
+        _nots = _good.replace('<time dateTime="2026-07-24T06:29:59.000Z"></time>', "")
+        check("vkfb: 체결시각 없으면 거부(날짜 날조 금지)", _vk.parse_investing(_nots) == {})
+        check("vkfb: 빈 입력 거부", _vk.parse_investing("") == {})
+        # 표본이 얕으면 백분위를 조용히 내놓지 않는다
+        _p1 = _vk.build_payload([], rows={"2026-07-24": 78.65}, source="investing_fallback")
+        check("vkfb: 1점이면 백분위 None", _p1.get("pct_rank_60d") is None, str(_p1.get("pct_rank_60d")))
+        check("vkfb: 1점이면 d5 None", _p1["latest"]["d5_chg_pct"] is None)
+        check("vkfb: source 가 payload 에 실린다", _p1.get("source") == "investing_fallback")
+        check("vkfb: 78.65 는 공포 라벨", "공포" in _p1.get("level_label", ""), _p1.get("level_label"))
+        # 충분한 표본이면 백분위가 다시 산출된다(누적 복구 경로)
+        _many = {"2026-05-%02d" % (d + 1): 20.0 + d for d in range(25)}
+        _p2 = _vk.build_payload([], rows=_many, source="investing_fallback")
+        check("vkfb: 표본 20+ 면 백분위 산출", _p2.get("pct_rank_60d") is not None)
+        # items 경로(FSC)는 기존 계약 그대로여야 한다
+        _p3 = _vk.build_payload([{"idxNm": "코스피200 변동성지수", "basDt": "20260724", "clpr": "30.5"}])
+        check("vkfb: FSC items 경로 불변", _p3.get("asof_date") == "2026-07-24"
+              and _p3.get("source") == "fsc_index", str(_p3.get("source")))
+    except ImportError:
+        print("[SKIP] vkfb: vkospi_collect import 불가")
+
     # ── v10.3 HTS 캡처 검증 — '엉뚱한 화면이 조용히 통과'하는 것이 최대 위험 ──
     #   로그인창·다른 화면·캐시·위변조가 ok 로 새어 나가면 그 숫자가 추천 근거가 된다.
     try:

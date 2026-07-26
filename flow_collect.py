@@ -196,8 +196,18 @@ def get_flow_asof(ticker, asof, lookback=20):
         return _ASOF_CACHE[key]
     out = {}
     try:
-        begin = (datetime.strptime(str(asof), "%Y%m%d") - timedelta(days=lookback + 18)).strftime("%Y%m%d")
+        _asof_dt = datetime.strptime(str(asof), "%Y%m%d")
+        begin = (_asof_dt - timedelta(days=lookback + 18)).strftime("%Y%m%d")
         df = _krx.get_market_trading_value_by_date(begin, str(asof), ticker)
+        # ★v10.5 룩어헤드 교정(2026-07-27 전면감사, A25 와 동일 클래스): end=asof 포함 조회라
+        #   추천일 **당일** 수급이 pre_* 진입 피처에 들어갈 수 있었다(06:30 실행은 당일 행이 없어
+        #   무해하지만, 저녁·장중 백필 재실행에서 D일 외인/개인 순매수가 유입). entry_ref=D-1 종가
+        #   빈티지와 맞추려면 수급도 asof **미만**까지만이 맞다.
+        if df is not None and len(df) > 0:
+            try:
+                df = df[df.index < _asof_dt]
+            except Exception:
+                pass
         if df is not None and len(df) > 0:
             fcol = _fcol(df)
             icol = "기관합계" if "기관합계" in df.columns else None

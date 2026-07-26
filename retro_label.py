@@ -159,17 +159,21 @@ def _ks11_series():
 
 
 def _kospi_ret_h(base_date, horizon):
-    """진입일 종가 -> T+horizon 종가의 KOSPI 수익률(%) — 알파(ret_h - kospi_ret_h) 라벨용(사후 라벨).
-    '과열추격 -9%가 종목선택 실패인가, 그 뒤 지수가 빠진 것(베타)인가'를 분리한다. 미만기/결측이면 None."""
+    """진입 **전일(D-1) 종가** -> T+horizon 종가의 KOSPI 수익률(%) — 알파(ret_h - kospi_ret_h) 라벨용.
+    '과열추격 -9%가 종목선택 실패인가, 그 뒤 지수가 빠진 것(베타)인가'를 분리한다. 미만기/결측이면 None.
+    ★v10.5 앵커 교정(2026-07-27 전면감사): 종목 다리는 entry_ref=D-1 종가에서 시작하는데 지수 다리가
+      'd >= base_date 첫 봉'(D 종가) 앵커라 **추천일 하루치 지수 변동이 통째로 alpha 로 오귀속**됐다.
+      주말 추천(금 종가 앵커) 뒤 월요일 폭락(07-13 -8.95%)이 전부 '종목선택 실패'로 계산되던 실측 사례.
+      → 지수 앵커를 base_date **미만** 마지막 봉으로 통일(종목 다리와 같은 빈티지·같은 창 길이)."""
     if base_date is None or not horizon:
         return None
     ser = _ks11_series()
     if not ser:
         return None
     start = next((i for i, (d, _c) in enumerate(ser) if d >= base_date), None)
-    if start is None or start + horizon >= len(ser):
+    if start is None or start == 0 or start + horizon >= len(ser):
         return None
-    c0, c1 = ser[start][1], ser[start + horizon][1]
+    c0, c1 = ser[start - 1][1], ser[start + horizon][1]
     if not c0:
         return None
     return round((c1 / c0 - 1.0) * 100.0, 2)
@@ -269,7 +273,12 @@ def pre_tech_features(code, base_date):
         start = (base_date - timedelta(days=400)).strftime("%Y-%m-%d")
         end = base_date.strftime("%Y-%m-%d")
         df = fdr.DataReader(str(code).zfill(6), start, end)
-        closes = [float(x) for x in df["Close"].tolist() if x == x and x > 0]
+        # ★v10.5 룩어헤드 교정(2026-07-27 전면감사, A22 와 동일 클래스): FDR end 는 포함 경계라
+        #   base_date **당일 종가**가 마지막 봉으로 들어와 pre_rsi14/pre_up_streak/pre_ret_20d 등
+        #   '진입 전' 피처 6종 전부에 추천일 결과가 새어 들어갔다(실측: 세션 overheat 스냅샷 대비
+        #   up_streak 이 '하루 시프트' 시그니처 60%). 06:30 시점에 당일 종가는 미래다 → 미만 봉만.
+        closes = [float(x) for d, x in zip(df.index, df["Close"].tolist())
+                  if d.date() < base_date and x == x and x > 0]
         if len(closes) >= 25:
             c = closes[-1]
             ret20 = round((c / closes[-21] - 1) * 100, 2) if len(closes) >= 21 else None

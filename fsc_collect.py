@@ -237,12 +237,16 @@ def fetch_history_fsc(key, code, begin, end) -> list:
 
 
 def fetch_history_fdr(code, begin, end) -> list:
-    """FDR 폴백: 일별 종가/거래량/등락률 → 같은 정규화 형식."""
+    """FDR 폴백: 일별 종가/거래량/등락률 → 같은 정규화 형식.
+    ★v10.5(2026-07-27 전면감사): 구 구현이 end 인자를 **무시**하고 오늘까지 조회해, FSC 전면 실패
+    + 장중 실행 조합에서 당일 미확정 부분봉이 종가처럼 들어갈 수 있었다(꼬리보강 경로에만 있던
+    당일 배제가 전면 폴백 경로에는 없었다) → end 존중 + 당일 봉 배제를 여기(공통 지점)서 강제."""
     if not FDR_OK:
         return []
     try:
         start = "%s-%s-%s" % (begin[:4], begin[4:6], begin[6:])
-        df = fdr.DataReader(code, start)
+        end_s = ("%s-%s-%s" % (end[:4], end[4:6], end[6:])) if end else None
+        df = fdr.DataReader(code, start, end_s)
     except Exception:
         return []
     if df is None or getattr(df, "empty", True):
@@ -264,6 +268,9 @@ def fetch_history_fdr(code, begin, end) -> list:
     except Exception:
         return []
     rows = [x for x in rows if x["close"] is not None]
+    # 당일 부분봉 배제(장중 실행 방어 — 06:30 실행이면 애초에 없다)
+    _today_s = datetime.now().strftime("%Y-%m-%d")
+    rows = [x for x in rows if x["date"] < _today_s]
     rows.sort(key=lambda x: x["date"])
     return rows
 

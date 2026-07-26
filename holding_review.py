@@ -290,6 +290,20 @@ def _next_bday_index(series, base_date):
     return len(series)
 
 
+def _kospi_window(kser_all, pdate):
+    """alpha 용 지수 창: [D-1 앵커봉] + [D 초과 봉들] (순수함수 — 단독 테스트 가능).
+    ★v10.5 앵커 교정(2026-07-27 전면감사): 구 구현은 지수 다리를 'D 초과 첫 봉'(D+1 종가)에서
+    시작시켜 종목 다리(entry_ref=D-1 종가)와 **2거래일** 어긋났다 — 추천일·익일 지수 변동이
+    통째로 alpha 로 오귀속(07-12 추천 뒤 07-13 -8.95% 폭락이 전부 '종목 탓'으로 계산된 실측 사례).
+    review_one 은 kospi_series[0]→[-1] 로 지수수익을 재므로, 첫 원소를 D-1 종가로 두면
+    종목과 같은 창이 된다."""
+    after = [x for x in kser_all if x[0] > pdate]
+    before = [x for x in kser_all if x[0] < pdate]
+    if not before or not after:
+        return []          # 앵커 없이 D+1 시작으로 재던 구버전보다, 없는 게 낫다(오귀속 방지)
+    return before[-1:] + after
+
+
 # =====================================================================
 def collect(lookback_days=DEFAULT_LOOKBACK_DAYS, asof=None):
     """열려 있는(만기 전 + 최근 만기) 픽을 모아 재평가. → payload dict."""
@@ -314,14 +328,14 @@ def collect(lookback_days=DEFAULT_LOOKBACK_DAYS, asof=None):
                 if not code or len(code) != 6:
                     continue
                 # 직전 거래일까지만(룩어헤드 금지) — end 를 어제로 둔다
-                start = (pdate - timedelta(days=5)).strftime("%Y-%m-%d")
+                # D-1 앵커봉 확보용 여유(연휴 최장 대비 10일 — v10.5 지수 앵커 교정과 세트)
+                start = (pdate - timedelta(days=10)).strftime("%Y-%m-%d")
                 end = (today - timedelta(days=1)).strftime("%Y-%m-%d")
                 ser_all = _closes(code, start, end)
                 i0 = _next_bday_index(ser_all, pdate)
                 ser = ser_all[i0:]
                 kser_all = _kospi_closes(start, end)
-                j0 = _next_bday_index(kser_all, pdate)
-                kser = kser_all[j0:]
+                kser = _kospi_window(kser_all, pdate)   # ★D-1 앵커(종목 entry_ref 와 같은 빈티지)
                 asof_d = ser[-1][0] if ser else None
                 rec = review_one(it, kind, pdate.strftime("%Y-%m-%d"), ser, kser, asof_d)
                 # 만기 + 유예 넘긴 것은 제외(이미 회고가 채점한다)

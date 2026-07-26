@@ -329,9 +329,38 @@ def _safe_float(v):
         return None
 
 
-def _index_return(symbol, base_date, horizon_days):
-    """base_date(0번째 거래일) 종가 대비 T+horizon 종가 수익률(%). 실패 시 None."""
-    c0, _ = _close_on_or_after(symbol, base_date)
+def _close_before(symbol, base_date):
+    """base_date **미만** 마지막 거래일의 종가 — entry_ref(전일 종가)와 같은 빈티지."""
+    df = _fetch_history(symbol, (base_date - timedelta(days=15)).strftime("%Y-%m-%d"))
+    if df is None or df.empty:
+        return None
+    ccol = _close_col(df)
+    if not ccol:
+        return None
+    dates = _trading_dates(df)
+    last = None
+    for i, d in enumerate(dates):
+        if d is not None and d < base_date:
+            last = i
+        elif d is not None and d >= base_date:
+            break
+    if last is None:
+        return None
+    try:
+        v = float(df[ccol].iloc[last])
+        return v if v > 0 else None
+    except Exception:
+        return None
+
+
+def _index_return(symbol, base_date, horizon_days, anchor_before=False):
+    """지수 수익률(%). 실패 시 None.
+    anchor_before=False: base_date(0번째 거래일) 종가 → T+h — **시장콜 채점용**(지수 자체가 예측 대상).
+    anchor_before=True : base_date 미만 마지막 종가 → T+h — **alpha 차감용**.
+    ★v10.5(2026-07-27 전면감사): 픽/숏의 종목 다리는 entry_ref=D-1 종가인데 지수 다리가 D 종가
+      앵커라 추천일 하루치 지수 변동이 alpha 로 오귀속됐다(하락기엔 픽 alpha 과소·숏 alpha 과대의
+      한 방향 편향). alpha 경로만 D-1 앵커로 교정 — 시장콜 정의는 불변(이력 채점 일관성)."""
+    c0 = _close_before(symbol, base_date) if anchor_before else _close_on_or_after(symbol, base_date)[0]
     ch, sdate = _close_at_horizon(symbol, base_date, horizon_days)
     if c0 is None or ch is None or c0 <= 0:
         return None, None
@@ -369,8 +398,8 @@ def grade_pick(pred_date, item, kind):
 
     ret_pct = (close_h / entry_ref - 1.0) * 100.0
 
-    # 같은 구간 코스피 수익률 → alpha
-    kospi_ret, _ = _index_return(KOSPI_SYMBOL, base_date, horizon)
+    # 같은 구간 코스피 수익률 → alpha (★anchor_before: 종목 다리 entry_ref=D-1 종가와 같은 빈티지)
+    kospi_ret, _ = _index_return(KOSPI_SYMBOL, base_date, horizon, anchor_before=True)
     alpha = (ret_pct - kospi_ret) if kospi_ret is not None else None
 
     tag = _norm_tag(item.get("tag"))

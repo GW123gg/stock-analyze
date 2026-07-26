@@ -174,8 +174,11 @@ def test_compute_labels_golden():
     try:
         rl.fsc, rl.FSC_OK = _FscStub, True
         rl.FLOW_OK = False                      # 보유기간 수급 라이브 호출 차단(네트워크 0)
-        # KOSPI: 진입일 100 -> T+5 102 (지수 +2%) -> alpha = -5 - 2 = -7
-        rl._KS11_SERIES = [(d, c) for d, c in zip(days, [100.0, 101.0, 100.5, 99.0, 101.5, 102.0])]
+        # KOSPI: D-1 종가 100 -> T+5 102 (지수 +2%) -> alpha = -5 - 2 = -7
+        # ★v10.5 앵커 교정 반영: 지수 다리는 이제 D-1 종가(종목 entry_ref 와 같은 빈티지)에서
+        #   시작한다. 직전 봉이 없으면 None 이 정답이므로 픽스처에 D-1 봉을 명시한다.
+        rl._KS11_SERIES = ([(base - timedelta(days=1), 100.0)] +
+                           [(d, c) for d, c in zip(days, [100.0, 101.0, 100.5, 99.0, 101.5, 102.0])])
 
         lab = rl.compute_labels("TEST", base, 100.0, 5)
         check("labels: matured", lab["matured"] is True)
@@ -410,6 +413,133 @@ def test_new_collectors_pure():
     check("earnings: 날짜 구분 반영", ev[0]["date"] == "2026-07-20" and ev[1]["date"] == "2026-07-21")
     check("earnings: 이름·슬러그(쿼리 제거)", ev[0]["name"] == "기아" and ev[1]["slug"] == "posco", str(ev))
     check("earnings: 빈 입력 -> 빈 리스트", ecal.parse_calendar("") == [])
+
+    # ── v10.5 알파 지수앵커 대칭(전면감사 P0) — 종목=D-1 종가인데 지수=D 종가면 추천일
+    #    지수 변동이 통째로 '종목선택'으로 오귀속된다. 세 계산기 전부 D-1 앵커로 통일 검증. ──
+    try:
+        import retro_label as _rl5
+        from datetime import date as _d5
+        _saved_ser = _rl5._KS11_SERIES
+        try:
+            # 월 100 → 화 110 → 수 99 → 목 88 (기준일=화요일)
+            _rl5._KS11_SERIES = [(_d5(2026, 1, 5), 100.0), (_d5(2026, 1, 6), 110.0),
+                                 (_d5(2026, 1, 7), 99.0), (_d5(2026, 1, 8), 88.0)]
+            _r = _rl5._kospi_ret_h(_d5(2026, 1, 6), 2)
+            # D-1(월 100) → T+2(목 88) = -12%. 구버전(D 110 앵커)이면 -20% 였다.
+            check("alpha앵커: retro_label D-1 종가 앵커(-12%)", _r == -12.0, str(_r))
+            # 주말 추천(기준일=일요일): 종목 entry_ref=금요일 종가와 같은 봉이어야 한다
+            _rl5._KS11_SERIES = [(_d5(2026, 1, 9), 100.0), (_d5(2026, 1, 12), 91.0),
+                                 (_d5(2026, 1, 13), 90.0), (_d5(2026, 1, 14), 89.0)]
+            _r2 = _rl5._kospi_ret_h(_d5(2026, 1, 11), 1)   # 일요일 추천, h=1
+            # 금(100) → 월+1=화(90) = -10%. 구버전은 월(91) 앵커라 월요일 폭락 -9% 가 alpha 로 샜다.
+            check("alpha앵커: 주말 추천도 직전 거래일(금) 앵커", _r2 == -10.0, str(_r2))
+            # 앵커봉이 없으면(시계열 첫 봉이 기준일 이후) None — 0 이나 D 앵커로 조용히 대체 금지
+            _r3 = _rl5._kospi_ret_h(_d5(2026, 1, 9), 1)
+            check("alpha앵커: 직전 봉 없으면 None", _r3 is None, str(_r3))
+        finally:
+            _rl5._KS11_SERIES = _saved_ser
+    except ImportError:
+        print("[SKIP] alpha앵커: retro_label import 불가")
+
+    try:
+        import pandas as _pd5
+        import accuracy_tracker as _at5
+        from datetime import date as _d5b
+        _idx = _pd5.to_datetime(["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"])
+        _dfK = _pd5.DataFrame({"Close": [100.0, 110.0, 99.0, 88.0]}, index=_idx)
+        _old_fh = _at5._fetch_history
+        try:
+            _at5._fetch_history = lambda symbol, start: _dfK
+            check("alpha앵커: tracker _close_before = D-1 종가",
+                  _at5._close_before("KS11", _d5b(2026, 1, 6)) == 100.0)
+            _rB, _ = _at5._index_return("KS11", _d5b(2026, 1, 6), 2, anchor_before=True)
+            _rA, _ = _at5._index_return("KS11", _d5b(2026, 1, 6), 2, anchor_before=False)
+            check("alpha앵커: tracker anchor_before=True → -12%", round(_rB, 1) == -12.0, str(_rB))
+            check("alpha앵커: 시장콜 경로(False)는 종전 정의 유지(-20%)", round(_rA, 1) == -20.0, str(_rA))
+        finally:
+            _at5._fetch_history = _old_fh
+    except ImportError:
+        print("[SKIP] alpha앵커: pandas/accuracy_tracker 불가")
+
+    try:
+        import holding_review as _hr5
+        from datetime import date as _d5c
+        _ks = [(_d5c(2026, 1, 5), 100.0), (_d5c(2026, 1, 6), 110.0),
+               (_d5c(2026, 1, 7), 99.0), (_d5c(2026, 1, 8), 88.0)]
+        _w = _hr5._kospi_window(_ks, _d5c(2026, 1, 6))
+        check("alpha앵커: holdrev 창 = [D-1] + [D초과]",
+              _w == [(_d5c(2026, 1, 5), 100.0), (_d5c(2026, 1, 7), 99.0), (_d5c(2026, 1, 8), 88.0)],
+              str(_w))
+        check("alpha앵커: holdrev 앵커봉 없으면 빈 창(오귀속보다 결측)",
+              _hr5._kospi_window(_ks[1:], _d5c(2026, 1, 6)) == [] or
+              _hr5._kospi_window([(_d5c(2026, 1, 7), 99.0)], _d5c(2026, 1, 6)) == [],
+              "before 없음 케이스")
+    except ImportError:
+        print("[SKIP] alpha앵커: holding_review 불가")
+
+    # ── v10.5 pre_tech 당일 배제 + flow asof 미만 + fsc FDR end 존중(전면감사 P0/P1) ──
+    try:
+        import pandas as _pd6
+        import flow_collect as _fc6
+        from datetime import datetime as _DT6
+        _fidx = _pd5.to_datetime(["2026-07-22", "2026-07-23", "2026-07-24"])
+        _fdf = _pd6.DataFrame({"외국인합계": [1e8, 1e8, 1e8],
+                               "기관합계": [2e8, 2e8, 2e8],
+                               "개인": [-3e8, -3e8, -3e8]}, index=_fidx)
+
+        class _KrxF:
+            @staticmethod
+            def get_market_trading_value_by_date(b, e, t):
+                return _fdf.copy()
+
+        _oldk, _oldc = _fc6._krx, dict(_fc6._ASOF_CACHE)
+        try:
+            _fc6._krx = _KrxF()
+            _fc6._ASOF_CACHE.clear()
+            _o = _fc6.get_flow_asof("005930", "20260724")
+            # asof(07-24) 당일 행이 빠져야 한다: 외국인 5d 합 = 2일 x 1억 = 2억
+            check("flowasof: 당일 수급 배제(외국인 2억)", _o.get("pre_foreign_5d_eok") == 2, str(_o))
+            check("flowasof: 기관도 동일(4억)", _o.get("pre_inst_5d_eok") == 4, str(_o))
+        finally:
+            _fc6._krx = _oldk
+            _fc6._ASOF_CACHE.clear()
+            _fc6._ASOF_CACHE.update(_oldc)
+    except ImportError:
+        print("[SKIP] flowasof: pandas/flow_collect 불가")
+
+    try:
+        import pandas as _pd7
+        import fsc_collect as _fs7
+        from datetime import datetime as _DT7, timedelta as _TD7
+        _t0 = _DT7.now().date()
+        _days = [_t0 - _TD7(days=2), _t0 - _TD7(days=1), _t0]
+        _fidx7 = _pd7.to_datetime([d.strftime("%Y-%m-%d") for d in _days])
+        _df7 = _pd7.DataFrame({"Close": [10.0, 11.0, 12.0], "Change": [0.01, 0.02, 0.03],
+                               "Volume": [1, 1, 1], "Open": [10, 11, 12],
+                               "High": [10, 11, 12], "Low": [10, 11, 12]}, index=_fidx7)
+        _calls = {}
+
+        class _FdrStub:
+            @staticmethod
+            def DataReader(code, start, end=None):
+                _calls["end"] = end
+                return _df7.copy()
+
+        _old_fdr, _old_ok = _fs7.fdr, _fs7.FDR_OK
+        try:
+            _fs7.fdr = _FdrStub()
+            _fs7.FDR_OK = True
+            _rows = _fs7.fetch_history_fdr("005930", _days[0].strftime("%Y%m%d"),
+                                           _t0.strftime("%Y%m%d"))
+            check("fscfdr: end 인자가 DataReader 에 전달된다", _calls.get("end") is not None,
+                  str(_calls))
+            check("fscfdr: 당일 부분봉 배제(2행만)", len(_rows) == 2 and
+                  all(r["date"] < _t0.strftime("%Y-%m-%d") for r in _rows), str(len(_rows)))
+        finally:
+            _fs7.fdr = _old_fdr
+            _fs7.FDR_OK = _old_ok
+    except ImportError:
+        print("[SKIP] fscfdr: pandas/fsc_collect 불가")
 
     # ── v10.4 보유 재평가 — 판정이 아니라 '선언한 계약 대비 현재 위치'를 정확히 재는가 ──
     try:

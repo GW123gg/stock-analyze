@@ -442,10 +442,26 @@ def test_new_collectors_pure():
         _many = {"2026-05-%02d" % (d + 1): 20.0 + d for d in range(25)}
         _p2 = _vk.build_payload([], rows=_many, source="investing_fallback")
         check("vkfb: 표본 20+ 면 백분위 산출", _p2.get("pct_rank_60d") is not None)
-        # items 경로(FSC)는 기존 계약 그대로여야 한다
-        _p3 = _vk.build_payload([{"idxNm": "코스피200 변동성지수", "basDt": "20260724", "clpr": "30.5"}])
+        # items 경로(FSC)는 기존 계약 그대로여야 한다(정확한 지수명 — 공백 포함)
+        _p3 = _vk.build_payload([{"idxNm": "코스피 200 변동성지수", "basDt": "20260724", "clpr": "30.5"}])
         check("vkfb: FSC items 경로 불변", _p3.get("asof_date") == "2026-07-24"
               and _p3.get("source") == "fsc_index", str(_p3.get("source")))
+        # ★실제 사고 재현(2026-07-26): likeIdxNm=변동성 조회는 이름에 '변동성'이 들어간 6종을 섞어
+        #   돌려준다. 부분일치 필터였을 때 3903.23(현선물 목표변동성24%지수)이 VKOSPI 인 척 찍혔다.
+        _mixed = [
+            {"idxNm": "KRX 최소변동성지수", "basDt": "20260723", "clpr": "12905.04"},
+            {"idxNm": "코스피 200 가치저변동성", "basDt": "20260723", "clpr": "13941.26"},
+            {"idxNm": "코스피 200 변동성매칭 양매도지수", "basDt": "20260723", "clpr": "916.47"},
+            {"idxNm": "코스피 200 변동성지수", "basDt": "20260723", "clpr": "80.46"},
+            {"idxNm": "코스피 200 변동성추세 추종 양매도지수", "basDt": "20260723", "clpr": "729.67"},
+            {"idxNm": "코스피 200 현선물 목표변동성 24% 지수", "basDt": "20260723", "clpr": "3903.23"},
+        ]
+        _rows_mixed = _vk.items_to_rows(_mixed)
+        check("vkfb: 6종 혼재에서 진짜 VKOSPI만 선택(80.46)",
+              _rows_mixed == {"2026-07-23": 80.46}, str(_rows_mixed))
+        _p4 = _vk.build_payload(_mixed)
+        check("vkfb: 혼재 응답으로도 엉뚱한 전략지수값(3903.23 등)이 안 들어간다",
+              _p4.get("latest", {}).get("value") == 80.46, str(_p4.get("latest")))
     except ImportError:
         print("[SKIP] vkfb: vkospi_collect import 불가")
 

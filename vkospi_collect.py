@@ -127,13 +127,24 @@ def fetch_items(key: str, begin: str, end: str, num_rows: int = 200) -> list:
         return []
 
 
+#   ★실측 사고(2026-07-26): `likeIdxNm=변동성` 조회는 "변동성"을 이름에 포함한 지수를 **전부**
+#   돌려준다 — KRX 최소변동성지수(12905)·코스피200 가치저변동성(13941)·변동성매칭 양매도지수(916)·
+#   변동성추세추종 양매도지수(729)·현선물 목표변동성24%지수(3903) 등 6종이 섞여 나온다.
+#   과거 필터가 "변동성" 부분일치였던 탓에, 날짜별로 rows[date]=값을 덮어쓰면서 **그날 마지막으로
+#   처리된 엉뚱한 전략지수 값이 VKOSPI 행세**를 했다(3903.23 이 "공포" 로 찍혀 F1 게이트가
+#   완전히 틀린 신호를 받을 뻔했다). 진짜 변동성지수(내재변동성, investing KSVKOSPI 78.65 와 근사
+#   일치하는 것)는 정확히 아래 이름 하나뿐이다 — **정확일치**로만 골라야 한다.
+VKOSPI_EXACT_NAME = "코스피 200 변동성지수"
+
+
 def items_to_rows(items: list) -> dict:
-    """API item 리스트 → {날짜: 종가}. 파싱 실패 항목은 건너뛴다(순수함수)."""
+    """API item 리스트 → {날짜: 종가}. VKOSPI_EXACT_NAME 정확일치만 취한다(순수함수).
+    파싱 실패 항목은 건너뛴다."""
     rows = {}
     for it in items:
         try:
-            name = str(it.get("idxNm") or "")
-            if "변동성" not in name:
+            name = str(it.get("idxNm") or "").strip()
+            if name != VKOSPI_EXACT_NAME:
                 continue
             d = str(it.get("basDt") or "")
             c = float(it.get("clpr"))

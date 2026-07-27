@@ -689,6 +689,58 @@ def test_new_collectors_pure():
     except ImportError:
         print("[SKIP] vkfb: vkospi_collect import 불가")
 
+    # ── v10.8 토큰 생성기 — 강도·지문·파일형식(토큰 자체는 절대 출력하지 않는다) ──
+    try:
+        import gen_token as _gt
+
+        _t1, _t2 = _gt.make_token(32), _gt.make_token(32)
+        check("token: 매번 다른 값(CSPRNG)", _t1 != _t2)
+        check("token: 256비트 → URL-safe 40자 이상", len(_t1) >= 40, str(len(_t1)))
+        check("token: URL-safe 문자만(헤더에 그대로 실림)",
+              all(c.isalnum() or c in "-_" for c in _t1), _t1[:0] or "비허용 문자")
+        try:
+            _gt.make_token(8)
+            check("token: 16바이트 미만은 거부", False, "예외 미발생")
+        except ValueError:
+            check("token: 16바이트 미만은 거부", True)
+
+        # 지문: 같은 토큰 → 같은 지문, 다른 토큰 → 다른 지문, 역산 불가(토큰 미포함)
+        check("token: 같은 토큰은 같은 지문", _gt.fingerprint(_t1) == _gt.fingerprint(_t1))
+        check("token: 다른 토큰은 다른 지문", _gt.fingerprint(_t1) != _gt.fingerprint(_t2))
+        check("token: 지문 길이 12", len(_gt.fingerprint(_t1)) == 12, _gt.fingerprint(_t1))
+        check("token: 지문에 토큰 원문이 없다(역산 불가)", _t1 not in _gt.fingerprint(_t1))
+        check("token: 빈 토큰은 빈 지문(없는 걸 있는 척 금지)", _gt.fingerprint("") == "")
+
+        # 파일 본문: 주석엔 지문만, 토큰은 token= 한 줄에만
+        _body = _gt.render_file(_t1)
+        check("token: 파일에 token= 라인 존재", ("token=" + _t1) in _body)
+        check("token: 주석에 지문 기재", _gt.fingerprint(_t1) in _body)
+        check("token: 토큰은 파일에 정확히 1회만 등장", _body.count(_t1) == 1, str(_body.count(_t1)))
+
+        # 왕복: 쓴 파일을 kairos_client 로 읽어도 같은 값(두 로더 규약 일치)
+        _td2 = tempfile.mkdtemp(prefix="gt_")
+        _fp2 = os.path.join(_td2, "kairos_api.txt")
+        io.open(_fp2, "w", encoding="utf-8", newline="").write(_body)
+        check("token: gen_token 자체 로더 왕복", _gt.read_token(_fp2) == _t1)
+        # --set 경로(save_token): 붙여넣은 토큰을 그대로 저장하고 지문을 돌려준다
+        _fp3 = os.path.join(_td2, "set.txt")
+        _got_fp = _gt.save_token("  " + _t2 + "  ", _fp3)          # 앞뒤 공백은 잘라낸다
+        check("token: save_token 왕복", _gt.read_token(_fp3) == _t2)
+        check("token: save_token 지문 일치", _got_fp == _gt.fingerprint(_t2))
+        try:
+            _gt.save_token("short", _fp3)
+            check("token: 붙여넣기 잘림(16자 미만) 거부", False, "예외 미발생")
+        except ValueError:
+            check("token: 붙여넣기 잘림(16자 미만) 거부", True)
+        check("token: 거부돼도 기존 파일 불변", _gt.read_token(_fp3) == _t2)
+        try:
+            import kairos_client as _kc2
+            check("token: kairos_client 로더와 규약 일치", _kc2.load_token(_fp2) == _t1)
+        except ImportError:
+            pass
+    except ImportError:
+        print("[SKIP] token: gen_token import 불가")
+
     # ── v10.8 카이로스 캡처 3중 검증 — '엉뚱한 화면이 조용히 통과'가 최대 위험 ──
     #   marker_text 는 노트북이 창 제목에서 '실제로 읽은' 값이다(요청값 반향 아님).
     try:

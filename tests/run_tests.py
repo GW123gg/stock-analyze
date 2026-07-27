@@ -1017,6 +1017,65 @@ def test_email_charts():
     esc = ec.compare_bars([("<b>x</b>", 1)])
     check("charts: 라벨 HTML 이스케이프", "&lt;b&gt;" in esc and "<b>" not in esc)
 
+    # ── v10.7 근거 시각화 3종 — '근거를 글이 아니라 그림으로'(사용자 요청) ──
+    # diverging_bars: 부호가 의미의 전부인 값(수급). compare_bars 와 달리 좌우로 갈라져야 한다.
+    dv = ec.diverging_bars([("외국인", -500), ("기관", 120), ("개인", 380)],
+                           title="투자자별", value_suffix="억")
+    check("evviz: diverge 렌더", "외국인" in dv and "기관" in dv and "개인" in dv)
+    check("evviz: diverge 부호 텍스트 병기(-500억/+380억)",
+          "-500억" in dv and "+380억" in dv, dv[:0] or "부호 누락")
+    check("evviz: diverge 음수=청 / 양수=적 (색으로 방향 구분)",
+          ec.C_DOWN in dv and ec.C_UP in dv)
+    # ★핵심: 같은 크기의 +/- 가 시각적으로 반대편에 있어야 한다(compare_bars 의 결함 교정 확인)
+    _neg = ec.diverging_bars([("A", -100)])
+    _pos = ec.diverging_bars([("A", 100)])
+    check("evviz: 같은 크기 +/- 가 서로 다른 HTML(방향 구분됨)", _neg != _pos)
+    check("evviz: compare_bars 는 +/- 를 같게 그린다(그래서 수급엔 부적합)",
+          ec.compare_bars([("A", -100)]).count(ec.C_BAR) ==
+          ec.compare_bars([("A", 100)]).count(ec.C_BAR))
+    check("evviz: diverge 빈 입력이면 생략", ec.diverging_bars([]) == "")
+    check("evviz: diverge 결측값 행 제외", ec.diverging_bars([("A", None), ("B", 5)]).count("<tr>") >= 1)
+
+    # evidence_table: 축·방향·강도·출처 분해
+    ev = ec.evidence_table([
+        ("촉매", "호재", "강", "4공장 가동률 70% 돌파", "2Q 실적"),
+        ("리스크", "주의", "중", "섹터 과열", "지수 관찰"),
+    ], title="근거 분해")
+    check("evviz: evidence 표 렌더", "촉매" in ev and "4공장" in ev and "2Q 실적" in ev)
+    check("evviz: evidence 방향 배지 색(호재=적/주의=호박)", ec.C_UP in ev and "#b7770d" in ev)
+    check("evviz: evidence 강도 표기", "호재 강" in ev or "강" in ev)
+    check("evviz: evidence 4칸 미만 행은 무시",
+          ec.evidence_table([("축", "호재")]) == "")
+    check("evviz: evidence 빈 입력이면 생략", ec.evidence_table([]) == "")
+    check("evviz: evidence 본문 이스케이프",
+          "&lt;script&gt;" in ec.evidence_table([("a", "호재", "강", "<script>", "s")]))
+
+    # path_timeline: 고점 예상일이 보유기간 어디쯤인지
+    pt = ec.path_timeline("눌림후상승", 12, 20, title="예상 경로")
+    check("evviz: path 타임라인 렌더", "고점 예상 T+12" in pt and "만기 T+20" in pt)
+    check("evviz: path 경로유형 캡션", "눌림후상승" in pt)
+    check("evviz: path 결측이면 생략", ec.path_timeline("즉시상승", None, 20) == "")
+    check("evviz: path horizon 0 이면 생략", ec.path_timeline("즉시상승", 3, 0) == "")
+    check("evviz: path 고점>만기 면 만기로 클램프(막대가 100% 넘지 않음)",
+          ec.path_timeline("계단식", 50, 20) != "" and "T+20" in ec.path_timeline("계단식", 50, 20))
+
+    # 펜스 파서: 여러 행 데이터('- ' 연속행) + 신규 타입 3종
+    f_ev = ec.render_chart_fence(
+        "type: evidence\ntitle: T\ndata:\n- 촉매 | 호재 | 강 | 내용A | 출처A\n"
+        "- 수급 | 악재 | 중 | 내용B | 출처B\n")
+    check("evviz: 펜스 evidence 다중행 파싱", "내용A" in f_ev and "내용B" in f_ev)
+    f_dv = ec.render_chart_fence("type: diverge\ndata: 외국인=-500, 개인=+380\nsuffix: 억\n")
+    check("evviz: 펜스 diverge", "외국인" in f_dv and "-500억" in f_dv)
+    f_pt = ec.render_chart_fence("type: path\npath_view: 계단식\ndata: peak=5, horizon=20\n")
+    check("evviz: 펜스 path", "T+5" in f_pt and "계단식" in f_pt)
+    # 기존 펜스가 회귀하지 않았는가('- ' 연속행 지원 추가의 부작용 확인)
+    f_prob = ec.render_chart_fence("type: prob\ndata: up=0.3, flat=0.2, down=0.5\n")
+    check("evviz: 기존 prob 펜스 불변", f_prob != "" and "30%" in f_prob)
+    # 신규 3종도 이메일 안전성 통과
+    newhtml = dv + ev + pt + f_ev + f_dv + f_pt
+    for bad in ("<script", "<svg", "<img", "javascript:", "data:image"):
+        check(f"evviz: 위험요소 없음({bad})", bad not in newhtml.lower())
+
 
 # =====================================================================
 def main():

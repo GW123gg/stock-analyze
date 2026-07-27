@@ -19,6 +19,10 @@ email_charts.py — 이메일 안전 시각자료(차트) 렌더러 [v10.0 신�
   compare_bars()    항목 비교 가로 막대(픽 확신도 등)
   rr_bar()          손절 — 진입 — 목표 리스크리워드 막대
   sparkbars()       추세 스파크라인(세로 막대열)
+  ── v10.7 '근거 시각화' 3종(2026-07-28 사용자 요청: 근거도 글이 아니라 그림으로) ──
+  diverging_bars()  0 기준 좌우 발산 막대 — 투자자별 수급·절대수익 vs alpha(부호가 의미인 값)
+  evidence_table()  근거를 축·방향·강도·출처로 분해한 표 — '무엇이 센 근거인가'를 보이게
+  path_timeline()   예상 경로 타임라인 — 진입~고점예상일~만기(v10.1 시간축 전망 시각화)
   render_chart_fence()  분석가가 리포트에 쓴 ```chart 블록 → 위 차트 HTML
 """
 
@@ -207,6 +211,166 @@ def compare_bars(items, title="", caption="", value_suffix="", color=C_BAR,
             _caption(caption))
 
 
+def diverging_bars(items, title="", caption="", value_suffix="", axis_max=None) -> str:
+    """[(라벨, 값), ...] → **0 기준 좌우 발산** 가로 막대. 음수=왼쪽(청), 양수=오른쪽(적).
+
+    [왜] compare_bars 는 절대값으로 폭을 잡아 음수·양수가 같은 방향으로 그려진다 —
+      '외국인 -1,200억 / 개인 +900억' 처럼 **부호가 의미의 전부**인 데이터에서는 오독을 만든다.
+      근거 시각화(투자자별 수급, 절대수익 vs alpha, 긍정/부정 근거)에는 발산 막대가 맞다.
+    axis_max: 좌우 축 절대 상한 고정(None 이면 |값| 최대 기준). 여러 종목 비교 시 고정 권장.
+    """
+    rows = []
+    for it in (items or []):
+        try:
+            label, raw = it[0], it[1]
+        except (TypeError, IndexError):
+            continue
+        v = _num(raw)
+        if v is None:
+            continue
+        rows.append((str(label), v))
+    if not rows:
+        return ""
+    dropped = max(0, len(rows) - _MAX_ROWS)
+    rows = rows[:_MAX_ROWS]
+    if dropped:
+        _m = f"외 {dropped}개 생략(상위 {_MAX_ROWS}개만 표시)"
+        caption = f"{caption} · {_m}" if caption else _m
+    _fixed = _num(axis_max)
+    peak = _fixed if (_fixed is not None and _fixed > 0) else (max(abs(v) for _, v in rows) or 1.0)
+    out = []
+    for label, v in rows:
+        # 좌우 각각 최대 50% 폭 — 가운데가 0
+        pc = min(50, max(1, int(round(abs(v) / peak * 50))))
+        col = C_DOWN if v < 0 else C_UP
+        if v < 0:
+            left_pad, left_bar, right_bar, right_pad = 50 - pc, pc, 0, 50
+        else:
+            left_pad, left_bar, right_bar, right_pad = 50, 0, pc, 50 - pc
+        cells = []
+        cells.append(f'<td width="{left_pad}%" style="width:{left_pad}%;font-size:1px;'
+                     f'line-height:11px;">&nbsp;</td>')
+        if left_bar:
+            cells.append(f'<td width="{left_bar}%" bgcolor="{col}" style="background:{col};'
+                         f'width:{left_bar}%;height:11px;font-size:1px;line-height:11px;'
+                         f'border-radius:3px 0 0 3px;">&nbsp;</td>')
+        if right_bar:
+            cells.append(f'<td width="{right_bar}%" bgcolor="{col}" style="background:{col};'
+                         f'width:{right_bar}%;height:11px;font-size:1px;line-height:11px;'
+                         f'border-radius:0 3px 3px 0;">&nbsp;</td>')
+        cells.append(f'<td width="{right_pad}%" style="width:{right_pad}%;font-size:1px;'
+                     f'line-height:11px;">&nbsp;</td>')
+        txt = f"{v:+g}{value_suffix}"                     # 부호 명시(색이 지워져도 정보 보존)
+        out.append(
+            f'<tr>'
+            f'<td width="30%" style="width:30%;padding:3px 8px 3px 0;font-size:12px;'
+            f'color:{C_INK};white-space:nowrap;">{_esc(label)}</td>'
+            f'<td width="52%" style="width:52%;padding:3px 0;">'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border-collapse:collapse;table-layout:fixed;width:100%;">'
+            f'<tr>{"".join(cells)}</tr></table></td>'
+            f'<td width="18%" style="width:18%;padding:3px 0 3px 8px;font-size:12px;'
+            f'color:{C_SUB};text-align:right;white-space:nowrap;">{_esc(txt)}</td>'
+            f'</tr>')
+    return (_title(title) +
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border-collapse:collapse;width:100%;">{"".join(out)}</table>' +
+            _caption(caption))
+
+
+# 근거 강도 배지 — 색은 '방향'(호재/악재/중립), 글자는 '강도'
+_EV_DIR = {"호재": C_UP, "긍정": C_UP, "up": C_UP,
+           "악재": C_DOWN, "부정": C_DOWN, "down": C_DOWN,
+           "중립": C_FLAT, "flat": C_FLAT, "주의": "#b7770d"}
+_EV_STRENGTH = ("강", "중", "약")
+
+
+def evidence_table(rows, title="", caption="") -> str:
+    """근거를 **표로** 보여준다. rows: [(축, 방향, 강도, 내용, 출처), ...]
+
+    [왜] 근거를 산문으로만 쓰면 독자가 '무엇이 센 근거인지' 가늠할 수 없고, 분석가도
+      약한 근거를 문장으로 부풀리기 쉽다. 축·방향·강도를 **강제로 분해**하면 둘 다 막힌다.
+    축 예: 촉매 / 수급 / 기술 / 밸류 / 리스크.  방향: 호재·악재·중립·주의.  강도: 강·중·약.
+    출처가 없으면 '' 로 두되, **'미확인'이라고 적는 것이 빈칸보다 낫다**.
+    """
+    valid = []
+    for r in (rows or []):
+        try:
+            axis, direction, strength, body = r[0], r[1], r[2], r[3]
+        except (TypeError, IndexError):
+            continue
+        src = r[4] if len(r) > 4 else ""
+        valid.append((str(axis), str(direction), str(strength), str(body), str(src)))
+    if not valid:
+        return ""
+    dropped = max(0, len(valid) - _MAX_ROWS)
+    valid = valid[:_MAX_ROWS]
+    if dropped:
+        _m = f"외 {dropped}건 생략"
+        caption = f"{caption} · {_m}" if caption else _m
+    head = ("<tr>" + "".join(
+        f'<th style="padding:5px 7px;background:{C_INK};color:#fff;font-size:11.5px;'
+        f'text-align:left;white-space:nowrap;">{h}</th>'
+        for h in ("축", "판정", "근거", "출처")) + "</tr>")
+    body_rows = []
+    for i, (axis, direction, strength, text, src) in enumerate(valid):
+        bg = "#f4f6f8" if i % 2 else "#ffffff"
+        col = _EV_DIR.get(direction.strip(), C_FLAT)
+        st = strength.strip() if strength.strip() in _EV_STRENGTH else ""
+        chip = (f'<span style="display:inline-block;padding:1px 6px;border-radius:9px;'
+                f'font-size:10.5px;background:{col};color:#fff;white-space:nowrap;">'
+                f'{_esc(direction)}{(" " + st) if st else ""}</span>')
+        body_rows.append(
+            f'<tr>'
+            f'<td style="padding:5px 7px;font-size:12px;background:{bg};'
+            f'border-bottom:1px solid #e3e7ea;white-space:nowrap;">{_esc(axis)}</td>'
+            f'<td style="padding:5px 7px;background:{bg};border-bottom:1px solid #e3e7ea;'
+            f'white-space:nowrap;">{chip}</td>'
+            f'<td style="padding:5px 7px;font-size:12px;background:{bg};'
+            f'border-bottom:1px solid #e3e7ea;">{_esc(text)}</td>'
+            f'<td style="padding:5px 7px;font-size:11px;color:{C_SUB};background:{bg};'
+            f'border-bottom:1px solid #e3e7ea;white-space:nowrap;">{_esc(src)}</td>'
+            f'</tr>')
+    return (_title(title) +
+            f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="border-collapse:collapse;width:100%;margin:4px 0 8px 0;">'
+            f'{head}{"".join(body_rows)}</table>' + _caption(caption))
+
+
+def path_timeline(path_view, expected_peak_days, horizon_days, title="", caption="") -> str:
+    """예상 경로를 **타임라인 막대**로. 진입~고점예상일~만기 구간을 눈에 보이게 한다.
+
+    [왜] v10.1 시간축 전망(path_view·expected_peak_days)이 표에서는 '눌림후상승·T+12' 라는
+      글자일 뿐이라 '언제쯤'이 체감되지 않는다. 막대로 그리면 보유기간 대비 위치가 보인다.
+    """
+    peak = _num(expected_peak_days)
+    hz = _num(horizon_days)
+    if peak is None or hz is None or hz <= 0 or peak < 0:
+        return ""
+    peak = min(peak, hz)
+    pc = min(96, max(4, int(round(peak / hz * 100))))
+    rest = 100 - pc
+    pv = _esc(str(path_view or "")).strip()
+    seg = (f'<td width="{pc}%" bgcolor="{C_UP}" style="background:{C_UP};width:{pc}%;height:13px;'
+           f'font-size:1px;line-height:13px;border-radius:3px 0 0 3px;">&nbsp;</td>')
+    tail = (f'<td width="{rest}%" bgcolor="{C_TRACK}" style="background:{C_TRACK};'
+            f'width:{rest}%;height:13px;font-size:1px;line-height:13px;'
+            f'border-radius:0 3px 3px 0;">&nbsp;</td>') if rest > 0 else ""
+    labels = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+              f'style="border-collapse:collapse;width:100%;"><tr>'
+              f'<td style="font-size:11px;color:{C_SUB};text-align:left;">진입</td>'
+              f'<td style="font-size:11px;color:{C_INK};text-align:center;font-weight:600;">'
+              f'고점 예상 T+{peak:g}</td>'
+              f'<td style="font-size:11px;color:{C_SUB};text-align:right;">만기 T+{hz:g}</td>'
+              f'</tr></table>')
+    cap = (f"경로 유형: {pv}" if pv else "")
+    cap = f"{cap} · {caption}" if (cap and caption) else (cap or caption)
+    return (_title(title) +
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border-collapse:collapse;table-layout:fixed;width:100%;margin:2px 0;">'
+            f'<tr>{seg}{tail}</tr></table>' + labels + _caption(cap))
+
+
 def rr_bar(entry, target, stop, title="", caption="") -> str:
     """손절 — 진입 — 목표 를 한 줄로. 하방(손절~진입)=청, 상방(진입~목표)=적."""
     e, t, s = _num(entry), _num(target), _num(stop)
@@ -288,14 +452,30 @@ def sparkbars(series, title="", caption="", color=C_BAR) -> str:
 #   지원 type: bar(비교막대) / prob(확률3종) / gauge(지지-현재-저항) / rr(손절-진입-목표) / spark(추세)
 # =====================================================================
 def _parse_spec(text):
-    """'key: value' 줄들 → dict. 파싱 실패한 줄은 무시(관대하게)."""
+    """'key: value' 줄들 → dict. 파싱 실패한 줄은 무시(관대하게).
+
+    ★v10.7: '- ' 로 시작하는 줄은 **직전 키의 값에 줄바꿈으로 누적**한다(여러 행 데이터용).
+      근거표처럼 행이 여럿인 차트를 분석가가 자연스럽게 쓸 수 있게 한다:
+        data:
+        - 촉매 | 호재 | 강 | 4공장 가동률 70% 돌파 | 2Q 실적
+        - 수급 | 호재 | 중 | 외국인 5일 연속 순매수 | KRX
+      (구 동작이던 '한 줄 key: value' 는 그대로 — 기존 차트는 영향 없다.)
+    """
     spec = {}
+    last_key = None
     for line in (text or "").splitlines():
         line = line.strip()
-        if not line or ":" not in line:
+        if not line:
+            continue
+        if line.startswith("- ") and last_key:
+            item = line[2:].strip()
+            spec[last_key] = (spec[last_key] + "\n" + item) if spec.get(last_key) else item
+            continue
+        if ":" not in line:
             continue
         k, v = line.split(":", 1)
-        spec[k.strip().lower()] = v.strip()
+        last_key = k.strip().lower()
+        spec[last_key] = v.strip()
     return spec
 
 
@@ -363,6 +543,28 @@ def render_chart_fence(spec_text) -> str:
             return compare_bars(_parse_pairs(spec.get("data", "")),
                                 title=title, caption=caption,
                                 value_suffix=spec.get("suffix", ""))
+        if kind in ("diverge", "diverging", "flow", "발산", "수급"):
+            return diverging_bars(_parse_pairs(spec.get("data", "")),
+                                  title=title, caption=caption,
+                                  value_suffix=spec.get("suffix", ""),
+                                  axis_max=spec.get("axis_max"))
+        if kind in ("evidence", "근거"):
+            # data 는 줄단위: 축 | 방향 | 강도 | 근거 | 출처
+            rows = []
+            for line in str(spec.get("data", "")).split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                cells = [c.strip() for c in line.split("|")]
+                if len(cells) >= 4:
+                    rows.append(cells[:5])
+            return evidence_table(rows, title=title, caption=caption)
+        if kind in ("path", "timeline", "경로"):
+            pairs = dict(_parse_pairs(spec.get("data", "")))
+            return path_timeline(spec.get("path_view", spec.get("경로", "")),
+                                 pairs.get("peak", pairs.get("고점", pairs.get("peak_days"))),
+                                 pairs.get("horizon", pairs.get("만기", pairs.get("horizon_days"))),
+                                 title=title, caption=caption)
     except Exception:
         return ""                                        # 어떤 예외도 메일을 깨지 않는다
     return ""

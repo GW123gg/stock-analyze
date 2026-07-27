@@ -689,58 +689,98 @@ def test_new_collectors_pure():
     except ImportError:
         print("[SKIP] vkfb: vkospi_collect import 불가")
 
-    # ── v10.3 HTS 캡처 검증 — '엉뚱한 화면이 조용히 통과'하는 것이 최대 위험 ──
-    #   로그인창·다른 화면·캐시·위변조가 ok 로 새어 나가면 그 숫자가 추천 근거가 된다.
+    # ── v10.8 카이로스 캡처 3중 검증 — '엉뚱한 화면이 조용히 통과'가 최대 위험 ──
+    #   marker_text 는 노트북이 창 제목에서 '실제로 읽은' 값이다(요청값 반향 아님).
     try:
-        import hashlib as _hl
-        import struct as _st
-        import zlib as _zl
-        import hts_capture_collect as _H
-        from datetime import datetime as _DT, timedelta as _TD
+        import base64 as _b64
+        import hashlib as _hl5
+        import struct as _st5
+        import zlib as _zl5
+        import kairos_client as _kc
 
-        def _tiny_png():
+        def _png5():
             def _ck(t, d):
                 c = t + d
-                return _st.pack(">I", len(d)) + c + _st.pack(">I", _zl.crc32(c) & 0xffffffff)
+                return _st5.pack(">I", len(d)) + c + _st5.pack(">I", _zl5.crc32(c) & 0xffffffff)
             return (b"\x89PNG\r\n\x1a\n"
-                    + _ck(b"IHDR", _st.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-                    + _ck(b"IDAT", _zl.compress(b"\x00\xff\xff\xff"))
+                    + _ck(b"IHDR", _st5.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+                    + _ck(b"IDAT", _zl5.compress(b"\x00\xff\xff\xff"))
                     + _ck(b"IEND", b""))
 
-        _png = _tiny_png()
-        _sha = _hl.sha256(_png).hexdigest()
-        _now = _DT.now().strftime("%Y-%m-%d %H:%M")
-        _old = (_DT.now() - _TD(minutes=90)).strftime("%Y-%m-%d %H:%M")
-        _cases = [
-            ("화면번호 일치 → ok", {"marker_text": "[0231] 관심종목 신용/공매도/대차 현황",
-                                "captured_at_kst": _now, "sha256": _sha}, _png, "ok"),
-            ("키워드 일치 → ok", {"marker_text": "관심종목 공매도 잔고 조회",
-                              "captured_at_kst": _now, "sha256": _sha}, _png, "ok"),
-            ("로그인창이 찍힘 → 폐기", {"marker_text": "미래에셋증권 로그인",
-                                "captured_at_kst": _now, "sha256": _sha}, _png, "marker_mismatch"),
-            ("다른 화면이 찍힘 → 폐기", {"marker_text": "[0254] 투자자 일별 매매현황",
-                                 "captured_at_kst": _now, "sha256": _sha}, _png, "marker_mismatch"),
-            ("마커 없음 → 폐기", {"captured_at_kst": _now, "sha256": _sha}, _png, "marker_mismatch"),
-            ("캐시 응답 → stale", {"marker_text": "[0231] 관심종목 공매도",
-                               "captured_at_kst": _old, "sha256": _sha}, _png, "stale"),
-            ("이미지 위변조 → 거부", {"marker_text": "[0231] 관심종목 공매도",
-                               "captured_at_kst": _now, "sha256": "0" * 64}, _png, "agent_error"),
-            ("PNG 아님 → 거부", {"marker_text": "[0231] 관심종목 공매도", "captured_at_kst": _now,
-                             "sha256": _hl.sha256(b"XX").hexdigest()}, b"XX", "agent_error"),
-        ]
-        for _nm, _meta, _b, _want in _cases:
-            _got, _why = _H._verify("short_lend", _meta, _b)
-            check("htscap: %s" % _nm, _got == _want, "실제=%s %s" % (_got, _why[:40]))
-        # 설정 없으면 무동작(노트북 세팅 전에도 파이프라인 무중단)
-        check("htscap: 설정 파일 없으면 빈 dict",
-              _H.load_config(os.path.join(tempfile.mkdtemp(prefix="hc_"), "없는파일.txt")) == {})
-        # 카탈로그 계약: 모든 화면이 번호·이름·검증키워드·용도를 갖춘다
-        _bad = [k for k, v in _H.SCREENS.items()
-                if not (v.get("no") and v.get("name") and v.get("expect") and v.get("why"))]
-        check("htscap: 화면 카탈로그 필수필드 완비", not _bad, str(_bad))
-        check("htscap: 기본 화면 4종이 카탈로그에 존재",
-              all(k in _H.SCREENS for k in _H.DEFAULT_SCREENS), str(_H.DEFAULT_SCREENS))
+        _p5 = _png5()
+        _b5 = _b64.b64encode(_p5).decode()
+        _s5 = _hl5.sha256(_p5).hexdigest()
+        _meta_ok = {"marker_text": "[0231] 관심종목 신용/공매도/대차 현황"}
+        _cap_ok = {"png_b64": _b5, "sha256": _s5, "settled": True}
+
+        ok, why, png = _kc.verify_capture("0231", _meta_ok, _cap_ok)
+        check("kairos: 정상 캡처 통과", ok and png.startswith(b"\x89PNG"), why)
+        # ★다른 화면번호 → 폐기(요청한 0231 이 아닌 0254 가 열림)
+        ok2, why2, _ = _kc.verify_capture(
+            "0231", {"marker_text": "[0254] 투자자 일별 매매현황"}, _cap_ok)
+        check("kairos: 다른 화면번호 폐기", (not ok2) and "엉뚱한 화면" in why2, why2)
+        # 로그인 화면이 찍힘
+        ok3, why3, _ = _kc.verify_capture("0231", {"marker_text": "미래에셋 로그인"}, _cap_ok)
+        check("kairos: 로그인 화면 폐기", not ok3, why3)
+        # marker 없음
+        ok4, why4, _ = _kc.verify_capture("0231", {}, _cap_ok)
+        check("kairos: marker_text 없으면 폐기", (not ok4) and "marker" in why4, why4)
+        # sha256 불일치(전송 손상·중간 교체)
+        ok5, why5, _ = _kc.verify_capture(
+            "0231", _meta_ok, dict(_cap_ok, sha256="0" * 64))
+        check("kairos: sha256 불일치 폐기", (not ok5) and "sha256" in why5, why5)
+        # settled=false → 폐기하되 png 는 돌려준다(재요청 판단용)
+        ok6, why6, png6 = _kc.verify_capture("0231", _meta_ok, dict(_cap_ok, settled=False))
+        check("kairos: settled=false 폐기", (not ok6) and "settled" in why6, why6)
+        check("kairos: settled=false 여도 png 는 반환(재요청 판단)", png6 != b"")
+        # PNG 아님
+        _bad = _b64.b64encode(b"XX").decode()
+        ok7, why7, _ = _kc.verify_capture(
+            "0231", _meta_ok, {"png_b64": _bad, "sha256": _hl5.sha256(b"XX").hexdigest()})
+        check("kairos: PNG 시그니처 아니면 폐기", (not ok7) and "PNG" in why7, why7)
+
+        # 토큰 로더: 두 형식 + 없으면 ''
+        _td = tempfile.mkdtemp(prefix="kt_")
+        _f1 = os.path.join(_td, "t1.txt")
+        io.open(_f1, "w", encoding="utf-8").write("# 주석\ntoken=abc123\n")
+        check("kairos: token= 형식 로드", _kc.load_token(_f1) == "abc123", _kc.load_token(_f1))
+        _f2 = os.path.join(_td, "t2.txt")
+        io.open(_f2, "w", encoding="utf-8").write("plainTOKEN\n")
+        check("kairos: 한 줄 형식 로드", _kc.load_token(_f2) == "plainTOKEN")
+        check("kairos: 파일 없으면 빈 문자열", _kc.load_token(os.path.join(_td, "no.txt")) == "")
+
+        # set_watchlist 종목코드 검증 — ★"12" 같은 짧은 오타를 zfill 로 채우면 000012 라는
+        #   **다른 종목**이 조용히 캡처된다. 4자리 미만은 거부해야 한다.
+        try:
+            _kc.set_watchlist(["abc", "12", "종목"])
+            check("kairos: 짧은 오타/문자는 전부 거부되어 예외", False, "예외 미발생")
+        except _kc.KairosError:
+            check("kairos: 짧은 오타/문자는 전부 거부되어 예외", True)
+        _norm = []
+        _old_call = _kc.call
+        try:
+            _kc.call = lambda path, **kw: _norm.append(kw.get("body")) or {"ok": True}
+            _kc.set_watchlist(["5930", "000660", "68270"])
+            check("kairos: 4~6자리는 zfill 로 정규화",
+                  _norm and _norm[0]["tickers"] == ["005930", "000660", "068270"],
+                  str(_norm))
+        finally:
+            _kc.call = _old_call
+
+        import hts_capture_collect as _hc
+        check("kairos: 카탈로그 필수필드", all(
+            v.get("no") and v.get("name") and v.get("why") is not None
+            and "needs_watchlist" in v for v in _hc.SCREENS.values()))
+        check("kairos: 관심종목 필요 화면은 0231/0261",
+              {k for k, v in _hc.SCREENS.items() if v["needs_watchlist"]} ==
+              {"short_lend", "foreign_inst"})
+        check("kairos: 9314 는 사용 불가로 분리(카이로스 미지원)",
+              "night_fut_investor" in _hc.UNAVAILABLE
+              and "night_fut_investor" not in _hc.SCREENS)
+        check("kairos: 기본 화면 4종이 카탈로그에 존재",
+              all(k in _hc.SCREENS for k in _hc.DEFAULT_SCREENS), str(_hc.DEFAULT_SCREENS))
     except ImportError:
+
         print("[SKIP] htscap: hts_capture_collect import 불가")
 
     # ── v10.2 아카이브 섹션 분류 — '회피 경고' 섹션이 롱 픽으로 채점되던 결함 고정 ──

@@ -61,7 +61,8 @@ overheat/fundamentals/disclosures/mirae_data/short/earnings_calendar.json · sig
 | `credit_collect.py` | credit_balance.json(**루트**) | 금투협 freesis 공개 JSON(**키 불필요**) | 신용잔고(빚투)·증시자금·반대매매 [5.12]. 컬럼 매핑 언론 실측 대조. 실패 시 생략=정상 |
 | `earnings_collect.py` | earnings_calendar.json(**세션**) | investing.com(requests→curl 폴백) | 향후 2주 실적발표 [5.13]. 실패 시 웹검색 폴백=정상 |
 | `holding_review.py` | holding_review.json(**세션**) | 과거 predictions.json + FDR 종가 | **"어제 산 걸 계속 들고 있어도 되나"** [5.16]·리포트 1.95. ★판정 안 함 — 픽이 선언한 target/stop/trailing/horizon/expected_peak_days 대비 현재 위치만 측정(새 임계값 0). priority 1~5·attention·alpha 병기. ★계약 미선언 픽은 level_flags 키 자체가 없다(False=미이탈 오독 방지). 직전 거래일까지만(룩어헤드 없음) |
-| `hts_capture_collect.py` | hts_capture.json + hts_captures/*.png(**세션**) | 카이로스 노트북 캡처 에이전트(**tailnet 사설망 pull**, hts_capture_config.txt) | **KRX 403 차단분(공매도잔고·대차잔고) 유일 대체** [5.15]. ★marker_text 검증으로 '엉뚱한 화면'을 폐기 — status!=ok 면 값 미산출(0 으로 채우지 않음). 설정 없으면 무동작=정상. `--list` 로 화면 카탈로그 |
+| `kairos_client.py` | (라이브러리) | 카이로스 캡처 에이전트 `http://desktop-psk2gpr:8788` (테일넷 전용·토큰 `kairos_api.txt`) | 노트북 호출 래퍼. ★3중 검증(marker_text 화면번호·sha256·settled)·watchlist set/reset·이름→IP 폴백. `--health`/`--screens`/`--capture` CLI |
+| `hts_capture_collect.py` | hts_capture.json + hts_captures/*.png(**세션**) | kairos_client 경유 | **KRX 403 차단분(공매도·대차잔고) 유일 대체** [5.15]. 검증 통과한 장만 저장하고 폐기 사유를 rejected 에 남긴다. 0231/0261 은 watchlist 필요(try/finally 로 reset 보장). 9314 는 카이로스 미지원이라 UNAVAILABLE 분리. 토큰 없으면 무동작=정상 |
 | `market_caution.py` | market_caution.json(**루트**) | 위 산출물 합성(deriv/flow/ecos+FDR) | 국면 종합게이트 0~100·regime_kind·allow_market_up_call + **inputs_age_h/stale_inputs·missing_axes/inputs_incomplete**(입력 신선도·결측). ★신호 중 맨 마지막 실행 |
 | `snapshot_signals.py` | 세션에 signals_snapshot_* 5종 | 루트 5종 복사(동결) | **market_caution 다음 필수** — 회고가 그날 국면입력(F1/F8)을 학습하는 유일한 경로. retro_label 이 pre_caution/pcr/vkospi/margin/거시 피처로 읽음 |
 

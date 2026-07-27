@@ -1,54 +1,42 @@
 # -*- coding: utf-8 -*-
 """
-hts_capture_collect.py — 카이로스(HTS) 화면 캡처 수집기 [v10.3 신규]
+hts_capture_collect.py — 카이로스(HTS) 화면 캡처 수집기 → 세션 hts_capture.json
+  [v10.8 재작성 — 실제 에이전트 계약(포트 8788·captures 배열·variant·watchlist)에 맞춤]
 
-[왜] 2026-07-26 `data.krx.co.kr` 이 403 으로 차단되면서(브라우저로도 동일 → 헤더·pykrx 문제가
-  아님) **공매도 잔고·대차잔고는 대체 소스가 아예 없어졌다**(FSC 에 해당 API 없음 — 404 실측,
-  short.krx 도 동반 차단). 원격 노트북에 상시 로그인된 카이로스 HTS 화면을 캡처해 그 공백을 메운다.
+[왜] 2026-07-26 `data.krx.co.kr` 403 차단으로 **공매도 잔고·대차잔고는 대체 소스가 전무**하다
+  (FSC 에 해당 API 없음 — 404 실측, short.krx 도 동반 차단). 노트북에 상시 로그인된 카이로스
+  화면을 캡처해 그 공백을 메운다.
 
-[구조 — pull]
-  이 PC 가 tailnet 사설망으로 노트북의 캡처 에이전트를 호출한다(노트북이 보내는 push 아님).
-  이유: 캡처 시각을 이 PC 가 통제해야 06:30 룩어헤드 규율에 맞출 수 있고, 실패 시 즉시 재요청이
-  되며, 이 PC 의 기존 Tailscale Funnel 설정을 건드리지 않는다.
-  ★Funnel(공개 인터넷) 금지 — 공개 엔드포인트로 두면 외부인이 가짜 스크린샷을 주입할 수 있고
-   그 이미지가 실제 발송 메일의 추천 근거가 된다.
+[구조] pc21(여기)이 호출, 노트북(desktop-psk2gpr)이 피코(실물 USB HID)로 조작·캡처.
+  전송은 Tailscale 테일넷 내부(공개 아님). 자세한 계약은 kairos_client.py 도크 참조.
 
-[★자기검증 — 이 수집기의 핵심]
-  HTS 자동화의 지배적 실패는 '접속 실패'가 아니라 **엉뚱한 화면이 조용히 찍히는 것**이다
-  (로그인 세션 만료 → 로그인창, 공지 팝업, 화면 전환 지연, 창 위치·DPI 변경).
-  이때 캡처는 "성공"하고 파일도 멀쩡하며 분석가만 엉뚱한 숫자를 읽는다. 그래서:
-    · 에이전트가 화면 제목/화면번호 영역을 함께 찍고 marker_text 로 보고
-    · 이 수집기가 기대 화면번호·화면명과 대조 → 불일치면 그 캡처를 **폐기**
-    · 캡처 시각(KST)·조회 기준일자를 함께 기록해 stale 을 잡는다
-  night_futures_collect 의 session_guess 와 같은 설계다.
+[★조용한 오류 차단 — 이 수집기의 핵심]
+  HTS 자동화의 지배적 실패는 '접속 실패'가 아니라 **엉뚱한 화면이 조용히 찍히는 것**이다.
+  캡처는 "성공"하고 파일도 멀쩡하며 분석가만 엉뚱한 숫자를 읽는다. 그래서 3중 검증
+  (marker_text 화면번호 · sha256 · settled)을 통과한 장만 저장하고, 나머지는 사유와 함께
+  status 로 남긴다. **status != ok 인 화면의 값은 아예 산출하지 않는다**(0 으로 채우지 않는다 —
+  retro_label dist_disc_count 와 같은 계약: 0 = 확인된 값, 부재 = 확인 불가).
 
-[★실패는 소리나게] 오늘 KRX 가 403 인데 pykrx 는 예외 없이 rows=0 을 돌려줘 '차단'이 '데이터
-  없음'으로 조용히 둔갑하는 것을 확인했다. 여기서는 status 를 명시하고, ok 가 아니면 값을
-  **아예 산출하지 않는다**(0 으로 채우지 않는다 — retro_label dist_disc_count 와 같은 계약).
+[★watchlist 생애주기] 0231·0261 은 관심종목이 비면 빈 화면이다.
+  set → capture → **reset** 을 try/finally 로 묶어 예외가 나도 사용자 관심종목을 되돌린다.
 
-[출력] 세션폴더/hts_capture.json + 세션폴더/hts_captures/<screen>_<시각>.png
-  ※ 이미지는 로그(세션)에 그대로 보존된다 — 회고가 나중에 '그날 분석가가 본 화면'을 재확인할 수 있다.
+[출력] 세션폴더/hts_capture.json + 세션폴더/hts_captures/<screen>[_<variant>]_<시각>.png
+  ※ 이미지가 세션에 그대로 보존돼, 회고가 나중에 '그날 분석가가 본 화면'을 재확인할 수 있다.
 
-[설정] hts_capture_config.txt (gitignore 대상 — 토큰 포함). 없으면 무동작 exit 0.
-    agent_url=http://100.x.x.x:8710
-    token=<공유 시크릿>
-    screens=short_lend,foreign_inst,investor_daily,night_fut_investor
-    timeout=45
+[설정] kairos_api.txt 에 토큰(=*.txt 이므로 .gitignore 차단). 없으면 무동작 exit 0.
 
 [사용법]
-  python hts_capture_collect.py                 # 오늘 세션에 캡처 수집
-  python hts_capture_collect.py --check         # 에이전트 연결·인증만 점검(저장 안 함)
-  python hts_capture_collect.py --screens short_lend --out tmp.json
+  python hts_capture_collect.py                      # 기본 화면 세트 수집
+  python hts_capture_collect.py --check              # 상태·목록만 점검(저장 안 함)
+  python hts_capture_collect.py --list               # 카탈로그 출력
+  python hts_capture_collect.py --screens short_lend,foreign_inst --tickers 005930,000660
 """
 import os
 import sys
 import json
-import time
-import base64
-import hashlib
 import argparse
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -56,198 +44,89 @@ try:
 except Exception:
     pass
 
-try:
-    import requests
-except Exception:
-    requests = None
-
 HERE = os.path.dirname(os.path.abspath(__file__))
-CONFIG = os.path.join(HERE, "hts_capture_config.txt")
 OUTPUT_DIR = os.path.join(HERE, "output")
 
 logging.basicConfig(level=logging.INFO, format="[htscap] %(message)s")
 log = logging.getLogger("htscap")
 
 from common import save_json_atomic, resolve_session
+import kairos_client as kc
 
 
 # ── 캡처 대상 카탈로그 ────────────────────────────────────────────────────────
-# 화면번호는 미래에셋 공식 신구맵핑표(Maps.pdf / kairosmapping4.pdf)의 **카이로스(신) 열**에서
-# 확인한 값이다. 표 헤더가 "맵스플러스 | 카이로스" 이므로 오른쪽 열이 현행 번호다.
-# expect 는 marker 검증에 쓰는 부분일치 키워드(화면 제목에 반드시 있어야 하는 말).
+#   화면번호는 미래에셋 공식 신구맵핑표의 '카이로스(신)' 열 기준이며, 노트북 에이전트의
+#   화이트리스트와 일치해야 한다(불일치 시 403 forbidden_screen = 정상 차단).
+#   needs_watchlist=True 인 화면은 관심종목이 비면 **빈 화면**이 나온다.
 SCREENS = {
-    # ── P0: KRX 차단으로 대체 소스가 전혀 없는 것 ──
     "short_lend": {
-        "no": "0231", "name": "관심종목 신용/공매도/대차 현황",
-        "expect": ["관심종목", "공매도"],
-        "why": "공매도잔고+대차잔고+신용을 관심종목(워치리스트) 전체로 한 장에. KRX 차단분의 유일한 대체",
-        "fields": ["공매도잔고", "공매도비중", "대차잔고", "신용잔고"],
+        "no": "0231", "name": "관심종목 신용/공매도/대차 현황", "needs_watchlist": True,
+        "why": "공매도잔고+대차잔고+신용을 관심종목 전체로 한 장에 — KRX 차단분의 유일한 대체",
     },
     "foreign_inst": {
-        "no": "0261", "name": "관심종목 외국인/기관 매매현황",
-        "expect": ["관심종목", "외국인"],
-        "why": "종목별 외인/기관 순매수를 워치리스트 전체로 한 장에(메일 '전일 투자자별 수급' 표 입력)",
-        "fields": ["외국인순매수", "기관순매수"],
+        "no": "0261", "name": "관심종목 외국인/기관 매매현황", "needs_watchlist": True,
+        "why": "종목별 외인/기관 순매수(메일 '전일 투자자별 수급' 표 보강)",
     },
-    # ── P1: 시장 전체 수급(전일 확정치 — 06:30 룩어헤드 적합) ──
     "investor_daily": {
-        "no": "0254", "name": "투자자 일별 매매현황",
-        "expect": ["투자자", "일별"],
-        "why": "시장 전체 개인/외국인/기관 일별 순매수. flow_collect 공백 대체",
-        "fields": ["개인", "외국인", "기관"],
-    },
-    # ── P1: 야간선물 — 무료 대체 소스가 없는 고유 정보 ──
-    "night_fut_investor": {
-        "no": "9314", "name": "야간선물 투자자 일별 매매현황",
-        "expect": ["야간선물", "투자자"],
-        "why": "★간밤 야간선물에서 외국인이 무엇을 했나. night_futures_collect 는 가격만 본다",
-        "fields": ["외국인", "기관", "개인"],
-    },
-    "night_fut_quote": {
-        "no": "9308", "name": "야간선물옵션 종합시세",
-        "expect": ["야간선물"],
-        "why": "야간 선물 종합시세(가격·미결제). investing 폴백의 교차검증용",
-        "fields": ["현재가", "등락률", "미결제"],
-    },
-    # ── P2: 국면 보조 ──
-    "basis": {
-        "no": "0313", "name": "선물 베이시스/스프레드",
-        "expect": ["베이시스"],
-        "why": "베이시스 = 프로그램 차익 매수/매도 압력의 선행 지표",
-        "fields": ["베이시스", "이론가", "괴리"],
+        "no": "0254", "name": "투자자 일별 매매현황", "needs_watchlist": False,
+        "why": "시장 전체 개인/외국인/기관 일별 순매수. flow_collect 공백 대체(변형 15종)",
     },
     "program_daily": {
-        "no": "0273", "name": "프로그램매매 일별현황",
-        "expect": ["프로그램"],
-        "why": "차익/비차익 프로그램 순매수 — 외국인 수급과 교차",
-        "fields": ["차익", "비차익"],
+        "no": "0273", "name": "프로그램매매 일별현황", "needs_watchlist": False,
+        "why": "차익/비차익 순매수 — 외국인 수급과 교차(변형 kospi/kosdaq)",
     },
     "broker_3d": {
-        "no": "0214", "name": "전체거래원 연속 3일 순매매상위종목",
-        "expect": ["거래원"],
-        "why": "3일 연속 순매수 창구 = 지속 매집 신호(단발 매수와 구분)",
-        "fields": ["종목", "거래원", "순매수"],
+        "no": "0214", "name": "전체거래원 연속 3일 순매매상위종목", "needs_watchlist": False,
+        "why": "3일 연속 순매수 창구 = 지속 매집(변형 net_buy/net_sell)",
+    },
+    "basis": {
+        "no": "0313", "name": "선물 베이시스/스프레드", "needs_watchlist": False,
+        "why": "베이시스 = 프로그램 차익 매수/매도 압력의 선행 지표",
+    },
+    "night_fut_quote": {
+        "no": "9308", "name": "야간선물옵션 종합시세", "needs_watchlist": False,
+        "why": "야간 선물 가격·미결제. investing 폴백의 교차검증용",
     },
     "short_top": {
-        "no": "0235", "name": "공매도상위종목분석",
-        "expect": ["공매도"],
+        "no": "0235", "name": "공매도상위종목분석", "needs_watchlist": False,
         "why": "공매도 급증 상위 — 숏 후보 발굴([6.7] 숏 3중정렬 입력)",
-        "fields": ["종목", "공매도거래량", "비중"],
     },
     "lend_top": {
-        "no": "0238", "name": "대차잔고 상위종목 분석",
-        "expect": ["대차"],
-        "why": "대차잔고 급증 = 공매도 대기물량. 잔고 자체보다 '증가'가 신호",
-        "fields": ["종목", "대차잔고", "증감"],
+        "no": "0238", "name": "대차잔고 상위종목 분석", "needs_watchlist": False,
+        "why": "대차잔고 급증 = 공매도 대기물량(잔고 자체보다 '증가'가 신호)",
     },
     "afterhours": {
-        "no": "0147", "name": "시간외단일가 종목등락현황",
-        "expect": ["시간외"],
-        "why": "전일 시간외 흐름 = 당일 갭 예측 보조",
-        "fields": ["종목", "등락률", "거래량"],
+        "no": "0147", "name": "시간외단일가 종목등락현황", "needs_watchlist": False,
+        "why": "전일 시간외 흐름 → 당일 갭 예측 보조",
     },
 }
 
-DEFAULT_SCREENS = ["short_lend", "foreign_inst", "investor_daily", "night_fut_investor"]
+# ★9314(야간선물 투자자별)는 카이로스에서 쓸 수 없다 — CME/EUREX 연계 시절 화면이라
+#   KRX 자체 야간거래(2025-06-09~) 데이터가 들어오지 않는다(노트북 가이드 §9 실측).
+#   대안: KRX 정보데이터시스템 → 파생상품 → 투자자별 거래실적 → 시장구분 '야간'
+#         (조회일자 = 야간거래 종료일 = T+1). 단 현재 data.krx.co.kr 은 403 차단 상태다.
+UNAVAILABLE = {
+    "night_fut_investor": ("9314", "CME 연계 화면이라 KRX 자체 야간거래 데이터 미포함 — "
+                                   "KRX 정보데이터시스템 '야간' 시장구분 사용(현재 403 차단)"),
+}
 
-# 캡처가 이 시간보다 오래됐으면 stale (에이전트가 캐시를 돌려주는 사고 방지)
-MAX_CAPTURE_AGE_MIN = 30
-
-
-def load_config(path=CONFIG):
-    """hts_capture_config.txt → dict. 없으면 {} (무동작). ★토큰은 절대 로그에 찍지 않는다."""
-    cfg = {}
-    if not os.path.exists(path):
-        return cfg
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                cfg[k.strip().lower()] = v.strip()
-    except Exception as e:
-        log.warning("설정 읽기 실패(무시): %s", type(e).__name__)
-    return cfg
+DEFAULT_SCREENS = ["short_lend", "foreign_inst", "investor_daily", "night_fut_quote"]
 
 
-def kst_now():
-    """이 PC 는 KST 로컬이라고 가정하되, 표기를 명시해 회고가 시점을 오해하지 않게 한다."""
-    return datetime.now()
+def collect(session_dir, screen_keys, tickers=None, save_images=True):
+    """화면 목록 수집 → payload. 부분 실패해도 계속한다(전부 실패해도 exit 0)."""
+    h = kc.health()
+    if not h.get("hts") or h.get("hts_login_screen"):
+        # ★조용한 결측 금지: '캡처 0건'이 아니라 '왜 못 했는지'를 남긴다
+        log.warning("HTS 상태 불가 — hts=%s login_screen=%s", h.get("hts"), h.get("hts_login_screen"))
+        return {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "tz": "KST",
+            "source": "kairos_hts_capture", "agent_reachable": True,
+            "blocked": "login_screen" if h.get("hts_login_screen") else "hts_not_found",
+            "health": h, "n_requested": len(screen_keys), "n_ok": 0, "captures": [],
+            "note": "HTS 미로그인/미실행으로 수집 불가 — 값 없음이 아니라 '확인 불가'다. 사람 확인 필요.",
+        }
 
-
-def _verify(screen_key, meta, png_bytes):
-    """캡처 1건 검증 → (status, reason). ★여기서 통과 못 하면 값을 산출하지 않는다."""
-    spec = SCREENS.get(screen_key) or {}
-    if not png_bytes:
-        return "agent_error", "이미지 없음"
-    if not png_bytes.startswith(b"\x89PNG"):
-        return "agent_error", "PNG 시그니처 아님"
-
-    # 무결성: 에이전트가 보고한 sha256 과 실제 바이트 대조(전송 중 손상·중간 교체 탐지)
-    want = (meta.get("sha256") or "").lower()
-    got = hashlib.sha256(png_bytes).hexdigest()
-    if want and want != got:
-        return "agent_error", "sha256 불일치"
-
-    # ★화면 검증 마커 — 엉뚱한 화면(로그인창·팝업·이전 화면)이 조용히 통과하는 것을 막는다
-    marker = str(meta.get("marker_text") or "")
-    if not marker:
-        return "marker_mismatch", "marker_text 없음(에이전트가 화면 제목을 못 읽음)"
-    no = spec.get("no") or ""
-    expects = spec.get("expect") or []
-    hit_no = bool(no and no in marker)
-    hit_kw = all(k in marker for k in expects) if expects else False
-    if not (hit_no or hit_kw):
-        return "marker_mismatch", "기대 화면(%s %s) 아님 — 실제 marker=%r" % (
-            no, spec.get("name"), marker[:60])
-
-    # 신선도: 에이전트가 캐시를 돌려주는 사고 방지
-    ts = meta.get("captured_at_kst")
-    if ts:
-        try:
-            t = datetime.strptime(str(ts)[:16], "%Y-%m-%d %H:%M")
-            age = (kst_now() - t).total_seconds() / 60.0
-            if age > MAX_CAPTURE_AGE_MIN:
-                return "stale", "캡처가 %.0f분 전(임계 %d분)" % (age, MAX_CAPTURE_AGE_MIN)
-        except Exception:
-            pass
-    return "ok", ""
-
-
-def fetch_one(agent_url, token, screen_key, timeout=45):
-    """에이전트에서 화면 1장 취득 → (status, meta, png_bytes, reason)."""
-    if requests is None:
-        return "agent_error", {}, b"", "requests 미설치"
-    url = agent_url.rstrip("/") + "/capture"
-    try:
-        r = requests.get(url, params={"screen": screen_key},
-                         headers={"X-Capture-Token": token}, timeout=timeout)
-    except Exception as e:
-        # 노트북 꺼짐·tailnet 미연결 등 — 조용한 결측이 아니라 명시적 상태로 남긴다
-        return "unreachable", {}, b"", "%s" % type(e).__name__
-    if r.status_code == 401 or r.status_code == 403:
-        return "agent_error", {}, b"", "인증 거부 HTTP %s" % r.status_code
-    if r.status_code != 200:
-        return "agent_error", {}, b"", "HTTP %s" % r.status_code
-    try:
-        j = r.json()
-    except Exception:
-        return "agent_error", {}, b"", "JSON 아님"
-    if not j.get("ok", True):
-        return "agent_error", j.get("meta") or {}, b"", str(j.get("error"))[:80]
-    meta = j.get("meta") or {}
-    try:
-        png = base64.b64decode(j.get("png_b64") or "")
-    except Exception:
-        return "agent_error", meta, b"", "base64 디코드 실패"
-    st, why = _verify(screen_key, meta, png)
-    return st, meta, (png if st == "ok" else b""), why
-
-
-def collect(session_dir, agent_url, token, screens, timeout=45, save_images=True):
-    """화면 목록 수집 → payload dict. 부분 실패해도 계속한다(전부 실패해도 exit 0)."""
     img_dir = os.path.join(session_dir, "hts_captures")
     if save_images:
         try:
@@ -256,95 +135,160 @@ def collect(session_dir, agent_url, token, screens, timeout=45, save_images=True
             log.warning("이미지 폴더 생성 실패: %s", type(e).__name__)
             save_images = False
 
+    need_wl = any((SCREENS.get(k) or {}).get("needs_watchlist") for k in screen_keys)
+    did_set = False
     results = []
-    for key in screens:
-        spec = SCREENS.get(key)
-        if not spec:
-            log.warning("알 수 없는 화면 키: %s (건너뜀)", key)
-            results.append({"screen": key, "status": "disabled", "reason": "미등록 화면 키"})
-            continue
-        st, meta, png, why = fetch_one(agent_url, token, key, timeout=timeout)
-        rec = {
-            "screen": key,
-            "screen_no": spec["no"],
-            "screen_name": spec["name"],
-            "status": st,
-            "reason": why or None,
-            "captured_at_kst": meta.get("captured_at_kst"),
-            "asof_date": meta.get("asof_date"),      # 화면이 표시하는 조회 기준일자
-            "marker_text": (str(meta.get("marker_text"))[:120] if meta.get("marker_text") else None),
-            "resolution": meta.get("resolution"),
-            "sha256": meta.get("sha256"),
-            "image": None,
-            "fields_expected": spec.get("fields"),
-        }
-        if st == "ok" and png and save_images:
-            stamp = (str(meta.get("captured_at_kst") or kst_now().strftime("%Y-%m-%d %H:%M"))
-                     .replace("-", "").replace(":", "").replace(" ", "_"))[:13]
-            fn = "%s_%s.png" % (key, stamp)
-            fp = os.path.join(img_dir, fn)
-            try:
-                with open(fp, "wb") as f:
-                    f.write(png)
-                # 세션 상대경로로 남긴다(세션 폴더를 옮겨도 깨지지 않게)
-                rec["image"] = os.path.join("hts_captures", fn).replace("\\", "/")
-                rec["bytes"] = len(png)
-            except Exception as e:
-                rec["status"] = "agent_error"
-                rec["reason"] = "이미지 저장 실패: %s" % type(e).__name__
-        log.info("%-20s %-14s %s", key, rec["status"], rec["reason"] or "")
-        results.append(rec)
+    try:
+        if need_wl and tickers:
+            r = kc.set_watchlist(tickers)
+            did_set = True
+            log.info("관심종목 설정: removed=%s added=%s", r.get("removed"), r.get("added"))
+        elif need_wl:
+            log.warning("관심종목 화면이 포함됐는데 --tickers 가 없다 — 빈 화면이 찍힐 수 있다")
 
-    ok_n = sum(1 for r in results if r["status"] == "ok")
-    payload = {
-        "generated_at": kst_now().strftime("%Y-%m-%d %H:%M:%S"),
-        "tz": "KST",
-        "source": "kairos_hts_capture",
-        "agent_reachable": any(r["status"] != "unreachable" for r in results),
-        "n_requested": len(results),
-        "n_ok": ok_n,
+        for key in screen_keys:
+            spec = SCREENS.get(key)
+            if not spec:
+                why = UNAVAILABLE.get(key)
+                results.append({"screen": key, "status": "disabled",
+                                "reason": (why[1] if why else "미등록 화면 키"),
+                                "screen_no": (why[0] if why else None)})
+                log.warning("%-18s disabled — %s", key, (why[1] if why else "미등록"))
+                continue
+            try:
+                shots, meta = kc.capture(key, expect_no=spec["no"])
+            except kc.KairosError as e:
+                results.append({"screen": key, "screen_no": spec["no"],
+                                "screen_name": spec["name"], "status": "agent_error",
+                                "reason": str(e)})
+                log.warning("%-18s agent_error — %s", key, e)
+                continue
+
+            stamp = str(meta.get("captured_at_kst") or
+                        datetime.now().strftime("%Y-%m-%d %H:%M")
+                        ).replace("-", "").replace(":", "").replace(" ", "_")[:13]
+            files, bad = [], []
+            for i, s in enumerate(shots):
+                if not s["ok"]:
+                    bad.append({"variant": s.get("variant"), "reason": s["reason"]})
+                    continue
+                rec = {"variant": s.get("variant"), "label": s.get("label"),
+                       "bytes": s["bytes"], "image": None}
+                if save_images and s["png"]:
+                    suffix = ("_" + str(s.get("variant"))) if s.get("variant") else ""
+                    fn = "%s%s_%s.png" % (key, suffix, stamp)
+                    try:
+                        with open(os.path.join(img_dir, fn), "wb") as f:
+                            f.write(s["png"])
+                        rec["image"] = ("hts_captures/" + fn)
+                    except Exception as e:
+                        rec["error"] = "저장 실패: %s" % type(e).__name__
+                files.append(rec)
+
+            status = "ok" if files else ("marker_mismatch" if bad else "agent_error")
+            results.append({
+                "screen": key, "screen_no": spec["no"], "screen_name": spec["name"],
+                "status": status,
+                "reason": (bad[0]["reason"] if (bad and not files) else None),
+                "captured_at_kst": meta.get("captured_at_kst"),
+                "marker_text": (str(meta.get("marker_text"))[:120]
+                                if meta.get("marker_text") else None),
+                "n_shots": len(shots), "n_ok": len(files),
+                "files": files, "rejected": bad,
+            })
+            log.info("%-18s %-16s %d/%d장 %s", key, status, len(files), len(shots),
+                     (bad[0]["reason"][:40] if bad else ""))
+    finally:
+        if did_set:
+            try:
+                r = kc.reset_watchlist()
+                log.info("관심종목 복구: removed=%s", r.get("removed"))
+            except Exception as e:
+                log.warning("★관심종목 복구 실패 — 사람이 확인해야 한다: %s", type(e).__name__)
+
+    ok_n = sum(1 for r in results if r.get("status") == "ok")
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "tz": "KST", "source": "kairos_hts_capture", "agent_reachable": True,
+        "health": {k: h.get(k) for k in ("hts", "hts_login_screen", "current_screen", "now_kst")},
+        "watchlist_used": list(tickers or []) if did_set else None,
+        "n_requested": len(results), "n_ok": ok_n,
+        "n_rejected_shots": sum(len(r.get("rejected") or []) for r in results),
         "coverage": round(ok_n / len(results), 3) if results else 0.0,
         "captures": results,
         "note": ("status != ok 인 화면은 '데이터 없음'이 아니라 '확인 불가'다 — 값을 0 으로 "
-                 "채우지 말고 그 화면 근거를 아예 쓰지 마라. 이미지에서 읽은 값은 [캡처] 로 "
-                 "표기하고 API 값과 섞지 마라(단위·시점이 다르다)."),
+                 "채우지 말고 그 화면 근거를 쓰지 마라. 이미지에서 읽은 값은 [캡처] 로 표기하고 "
+                 "API 값과 섞지 마라(단위·시점이 다르다). rejected 는 3중 검증에 걸려 폐기된 "
+                 "장이며, 그 사유가 곧 신뢰도 정보다. ※화면공유 알림 배너가 이미지 중앙에 "
+                 "찍힐 수 있다 — 가려진 값은 읽지 마라."),
     }
-    return payload
+
+
+def _tickers_from_session(session_dir, limit=30):
+    """세션 predictions.json 의 픽/숏 티커(없으면 watch_tickers 파일)."""
+    out = []
+    try:
+        with open(os.path.join(session_dir, "predictions.json"), encoding="utf-8") as f:
+            j = json.load(f)
+        for kind in ("picks", "shorts"):
+            for it in (j.get(kind) or []):
+                t = str(it.get("ticker") or "").zfill(6)
+                if len(t) == 6 and t.isdigit() and t not in out:
+                    out.append(t)
+    except Exception:
+        pass
+    if not out:
+        for name in ("watch_tickers.txt", "watch_tickers"):
+            p = os.path.join(HERE, name)
+            if os.path.isfile(p):
+                try:
+                    with open(p, encoding="utf-8", errors="replace") as f:
+                        for line in f:
+                            t = line.strip().split(",")[0].strip().zfill(6)
+                            if len(t) == 6 and t.isdigit() and t not in out:
+                                out.append(t)
+                except Exception:
+                    pass
+                break
+    return out[:limit]
 
 
 def main():
-    ap = argparse.ArgumentParser(description="카이로스 HTS 화면 캡처 수집 → 세션 hts_capture.json")
-    ap.add_argument("--session", default=None, help="세션 폴더(미지정 시 오늘 세션 자동탐지)")
-    ap.add_argument("--screens", default=None, help="쉼표구분 화면 키(미지정 시 기본 4종)")
-    ap.add_argument("--out", default=None, help="출력 JSON 경로(테스트용)")
-    ap.add_argument("--check", action="store_true", help="연결·인증만 점검(저장 안 함)")
-    ap.add_argument("--list", action="store_true", help="수집 가능한 화면 카탈로그 출력")
+    ap = argparse.ArgumentParser(description="카이로스 HTS 캡처 → 세션 hts_capture.json")
+    ap.add_argument("--session", default=None)
+    ap.add_argument("--screens", default=None, help="쉼표구분 화면 키(기본 4종)")
+    ap.add_argument("--tickers", default=None, help="쉼표구분(미지정 시 세션 predictions 에서)")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--check", action="store_true", help="상태·화면목록만 점검(저장 안 함)")
+    ap.add_argument("--list", action="store_true", help="카탈로그 출력")
     args = ap.parse_args()
 
     if args.list:
-        print("%-20s %-6s %-34s %s" % ("KEY", "화면", "화면명", "용도"))
+        print("%-18s %-5s %-34s %s" % ("KEY", "화면", "화면명", "관심종목필요"))
         for k, v in SCREENS.items():
-            print("%-20s %-6s %-34s %s" % (k, v["no"], v["name"], v["why"][:60]))
+            print("%-18s %-5s %-34s %s" % (k, v["no"], v["name"],
+                                           "Y" if v["needs_watchlist"] else "-"))
+        for k, (no, why) in UNAVAILABLE.items():
+            print("%-18s %-5s %-34s %s" % (k, no, "[사용 불가]", why[:40]))
         return 0
 
-    cfg = load_config()
-    agent_url = cfg.get("agent_url") or ""
-    token = cfg.get("token") or ""
-    if not agent_url or not token:
-        # 키 없으면 즉시·정상 종료(mirae_collect 와 같은 규약) — 노트북 세팅 전에도 파이프라인 무중단
-        log.info("hts_capture_config.txt 없음/불완전 → 무동작 종료(노트북 세팅 전 정상)")
+    if not kc.load_token():
+        log.info("kairos_api.txt 에 토큰 없음 → 무동작 종료(노트북 연동 전 정상)")
         return 0
 
-    screens = [s.strip() for s in (args.screens or cfg.get("screens") or
-                                   ",".join(DEFAULT_SCREENS)).split(",") if s.strip()]
-    try:
-        timeout = int(cfg.get("timeout") or 45)
-    except Exception:
-        timeout = 45
+    keys = [s.strip() for s in (args.screens or ",".join(DEFAULT_SCREENS)).split(",") if s.strip()]
 
     if args.check:
-        st, meta, png, why = fetch_one(agent_url, token, screens[0], timeout=timeout)
-        log.info("--check %s → %s %s (이미지 %dB)", screens[0], st, why or "", len(png))
+        h = kc.health()
+        log.info("health: hts=%s login_screen=%s screen=%s",
+                 h.get("hts"), h.get("hts_login_screen"), h.get("current_screen"))
+        try:
+            d = kc.screens()
+            avail = {s.get("key") for s in (d.get("screens") or [])}
+            log.info("에이전트 제공 %d종 / 요청 %d종 · 미제공: %s",
+                     len(avail), len(keys), sorted(set(keys) - avail) or "없음")
+        except Exception as e:
+            log.warning("screens 조회 실패: %s", type(e).__name__)
         return 0
 
     session = args.session or resolve_session(OUTPUT_DIR)
@@ -352,11 +296,14 @@ def main():
         log.warning("세션 폴더를 찾을 수 없음 → 종료")
         return 0
 
-    payload = collect(session, agent_url, token, screens, timeout=timeout)
+    tickers = ([t.strip() for t in args.tickers.split(",") if t.strip()]
+               if args.tickers else _tickers_from_session(session))
+    payload = collect(session, keys, tickers=tickers)
     out = args.out or os.path.join(session, "hts_capture.json")
     try:
         save_json_atomic(out, payload)
-        log.info("저장: %s (ok %d/%d)", out, payload["n_ok"], payload["n_requested"])
+        log.info("저장: %s (ok %d/%d · 폐기 %d장)", out, payload.get("n_ok", 0),
+                 payload.get("n_requested", 0), payload.get("n_rejected_shots", 0))
     except Exception as e:
         log.warning("저장 실패: %s", type(e).__name__)
     return 0
@@ -368,6 +315,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception as e:
-        # 파이프라인 무중단 원칙 — 실패해도 exit 0
         log.warning("예기치 못한 오류(무시): %s: %s", type(e).__name__, e)
         sys.exit(0)

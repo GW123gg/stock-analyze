@@ -741,6 +741,69 @@ def test_new_collectors_pure():
     except ImportError:
         print("[SKIP] token: gen_token import 불가")
 
+    # ── v11.0 Taildrop 수신 검증 — 전송 손상·엉뚱한 화면·zip slip 을 전부 막는가 ──
+    try:
+        import zipfile as _zf
+        import hashlib as _hl6
+        import struct as _st6
+        import zlib as _zl6
+        import taildrop_receive as _tr
+
+        def _png6():
+            def _ck(t, d):
+                c = t + d
+                return _st6.pack(">I", len(d)) + c + _st6.pack(">I", _zl6.crc32(c) & 0xffffffff)
+            return (b"\x89PNG\r\n\x1a\n"
+                    + _ck(b"IHDR", _st6.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+                    + _ck(b"IDAT", _zl6.compress(b"\x00\xff\xff\xff")) + _ck(b"IEND", b""))
+
+        _P6 = _png6()
+        _H6 = _hl6.sha256(_P6).hexdigest()
+        _td6 = tempfile.mkdtemp(prefix="td6_")
+        _zp6 = os.path.join(_td6, "kairos_test.zip")
+        _man6 = {"sent_at_kst": "2026-07-29 01:00", "files": [
+            {"file": "0231_a.png", "sha256": _H6, "marker_text": "[0231] 관심종목", "settled": True},
+            {"file": "0261_b.png", "sha256": "0" * 64, "marker_text": "[0261] x", "settled": True},
+            {"file": "0313_c.png", "sha256": _H6, "marker_text": "[0254] 엉뚱", "settled": True},
+            {"file": "0235_d.png", "sha256": _H6, "marker_text": "[0235] 공매도", "settled": False},
+        ]}
+        with _zf.ZipFile(_zp6, "w") as _z:
+            _z.writestr("manifest.json", json.dumps(_man6, ensure_ascii=False))
+            for _n in ("0231_a.png", "0261_b.png", "0313_c.png", "0235_d.png"):
+                _z.writestr(_n, _P6)
+            _z.writestr("../evil.png", _P6)        # zip slip
+            _z.writestr("notes.txt", b"x")         # 비허용 확장자
+        _img6 = os.path.join(_td6, "imgs")
+        os.makedirs(_img6)
+        _f6, _r6, _m6 = _tr.process_zip(_zp6, _img6)
+        _reasons = " | ".join(x["reason"] for x in _r6)
+        check("taildrop: 검증 통과분만 저장(1장)", len(_f6) == 1 and _f6[0]["file"] == "0231_a.png",
+              str([x["file"] for x in _f6]))
+        check("taildrop: 실제 저장 파일도 1개", os.listdir(_img6) == ["0231_a.png"],
+              str(os.listdir(_img6)))
+        check("taildrop: sha256 불일치 차단", "sha256 불일치" in _reasons)
+        check("taildrop: marker 불일치 차단", "marker 불일치" in _reasons)
+        check("taildrop: settled=false 차단", "settled=false" in _reasons)
+        check("taildrop: zip slip(../) 차단",
+              any(x["file"].endswith("evil.png") for x in _r6), _reasons[:60])
+        check("taildrop: 비허용 확장자 차단", any(x["file"] == "notes.txt" for x in _r6))
+        check("taildrop: manifest 파싱", _m6.get("sent_at_kst") == "2026-07-29 01:00")
+        # 파일명 규약이 없으면(화면번호 접두 없음) marker 대조를 건너뛰되 sha 는 본다
+        _zp7 = os.path.join(_td6, "kairos_noprefix.zip")
+        with _zf.ZipFile(_zp7, "w") as _z:
+            _z.writestr("manifest.json", json.dumps(
+                {"files": [{"file": "plain.png", "sha256": _H6, "settled": True}]}))
+            _z.writestr("plain.png", _P6)
+        _img7 = os.path.join(_td6, "imgs7")
+        os.makedirs(_img7)
+        _f7, _r7, _ = _tr.process_zip(_zp7, _img7)
+        check("taildrop: 화면번호 접두 없으면 marker 대조 생략(sha 는 검사)",
+              len(_f7) == 1 and not _r7, str(_r7))
+        check("taildrop: zip 이름 패턴", bool(_tr.ZIP_PAT.match("kairos_20260729.zip"))
+              and not _tr.ZIP_PAT.match("other.zip"))
+    except ImportError:
+        print("[SKIP] taildrop: taildrop_receive import 불가")
+
     # ── v10.8 카이로스 캡처 3중 검증 — '엉뚱한 화면이 조용히 통과'가 최대 위험 ──
     #   marker_text 는 노트북이 창 제목에서 '실제로 읽은' 값이다(요청값 반향 아님).
     try:

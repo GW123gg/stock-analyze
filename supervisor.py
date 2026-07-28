@@ -571,6 +571,10 @@ def run_morning_pipeline(guard_dup: bool = False):
     _run_step("step9.5 hts_capture",
               [py, os.path.join(BASE_DIR, "hts_capture_collect.py")], timeout=900)
 
+    # step9.6: Taildrop 배치 수신 — 노트북이 /batch 로 보낸 zip 을 세션으로 이관(대기분 없으면 즉시 종료)
+    _run_step("step9.6 taildrop_receive",
+              [py, os.path.join(BASE_DIR, "taildrop_receive.py")], timeout=300)
+
     # step10: 공매도 잔고/추세 → 세션폴더 short.json (KRX, krx_account.txt 로그인 시)
     #   공매도 잔고 비중·증감 = 하락 베팅·되돌림 압력. 차익실현 위험 보강([3-차익실현]).
     _run_step("step10 short_collect",

@@ -36,7 +36,7 @@ import sys
 import json
 import argparse
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -112,19 +112,71 @@ UNAVAILABLE = {
 
 DEFAULT_SCREENS = ["short_lend", "foreign_inst", "investor_daily", "night_fut_quote"]
 
+# 0254(투자자 일별)의 변형 15종 — 생략하면 전부 순회하므로(15장·수 분) 필요한 것만 지정하라.
+VARIANTS = {
+    "investor_daily": ["kospi", "kosdaq", "kospi200", "futures", "fut_spread",
+                       "mini_fut_spread", "call", "put", "mini_fut", "mini_call",
+                       "mini_put", "stock_fut", "stock_fut_spread",
+                       "weekly_call", "weekly_put"],
+    "program_daily": ["kospi", "kosdaq"],
+    "broker_3d": ["net_buy", "net_sell"],
+}
+
+# 노트북 무인 사이클(인계문서 §6): 02:35 안전종료 → 02:45 재부팅 → 05:00 자동로그인.
+# 이 창에서는 hts=false 가 **정상**이다 — 장애로 오인해 사람을 부르지 않게 한다.
+MAINT_START, MAINT_END = "02:30", "05:10"
+
+
+def in_maintenance(now_hhmm: str) -> bool:
+    """노트북 재부팅·자동로그인 창(02:30~05:10) 안인가. 순수함수."""
+    try:
+        return MAINT_START <= str(now_hhmm)[:5] <= MAINT_END
+    except Exception:
+        return False
+
+
+def front_futures_month(today=None):
+    """코스피200 선물 **최근월물**(YYYY-MM). 3·6·9·12월물, 만기=둘째 목요일.
+
+    [왜] 0313 베이시스 화면이 **원월물을 보고 있을 수 있다**(인계문서 §3 경고).
+    실측 2026-07-29: 화면이 '선물 03월물(27)'(=2027-03)·미결제약정 2,387(원월물 특징)이었다.
+    원월물 베이시스는 유동성이 없어 **프로그램 차익 압력 신호로 쓸 수 없다** — 그래서
+    기대 최근월물을 계산해 payload 에 실어, 분석가가 캡처의 종목 표기와 대조하게 한다.
+    """
+    from datetime import date as _d
+    t = today or datetime.now().date()
+
+    def second_thursday(y, m):
+        first = _d(y, m, 1)
+        # 첫 목요일(weekday 3) 까지의 일수 + 7
+        return first + timedelta(days=(3 - first.weekday()) % 7 + 7)
+
+    for y in (t.year, t.year + 1):
+        for m in (3, 6, 9, 12):
+            if second_thursday(y, m) >= t:
+                return "%04d-%02d" % (y, m)
+    return None
+
 
 def collect(session_dir, screen_keys, tickers=None, save_images=True):
     """화면 목록 수집 → payload. 부분 실패해도 계속한다(전부 실패해도 exit 0)."""
     h = kc.health()
     if not h.get("hts") or h.get("hts_login_screen"):
         # ★조용한 결측 금지: '캡처 0건'이 아니라 '왜 못 했는지'를 남긴다
-        log.warning("HTS 상태 불가 — hts=%s login_screen=%s", h.get("hts"), h.get("hts_login_screen"))
+        _maint = in_maintenance(str(h.get("now_kst") or "")[11:16])
+        log.warning("HTS 상태 불가 — hts=%s login_screen=%s%s",
+                    h.get("hts"), h.get("hts_login_screen"),
+                    " (노트북 점검창 02:30~05:10 — 정상)" if _maint else " (★비정상 — 사람 확인)")
         return {
+            "maintenance_window": _maint,
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "tz": "KST",
             "source": "kairos_hts_capture", "agent_reachable": True,
             "blocked": "login_screen" if h.get("hts_login_screen") else "hts_not_found",
             "health": h, "n_requested": len(screen_keys), "n_ok": 0, "captures": [],
-            "note": "HTS 미로그인/미실행으로 수집 불가 — 값 없음이 아니라 '확인 불가'다. 사람 확인 필요.",
+            "note": ("HTS 미로그인/미실행으로 수집 불가 — 값 없음이 아니라 '확인 불가'다. "
+                     + ("노트북 점검창(02:30~05:10 재부팅·자동로그인) 안이라 **정상**이며 "
+                        "05:10 이후 재시도하면 된다." if _maint
+                        else "점검창 밖이므로 **비정상** — 사람 확인이 필요하다.")),
         }
 
     img_dir = os.path.join(session_dir, "hts_captures")
@@ -173,7 +225,7 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True):
                     bad.append({"variant": s.get("variant"), "reason": s["reason"]})
                     continue
                 rec = {"variant": s.get("variant"), "label": s.get("label"),
-                       "bytes": s["bytes"], "image": None}
+                       "bytes": s["bytes"], "image": None, "masked": s.get("masked")}
                 if save_images and s["png"]:
                     suffix = ("_" + str(s.get("variant"))) if s.get("variant") else ""
                     fn = "%s%s_%s.png" % (key, suffix, stamp)
@@ -186,9 +238,17 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True):
                 files.append(rec)
 
             status = "ok" if files else ("marker_mismatch" if bad else "agent_error")
+            rec_extra = {}
+            if key == "basis":
+                # ★원월물 경고: 화면이 최근월물이 아닐 수 있다(실측 2026-07-29 '03월물(27)').
+                #   원월물 베이시스는 유동성이 없어 프로그램 압력 신호로 쓸 수 없다.
+                rec_extra["expected_front_month"] = front_futures_month()
+                rec_extra["front_month_check"] = (
+                    "캡처의 '종목' 표기가 위 월물과 다르면 **원월물**이다 — 베이시스를 쓰지 마라. "
+                    "미결제약정이 수천 단위면 원월물 신호(최근월물은 수십만).")
             results.append({
                 "screen": key, "screen_no": spec["no"], "screen_name": spec["name"],
-                "status": status,
+                "status": status, **rec_extra,
                 "reason": (bad[0]["reason"] if (bad and not files) else None),
                 "captured_at_kst": meta.get("captured_at_kst"),
                 "marker_text": (str(meta.get("marker_text"))[:120]
@@ -207,7 +267,13 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True):
                 log.warning("★관심종목 복구 실패 — 사람이 확인해야 한다: %s", type(e).__name__)
 
     ok_n = sum(1 for r in results if r.get("status") == "ok")
+    # 계좌 마스킹 상태: -1 = 노트북에서 마스킹이 수행되지 않음(Tesseract 미설치 시)
+    _masked = [f.get("masked") for r in results for f in (r.get("files") or [])]
+    _mask_off = sum(1 for m in _masked if m == -1)
     return {
+        "account_masking": ("미수행(masked=-1) — 계좌 정보가 찍혔을 수 있다. 이미지를 외부로 "
+                            "공유하지 마라" if _mask_off else "수행됨"),
+        "n_masking_unavailable": _mask_off,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "tz": "KST", "source": "kairos_hts_capture", "agent_reachable": True,
         "health": {k: h.get(k) for k in ("hts", "hts_login_screen", "current_screen", "now_kst")},

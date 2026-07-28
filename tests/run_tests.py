@@ -831,6 +831,30 @@ def test_new_collectors_pure():
               and "night_fut_investor" not in _hc.SCREENS)
         check("kairos: 기본 화면 4종이 카탈로그에 존재",
               all(k in _hc.SCREENS for k in _hc.DEFAULT_SCREENS), str(_hc.DEFAULT_SCREENS))
+
+        # ★0313 원월물 경고 — 실측 2026-07-29 화면이 '03월물(27)'(2027-03)이었다.
+        #   원월물 베이시스는 유동성이 없어 프로그램 압력 신호로 쓸 수 없다.
+        from datetime import date as _dK
+        check("kairos: 최근월물 — 7월이면 9월물", _hc.front_futures_month(_dK(2026, 7, 29)) == "2026-09",
+              str(_hc.front_futures_month(_dK(2026, 7, 29))))
+        check("kairos: 만기 당일(9/10 둘째목)까지는 9월물",
+              _hc.front_futures_month(_dK(2026, 9, 10)) == "2026-09")
+        check("kairos: 만기 다음날 12월물로 롤오버",
+              _hc.front_futures_month(_dK(2026, 9, 11)) == "2026-12")
+        check("kairos: 12월 만기 후 이듬해 3월물",
+              _hc.front_futures_month(_dK(2026, 12, 11)) == "2027-03")
+        check("kairos: 연초는 3월물", _hc.front_futures_month(_dK(2027, 1, 5)) == "2027-03")
+        # 점검창(02:30~05:10) — 이 안의 hts=false 는 정상이라 사람을 부르지 않는다
+        check("kairos: 점검창 경계(02:30 포함)", _hc.in_maintenance("02:30") is True)
+        check("kairos: 점검창 직전(02:29)은 정상", _hc.in_maintenance("02:29") is False)
+        check("kairos: 점검창 끝(05:10 포함)", _hc.in_maintenance("05:10") is True)
+        check("kairos: 05:11 은 정상", _hc.in_maintenance("05:11") is False)
+        check("kairos: 06:30 분석시각은 정상", _hc.in_maintenance("06:30") is False)
+        # 변형 카탈로그(생략 시 전 변형 순회 = 0254 는 15장)
+        check("kairos: 0254 변형 15종 등재", len(_hc.VARIANTS["investor_daily"]) == 15,
+              str(len(_hc.VARIANTS["investor_daily"])))
+        check("kairos: 0273·0214 변형 2종씩",
+              len(_hc.VARIANTS["program_daily"]) == 2 and len(_hc.VARIANTS["broker_3d"]) == 2)
     except ImportError:
 
         print("[SKIP] htscap: hts_capture_collect import 불가")

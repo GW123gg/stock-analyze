@@ -212,8 +212,12 @@ def capture(screen, variant=None, expect_no=None, timeout=DEFAULT_TIMEOUT, retry
             ok, reason, png = verify_capture(no, meta, c)
             if (not ok) and "settled=false" in reason:
                 unsettled = True
+            # masked: 노트북의 계좌번호 자동 마스킹 건수. **-1 = 마스킹 미수행**
+            #   (Tesseract 미설치 시 -1 로 온다 — 인계문서는 '자동 마스킹된다'고 하지만
+            #    실측 -1 이었다). 계좌 정보가 그대로 찍혔을 수 있으니 그대로 실어 보고한다.
             shots.append({"label": c.get("label"), "variant": c.get("variant"),
-                          "png": png, "bytes": len(png), "ok": ok, "reason": reason})
+                          "png": png, "bytes": len(png), "ok": ok, "reason": reason,
+                          "masked": c.get("masked")})
         if unsettled and attempt < retry_unsettled:
             log.info("settled=false → 재요청 (%s, %d/%d)", screen, attempt + 1, retry_unsettled)
             time.sleep(3)

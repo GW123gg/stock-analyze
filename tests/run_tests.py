@@ -91,6 +91,45 @@ def test_validate_predictions():
     bad = dict(base_mc, market_call={"kospi": {"dir": "down", "conviction": 0.75,
                "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
     check("v9.7: conviction!=max(prob) 차단(±0.05)", any("max(prob)" in e for e in v(bad)))
+
+    # ── v11.1 익일(T+1) 지수 예측(사용자 요청: 하루 뒤 코스피·코스닥이 어떻게 될지) ──
+    #   [왜] 기존엔 확률 1세트를 T+1·T+5 양쪽에 채점해 둘 다 놓쳤다(실측 25%/27%).
+    #   next_day 는 선택이지만 넣었으면 형식은 엄격히 — 반쯤 채운 예측이 영구 미채점되는 걸 막는다.
+    _nd_ok = {"dir": "down", "prob_up": 0.25, "prob_flat": 0.20, "prob_down": 0.55,
+              "expected_pct": -0.8, "range_low": 6400, "range_high": 6700, "driver": "야간선물 -0.9%"}
+    _mc_nd = dict(base_mc, market_call={"kospi": dict(
+        {"dir": "down", "conviction": 0.6, "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6},
+        next_day=_nd_ok)})
+    check("v11.1: 정상 next_day 통과", v(_mc_nd) == [], str(v(_mc_nd)))
+    check("v11.1: next_day 없어도 통과(도입 전 세션 호환)", v(good_mc) == [])
+
+    def _nd(**kw):
+        return dict(base_mc, market_call={"kospi": dict(
+            {"dir": "down", "conviction": 0.6, "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6},
+            next_day=dict(_nd_ok, **kw))})
+    _drop = dict(_nd_ok)
+    _drop.pop("prob_down")
+    _mc_drop = dict(base_mc, market_call={"kospi": dict(
+        {"dir": "down", "conviction": 0.6, "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6},
+        next_day=_drop)})
+    check("v11.1: next_day prob 일부 누락 차단",
+          any("next_day: prob_up/flat/down 누락" in e for e in v(_mc_drop)))
+    check("v11.1: next_day prob 합!=1 차단",
+          any("next_day: prob 합" in e for e in v(_nd(prob_up=0.5))))
+    check("v11.1: next_day 확률 상한 0.75 차단",
+          any("next_day: 확률 상한" in e for e in v(_nd(prob_up=0.05, prob_flat=0.10, prob_down=0.85))))
+    check("v11.1: next_day dir enum 차단",
+          any("next_day: dir" in e for e in v(_nd(dir="상승"))))
+    check("v11.1: next_day dir!=argmax 차단",
+          any("argmax" in e for e in v(_nd(dir="up"))))
+    check("v11.1: expected_pct 비현실값(±15% 초과) 차단",
+          any("expected_pct" in e and "비현실" in e for e in v(_nd(expected_pct=-40))))
+    check("v11.1: expected_pct 숫자 아니면 차단",
+          any("expected_pct" in e and "숫자" in e for e in v(_nd(expected_pct="많이"))))
+    check("v11.1: expected_pct 없어도 통과(선택 필드)",
+          v(dict(base_mc, market_call={"kospi": dict(
+              {"dir": "down", "conviction": 0.6, "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6},
+              next_day={"dir": "down", "prob_up": 0.25, "prob_flat": 0.2, "prob_down": 0.55})})) == [])
     bad_h = dict(ok_pick, horizon_days=10)
     check("v9.7: horizon_days enum 차단", any("1|5|20|40" in e for e in v({"picks": [bad_h]})))
     # ── v10.1 시간축 전망(사용자 요청: 얼마 뒤에 오를까 / 단기 조정 / 1~2달) ──
@@ -740,6 +779,34 @@ def test_new_collectors_pure():
             pass
     except ImportError:
         print("[SKIP] token: gen_token import 불가")
+
+    # ── v11.1 익일 채점 배선 — T+1 은 next_day, T+5 는 본 콜로 갈라져 채점되는가 ──
+    try:
+        import pandas as _pdN
+        import accuracy_tracker as _atN
+        _idxN = _pdN.to_datetime(["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30",
+                                  "2026-07-31", "2026-08-03", "2026-08-04"])
+        # T+1 -3%(하락) · T+5 +2%(상승) — 두 지평 방향이 반대인 케이스
+        _dfN = _pdN.DataFrame({"Close": [100.0, 100.0, 97.0, 98.0, 99.0, 101.0, 102.0]}, index=_idxN)
+        _oldN = _atN._fetch_history
+        try:
+            _atN._fetch_history = lambda s, start: _dfN
+            _callN = {"dir": "up", "prob_up": 0.5, "prob_flat": 0.3, "prob_down": 0.2,
+                      "next_day": {"dir": "down", "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}}
+            _r1 = _atN.grade_market_call("2026-07-28", "kospi", _callN["next_day"], 1)
+            _r5 = _atN.grade_market_call("2026-07-28", "kospi", _callN, 5)
+            check("nextday: T+1 은 next_day(down)로 적중", _r1 and _r1.get("hit") is True, str(_r1))
+            check("nextday: T+5 는 본 콜(up)로 적중", _r5 and _r5.get("hit") is True, str(_r5))
+            check("nextday: 두 지평이 서로 다른 방향을 각각 채점",
+                  _r1.get("dir") == "down" and _r5.get("dir") == "up")
+            # 본 콜을 T+1 에 쓰면 틀린다 — next_day 분리의 실익 확인
+            _r1_old = _atN.grade_market_call("2026-07-28", "kospi", _callN, 1)
+            check("nextday: 구 방식(본 콜을 T+1 에)이었다면 오답이었을 것",
+                  _r1_old and _r1_old.get("hit") is False, str(_r1_old))
+        finally:
+            _atN._fetch_history = _oldN
+    except ImportError:
+        print("[SKIP] nextday: pandas/accuracy_tracker 불가")
 
     # ── v11.0 Taildrop 수신 검증 — 전송 손상·엉뚱한 화면·zip slip 을 전부 막는가 ──
     try:

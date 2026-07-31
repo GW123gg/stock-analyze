@@ -205,6 +205,50 @@ def validate_predictions(payload):
                             f" 불일치([4.7] 규칙 3 — 허용오차 0.05)")
                 except (TypeError, ValueError):
                     errs.append(f"market_call.{mkt}: conviction '{cv}' 이 숫자가 아님")
+
+            # ★v11.1 익일(T+1) 예측 검증 — 있으면 본 콜과 같은 규율을 적용한다.
+            #   [왜] 기존엔 확률 1세트를 T+1·T+5 양쪽에 채점해 둘 다 놓쳤다(실측 25%/27%).
+            #   next_day 는 **선택**이지만(도입 전 세션 호환), 넣었으면 형식은 엄격히 본다 —
+            #   반쯤 채운 예측이 조용히 통과해 영구 미채점되는 것을 막는다(dir enum 전례).
+            nd = c.get("next_day")
+            if isinstance(nd, dict):
+                nps = [nd.get("prob_up"), nd.get("prob_flat"), nd.get("prob_down")]
+                if any(x is None for x in nps):
+                    errs.append(f"market_call.{mkt}.next_day: prob_up/flat/down 누락"
+                                f" — 익일 예측을 넣었으면 3종 다 채워라([7.5])")
+                else:
+                    try:
+                        npu, npf, npd = (float(x) for x in nps)
+                    except (TypeError, ValueError):
+                        errs.append(f"market_call.{mkt}.next_day: prob 3종이 숫자가 아님")
+                    else:
+                        if not all(0.0 <= x <= 1.0 for x in (npu, npf, npd)):
+                            errs.append(f"market_call.{mkt}.next_day: prob 값이 0~1 범위 밖")
+                        elif abs((npu + npf + npd) - 1.0) > 0.03:
+                            errs.append(f"market_call.{mkt}.next_day: prob 합"
+                                        f" {npu + npf + npd:.2f} != 1.00(±0.03)")
+                        if max(npu, npf, npd) > 0.75 + 1e-9:
+                            errs.append(f"market_call.{mkt}.next_day: 확률 상한 0.75 초과"
+                                        f"(겸손 규칙 — [4.7] 규칙 3)")
+                        _nd_dir = str(nd.get("dir") or "").strip().lower()
+                        if _nd_dir not in _map:
+                            errs.append(f"market_call.{mkt}.next_day: dir '{_nd_dir or '누락'}' 은"
+                                        f" up/down/neutral 중 하나여야 함")
+                        else:
+                            _namax = {"up": npu, "flat": npf, "down": npd}
+                            if _namax[_map[_nd_dir]] < max(npu, npf, npd) - 1e-9:
+                                errs.append(f"market_call.{mkt}.next_day: dir '{_nd_dir}' 이"
+                                            f" argmax(prob)와 불일치")
+                _ep = nd.get("expected_pct")
+                if _ep is not None:
+                    try:
+                        _epf = float(_ep)
+                        # 익일 등락률은 대개 ±0.5~2%. ±15% 밖이면 단위 착오(비율 vs 배수) 의심
+                        if abs(_epf) > 15.0:
+                            errs.append(f"market_call.{mkt}.next_day: expected_pct {_ep}"
+                                        f" 가 비현실적(±15% 초과) — 단위 확인")
+                    except (TypeError, ValueError):
+                        errs.append(f"market_call.{mkt}.next_day: expected_pct '{_ep}' 이 숫자가 아님")
     PRED_RATINGS = ("강력매수", "매수", "중립", "비중축소")
     PRED_ACTIONS = ("신규커버", "재확인", "유지", "상향", "하향", "커버종료")
     # 픽·숏 0건은 '오류가 아니다' — 국면 게이트([3-차익실현](5)·F1·F8)가 롱을 전면 보류시킨

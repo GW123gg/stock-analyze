@@ -554,12 +554,18 @@ def grade_all(preds, logdata):
             if not isinstance(call, dict):
                 continue
             for horizon in (1, 5):
+                # ★v11.1: T+1 은 **익일 전용 예측(next_day)** 이 있으면 그걸로 채점한다.
+                #   [왜] 확률 1세트를 T+1·T+5 양쪽에 채점해 둘 다 놓쳤다(실측 25%/27%).
+                #   두 지평은 지배 요인이 다르다 — T+1 은 간밤 갭·수급, T+5 는 추세·국면.
+                #   next_day 가 없는 과거 세션은 종전대로 본 콜을 양쪽에 쓴다(하위호환).
+                _nd = call.get("next_day")
+                _target = _nd if (horizon == 1 and isinstance(_nd, dict)) else call
                 key = _entry_key("market_" + market_name, pred_date,
-                                 str(call.get("dir")), horizon)
+                                 str(_target.get("dir")), horizon)
                 if key in existing:
                     continue
                 try:
-                    res = grade_market_call(pred_date, market_name, call, horizon)
+                    res = grade_market_call(pred_date, market_name, _target, horizon)
                 except Exception as e:
                     log.warning(f"[acc] market 채점 예외 ({market_name}@{pred_date}): "
                                 f"{type(e).__name__}: {e}")

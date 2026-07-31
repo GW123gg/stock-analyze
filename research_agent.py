@@ -3503,18 +3503,20 @@ def render_report_html(session_dir: str) -> str:
         html_path = os.path.join(session_dir, "03_final_report.html")
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
-        # ★Gmail 클리핑 경고(v10.0): 본문이 ~102KB 를 넘으면 Gmail 이 뒷부분을 잘라
-        #   "메시지 일부가 표시되지 않았습니다"로 접는다 = 독자가 결론·부록을 못 본다.
-        #   실측(2026-07-25): 최근 발송본 중 6건이 임계 초과(최대 150KB)였다.
-        #   차단하지 않고 경고만 한다 — 발송은 되게 하되 다음 회차에 분량을 줄이라는 신호.
+        # Gmail 클리핑 안내(v11.1 — 심각도 하향): 본문이 ~102KB 를 넘으면 Gmail 이 뒷부분을
+        #   "메시지 전체 보기"로 접는다. ★**내용이 사라지는 게 아니라 접히는 것**이고, 수신자가
+        #   한 번 더 누르면 전문을 볼 수 있다(2026-07-29 사용자 확인 — '더보기 하면 되서 괜찮다').
+        #   따라서 이것은 결함이 아니라 **정보**다. 분량을 줄이려고 판단 근거를 잘라내는 것이
+        #   훨씬 나쁘다([7.0] 삭감 우선순위: 중복 서술 → 로그 원문 → 무변경 행, 근거는 최후).
         try:
             _bytes = len(html.encode("utf-8"))
             if _bytes > 102400:
-                log.warning(
-                    f"[render] ★메일 본문 {_bytes:,}B — Gmail 클리핑 임계(102,400B) 초과. "
-                    f"수신자에게 뒷부분이 접힌다. [7.0] 계약대로 본문을 줄이고 부록을 압축하라.")
+                log.info(
+                    f"[render] 메일 본문 {_bytes:,}B — Gmail 접힘 임계(102,400B) 초과. "
+                    f"수신자는 '메시지 전체 보기'로 전문을 볼 수 있다(내용 손실 없음). "
+                    f"줄일 때는 중복·로그부터, 판단 근거는 마지막에.")
             elif _bytes > 92160:
-                log.info(f"[render] 메일 본문 {_bytes:,}B — 클리핑 임계(102,400B)에 근접")
+                log.info(f"[render] 메일 본문 {_bytes:,}B — 접힘 임계(102,400B)에 근접(정상)")
         except Exception:
             pass
         return html_path

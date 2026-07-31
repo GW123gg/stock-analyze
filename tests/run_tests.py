@@ -900,6 +900,36 @@ def test_new_collectors_pure():
               "판정 불가" in _r8["entry_check"]["note"] and "buyable" not in _r8["entry_check"])
         check("intraday: entry_ref 없으면 no_entry_ref",
               _ir.review_pick({"ticker": "1"}, {"open": 1}, "intraday")["status"] == "no_entry_ref")
+
+        # ── v11.5 거래 가능 시장 판정 — 예정작업 ±5분 오차 + 분석 소요로 세션이 바뀔 수 있다 ──
+        def _vn(t):
+            return [x["venue"] for x in _ir.tradable_venues(t)["open_venues"]]
+        check("venue: 08:30 은 NXT 프리마켓만", _vn("08:30") == ["NXT 프리마켓"], str(_vn("08:30")))
+        check("venue: 10:00 은 KRX 정규장 + NXT 메인",
+              _vn("10:00") == ["KRX 정규장", "NXT 메인마켓"], str(_vn("10:00")))
+        check("venue: 15:25 는 KRX 종가단일가만(NXT 메인 15:20 마감)",
+              _vn("15:25") == ["KRX 종가 단일가"], str(_vn("15:25")))
+        check("venue: 15:35 는 NXT 애프터만(KRX 시간외는 15:40부터)",
+              _vn("15:35") == ["NXT 애프터마켓"], str(_vn("15:35")))
+        check("venue: 15:45 는 KRX 시간외종가 + NXT 애프터",
+              _vn("15:45") == ["KRX 시간외 종가", "NXT 애프터마켓"], str(_vn("15:45")))
+        check("venue: 16:10 은 KRX 시간외단일가 + NXT 애프터",
+              _vn("16:10") == ["KRX 시간외 단일가", "NXT 애프터마켓"], str(_vn("16:10")))
+        check("venue: 18:30 은 NXT 애프터만", _vn("18:30") == ["NXT 애프터마켓"], str(_vn("18:30")))
+        check("venue: 20:10 은 전부 마감", _vn("20:10") == [], str(_vn("20:10")))
+        check("venue: 마감이면 tradable_now=False",
+              _ir.tradable_venues("20:10")["tradable_now"] is False)
+        # ★NXT 종목은 KRX 시간외단일가 불가 — 한 종목에 두 시장을 제안하면 안 된다
+        _v16 = _ir.tradable_venues("16:10")
+        check("venue: 시간외단일가에 NXT 배타 경고",
+              any("NXT" in x["note"] and "불가" in x["note"]
+                  for x in _v16["open_venues"] if "단일가" in x["venue"]), str(_v16))
+        check("venue: 안내문에 '한 시장만' 규율", "한 시장만" in _v16["guidance"])
+        # 15:40 시간외 종가는 가격 지정이 안 된다(종가 고정) — 호가 제안 시 중요
+        _v1545 = _ir.tradable_venues("15:45")
+        check("venue: 시간외 종가는 가격 고정 명시",
+              any("종가" in x["method"] for x in _v1545["open_venues"]
+                  if x["venue"] == "KRX 시간외 종가"))
     except ImportError:
         print("[SKIP] intraday: intraday_review import 불가")
 

@@ -64,6 +64,58 @@ def session_phase(now_hhmm=None):
     return "after_close"
 
 
+def tradable_venues(now_hhmm=None):
+    """지금 **실제로 주문을 낼 수 있는 시장**을 판정한다(순수함수).
+
+    [왜] 코워크 예정작업은 ±5분 오차가 있고 분석에도 시간이 걸린다. 15:45 에 시작한 결산이
+    16:10 에 끝날 수 있고, 그러면 이미 다른 세션이다. **분석이 끝난 시점 기준**으로 어디가
+    열려 있는지 알아야 '지금 낼 수 있는 호가'를 제안할 수 있다.
+
+    [★핵심 제약] **NXT 거래가능 종목은 KRX 시간외단일가(16:00~18:00)가 불가**하다
+    (NXT 접속매매가와 KRX 예상체결가를 이용한 불공정거래 방지). 즉 종목별로 둘 중 하나다:
+      · NXT 가능 종목  → 애프터마켓(NXT)
+      · NXT 불가 종목  → KRX 시간외단일가
+    한 종목에 두 시장을 동시에 제안하지 마라.
+
+    시간표(2026 기준):
+      08:00~08:50 NXT 프리마켓 · 09:00~15:20 KRX 정규장+NXT 메인
+      15:20~15:30 KRX 종가단일가(NXT 휴장) · 15:30~15:40 NXT 애프터만
+      15:40~16:00 KRX 시간외종가+NXT 애프터 · 16:00~18:00 KRX 시간외단일가(NXT불가종목)+NXT 애프터
+      18:00~20:00 NXT 애프터만
+    """
+    t = now_hhmm or datetime.now().strftime("%H:%M")
+    v = []
+    if "08:00" <= t < "08:50":
+        v.append({"venue": "NXT 프리마켓", "method": "접속매매(지정가)",
+                  "note": "정규장 전 — 유동성 얇음"})
+    if "09:00" <= t < "15:20":
+        v.append({"venue": "KRX 정규장", "method": "접속매매", "note": "본장"})
+        v.append({"venue": "NXT 메인마켓", "method": "접속매매", "note": "KRX 와 병행"})
+    if "15:20" <= t < "15:30":
+        v.append({"venue": "KRX 종가 단일가", "method": "단일가(15:30 체결)",
+                  "note": "NXT 메인은 15:20 마감(휴장)"})
+    if "15:30" <= t < "15:40":
+        v.append({"venue": "NXT 애프터마켓", "method": "접속매매(지정가)",
+                  "note": "KRX 는 아직 시간외 미개장(15:40부터)"})
+    if "15:40" <= t < "16:00":
+        v.append({"venue": "KRX 시간외 종가", "method": "당일 종가 고정",
+                  "note": "가격 협상 불가 — 종가로만 체결"})
+        v.append({"venue": "NXT 애프터마켓", "method": "접속매매(지정가)", "note": "가격 지정 가능"})
+    if "16:00" <= t < "18:00":
+        v.append({"venue": "KRX 시간외 단일가", "method": "10분 단위 단일가(총 12회)",
+                  "note": "★NXT 거래가능 종목은 **불가** — NXT 불가 종목만"})
+        v.append({"venue": "NXT 애프터마켓", "method": "접속매매(지정가)", "note": "가격 지정 가능"})
+    if "18:00" <= t < "20:00":
+        v.append({"venue": "NXT 애프터마켓", "method": "접속매매(지정가)",
+                  "note": "유일한 거래처 — 유동성 가장 얇음"})
+    return {"now_kst": t, "open_venues": v, "n_open": len(v),
+            "tradable_now": bool(v),
+            "guidance": ("지금 열린 시장이 없다 — 다음 개장까지 대기하거나 예약주문만 가능하다"
+                         if not v else
+                         "★종목별로 NXT 가능 여부를 확인해 **한 시장만** 제안하라"
+                         " (NXT 종목은 KRX 시간외단일가 불가)")}
+
+
 def _today_prices(code, day):
     """당일 일봉(시가·고가·저가·현재가). 장중이면 현재가는 '지금까지의 종가'다."""
     if not FDR_OK:
@@ -190,6 +242,9 @@ def collect(session_dir, phase=None):
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "tz": "KST",
         "trade_date": day, "phase": ph,
+        # ★분석이 끝난 '그 시점'에 열린 시장 — 예정작업 ±5분 오차 + 분석 소요시간 때문에
+        #   시작 시각과 종료 시각이 다른 세션일 수 있다. 호가 제안은 이걸 보고 하라.
+        "venues": tradable_venues(),
         "pred_date": pred.get("date"),
         # ★룩어헤드 경계 — 회고가 이 파일을 진입피처로 쓰면 안 된다
         "is_intraday": True,
@@ -226,8 +281,12 @@ def main():
     p = collect(session)
     if not p:
         return 0
+    _v = p.get("venues") or {}
     log.info("장 구간: %s · 픽/숏 %d건(가격확보 %d) · ★진입 불가 %d건",
              p["phase"], p["n_total"], p["n_priced"], p["n_not_buyable"])
+    log.info("지금 열린 시장(%s): %s", _v.get("now_kst"),
+             " / ".join("%s[%s]" % (x["venue"], x["method"]) for x in _v.get("open_venues") or [])
+             or "없음 — 다음 개장 대기")
     for r in p["rows"]:
         if r.get("status") != "ok":
             log.info("  %-10s %s", (r.get("name") or "")[:10], r["status"])

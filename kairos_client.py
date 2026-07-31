@@ -189,6 +189,11 @@ def verify_capture(screen_no, meta, cap):
     want = str(cap.get("sha256") or "").lower()
     if want and hashlib.sha256(png).hexdigest() != want:
         return False, "sha256 불일치(전송 손상)", b""
+    # ★v11.2 계좌 마스킹 실패 차단(2026-07-31 지시서): Tesseract 설치 후 정상값은 0(가린 개수)이며
+    #   **-1 은 마스킹이 실패한 것**이다. 그 이미지에는 계좌번호가 그대로 남아 있을 수 있으므로
+    #   쓰지 않는다. (설치 전에는 항상 -1 이라 '참고'로만 다뤘는데, 이제 의미가 바뀌었다.)
+    if cap.get("masked") == -1:
+        return False, "masked=-1(계좌 마스킹 실패 — 계좌번호 노출 위험)", b""
     if cap.get("settled") is False:
         return False, "settled=false(화면 갱신 중 캡처)", png
     return True, "", png
@@ -204,7 +209,14 @@ def capture(screen, variant=None, expect_no=None, timeout=DEFAULT_TIMEOUT, retry
     for attempt in range(retry_unsettled + 1):
         d = call(q, timeout=timeout)
         if not d.get("ok"):
-            raise KairosError("캡처 실패(%s): %s" % (screen, d.get("error")))
+            _err = str(d.get("error") or "")
+            # ★PicoBusy: 07:00·16:30 자동 배치가 피코를 쓰는 중이다(뮤텍스 공유).
+            #   실패가 아니라 '잠깐 겹친 것'이므로 한 번 기다렸다 재시도한다.
+            if "PicoBusy" in _err and attempt < retry_unsettled:
+                log.info("PicoBusy — 자동 배치와 겹침. 20초 후 재시도 (%s)", screen)
+                time.sleep(20)
+                continue
+            raise KairosError("캡처 실패(%s): %s" % (screen, _err))
         meta = d.get("meta") or {}
         no = expect_no or meta.get("screen_no")
         shots, unsettled = [], False

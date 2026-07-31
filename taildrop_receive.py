@@ -50,6 +50,17 @@ OUTPUT_DIR = os.path.join(HERE, "output")
 DEFAULT_DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
 DONE_DIRNAME = "_taildrop_done"
 ZIP_PAT = re.compile(r"^kairos_.*\.zip$", re.I)
+# ★배치 실패 알림(2026-07-31 지시서 §4): zip 대신 ALERT_HHMM.txt 가 온다.
+#   이게 오면 그 배치는 실패했거나 일부만 성공한 것이다 — 조용히 넘기면 결측을 못 알아챈다.
+ALERT_PAT = re.compile(r"^ALERT_\d{3,4}\.txt$", re.I)
+ALERT_MEANING = {
+    "partial": "일부만 실패 — 나머지는 zip 으로 정상 도착. 온 것만 쓰고 빠진 건 개별 요청",
+    "login_screen": "자동 로그인 실패 — 사용자 확인 필요",
+    "hts_not_found": "카이로스 미실행 — 사용자 확인 필요",
+    "popup_blocked": "팝업이 화면을 막음 — '노트북 앞 창 닫아달라' 요청",
+    "cannot_focus": "카이로스를 최전면으로 못 올림 — 재시도로 안 뚫린다. 사용자 요청",
+    "send_failed": "캡처는 됐으나 전송 실패 — 재전송 요청",
+}
 
 # tailscale CLI — PATH 에 없을 수 있어 기본 설치 경로를 폴백으로 둔다
 TS_CANDIDATES = (
@@ -95,6 +106,56 @@ def fetch(downloads=DEFAULT_DOWNLOADS, timeout=120):
     after = set(os.listdir(downloads))
     got = len(after - before)
     return got, (out or err or "대기 파일 없음")
+
+
+def read_alerts(downloads):
+    """다운로드의 ALERT_*.txt → [{file, reason, meaning, text}]. 처리 후 done 으로 옮긴다."""
+    out = []
+    try:
+        names = [f for f in os.listdir(downloads) if ALERT_PAT.match(f)]
+    except Exception:
+        return out
+    for n in sorted(names):
+        p = os.path.join(downloads, n)
+        try:
+            txt = io_read(p)
+        except Exception:
+            txt = ""
+        reason = ""
+        for k in ALERT_MEANING:
+            if k in txt:
+                reason = k
+                break
+        out.append({"file": n, "reason": reason or "unknown",
+                    "meaning": ALERT_MEANING.get(reason, "사유 미상 — 원문 확인 필요"),
+                    "text": txt[:400]})
+    return out
+
+
+def io_read(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+def stale_check(manifest, today=None):
+    """★공휴일 가드(2026-07-31 지시서 §4): 배치는 **한국 증시 공휴일에도 돈다**.
+    전 영업일 수치가 담긴 zip 이 '정상처럼' 도착하므로, **zip 이 왔다는 사실만으로 데이터가
+    새롭다고 믿으면 안 된다**. manifest 의 캡처 시각과 오늘 날짜의 간격을 계산해 남긴다.
+    (화면 안 날짜까지는 여기서 못 읽는다 — 분석가가 이미지에서 확인해야 한다.)"""
+    from datetime import date as _d
+    t = today or datetime.now().date()
+    cap = (manifest.get("capture") or {}).get("captured_at_kst") or manifest.get("sent_at_kst")
+    if not cap:
+        return {"captured_at_kst": None, "age_days": None,
+                "note": "캡처 시각 미상 — 화면의 날짜로 직접 확인하라"}
+    try:
+        d = datetime.strptime(str(cap)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return {"captured_at_kst": cap, "age_days": None, "note": "시각 파싱 실패"}
+    age = (t - d).days
+    return {"captured_at_kst": cap, "age_days": age,
+            "note": ("당일 배치" if age == 0 else
+                     "★%d일 전 캡처 — 공휴일/미갱신 의심. 화면의 날짜·수치로 신선도를 직접 판단하라" % age)}
 
 
 def _safe_member(name):
@@ -198,9 +259,21 @@ def main():
     except Exception as e:
         log.warning("다운로드 폴더 접근 실패: %s", type(e).__name__)
         return 0
+
+    # ★배치 실패 알림 먼저 읽는다 — zip 이 없을 때도 '왜 없는지'를 알아야 한다
+    alerts = read_alerts(dl)
+    for a in alerts:
+        log.warning("배치 알림 %s — %s: %s", a["file"], a["reason"], a["meaning"])
+
     if not zips:
-        log.info("처리할 kairos_*.zip 없음 (다운로드: %s)", dl)
-        return 0
+        if alerts:
+            log.warning("zip 은 없고 알림만 %d건 — 그 배치는 실패한 것이다(결측 아님, 원인 있음)",
+                        len(alerts))
+        else:
+            log.info("처리할 kairos_*.zip 없음 (다운로드: %s)", dl)
+        # 알림만 있어도 세션에 기록을 남긴다(조용한 결측 방지)
+        if not alerts:
+            return 0
     if args.check:
         for z in zips:
             p = os.path.join(dl, z)
@@ -222,9 +295,13 @@ def main():
         files, rej, manifest = process_zip(zp, img_dir)
         all_files += files
         all_rej += rej
+        _st = stale_check(manifest)
         srcs.append({"zip": z, "n_ok": len(files), "n_rejected": len(rej),
                      "sent_at_kst": manifest.get("sent_at_kst"),
-                     "capture": manifest.get("capture")})
+                     "capture": manifest.get("capture"),
+                     "freshness": _st})
+        if _st.get("age_days"):
+            log.warning("   ★%s 신선도: %s", z, _st["note"])
         log.info("%s → 통과 %d · 폐기 %d", z, len(files), len(rej))
         for r in rej:
             log.warning("   폐기 %s — %s", r["file"], r["reason"][:60])
@@ -239,10 +316,21 @@ def main():
         "source": "taildrop_batch", "downloads_dir": dl,
         "n_zip": len(srcs), "n_ok": len(all_files), "n_rejected": len(all_rej),
         "zips": srcs, "files": all_files, "rejected": all_rej,
-        "note": ("Taildrop 으로 받은 배치 캡처. rejected 는 sha256·marker·settled 검증에 걸려 "
-                 "폐기된 장이며 그 사유가 곧 신뢰도 정보다. 처리한 zip 은 다운로드/"
-                 + DONE_DIRNAME + " 로 옮겨 재처리를 막는다(삭제하지 않음)."),
+        "alerts": alerts, "n_alerts": len(alerts),
+        "note": ("Taildrop 으로 받은 배치 캡처. rejected 는 sha256·marker·settled·masked 검증에 "
+                 "걸려 폐기된 장이며 그 사유가 곧 신뢰도 정보다. 처리한 zip 은 다운로드/"
+                 + DONE_DIRNAME + " 로 옮겨 재처리를 막는다(삭제하지 않음). "
+                 "★alerts 가 있으면 그 배치는 실패·부분성공이다 — '데이터 없음'이 아니라 "
+                 "'사유 있는 결측'으로 다뤄라. ★freshness.age_days>0 이면 공휴일 등으로 "
+                 "낡은 수치일 수 있다(배치는 공휴일에도 돈다) — 화면의 날짜로 직접 확인하라."),
     }
+    # 처리한 알림도 옮긴다(다음 실행에서 같은 알림을 또 보고하지 않게)
+    for a_ in alerts:
+        try:
+            shutil.move(os.path.join(dl, a_["file"]), os.path.join(done_dir, a_["file"]))
+        except Exception:
+            pass
+
     out = os.path.join(session, "hts_capture_batch.json")
     try:
         save_json_atomic(out, payload)

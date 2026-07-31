@@ -267,13 +267,14 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True):
                 log.warning("★관심종목 복구 실패 — 사람이 확인해야 한다: %s", type(e).__name__)
 
     ok_n = sum(1 for r in results if r.get("status") == "ok")
-    # 계좌 마스킹 상태: -1 = 노트북에서 마스킹이 수행되지 않음(Tesseract 미설치 시)
-    _masked = [f.get("masked") for r in results for f in (r.get("files") or [])]
-    _mask_off = sum(1 for m in _masked if m == -1)
+    # 계좌 마스킹: 정상값 0(가린 개수). **-1 은 마스킹 실패**라 그 장은 애초에 폐기되므로
+    # 여기 files 에는 남지 않는다(kairos_client.verify_capture 가 차단). 폐기 건수는 rejected 에.
+    _mask_fail = sum(1 for r in results for b in (r.get("rejected") or [])
+                     if "masked=-1" in str(b.get("reason") or ""))
     return {
-        "account_masking": ("미수행(masked=-1) — 계좌 정보가 찍혔을 수 있다. 이미지를 외부로 "
-                            "공유하지 마라" if _mask_off else "수행됨"),
-        "n_masking_unavailable": _mask_off,
+        "account_masking": ("정상(masked>=0)" if not _mask_fail else
+                            "★%d장 마스킹 실패로 폐기 — 노트북 Tesseract/OCR 상태 확인 필요" % _mask_fail),
+        "n_masking_failed": _mask_fail,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "tz": "KST", "source": "kairos_hts_capture", "agent_reachable": True,
         "health": {k: h.get(k) for k in ("hts", "hts_login_screen", "current_screen", "now_kst")},

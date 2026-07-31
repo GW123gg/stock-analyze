@@ -868,6 +868,36 @@ def test_new_collectors_pure():
               len(_f7) == 1 and not _r7, str(_r7))
         check("taildrop: zip 이름 패턴", bool(_tr.ZIP_PAT.match("kairos_20260729.zip"))
               and not _tr.ZIP_PAT.match("other.zip"))
+
+        # ── v11.2 배치 알림(ALERT_*.txt) — zip 이 안 와도 '왜 없는지'를 알아야 한다 ──
+        _tda = tempfile.mkdtemp(prefix="alr_")
+        io.open(os.path.join(_tda, "ALERT_0700.txt"), "w", encoding="utf-8").write(
+            "batch failed: login_screen")
+        io.open(os.path.join(_tda, "ALERT_1630.txt"), "w", encoding="utf-8").write(
+            "reason=partial 3/10 ok")
+        io.open(os.path.join(_tda, "other.txt"), "w", encoding="utf-8").write("x")
+        _al = _tr.read_alerts(_tda)
+        check("alert: ALERT_*.txt 2건만 인식(다른 txt 무시)", len(_al) == 2, str([a["file"] for a in _al]))
+        check("alert: login_screen 사유 해석",
+              any(a["reason"] == "login_screen" and "로그인" in a["meaning"] for a in _al))
+        check("alert: partial 사유 해석 — '나머지는 정상 도착'",
+              any(a["reason"] == "partial" and "나머지" in a["meaning"] for a in _al))
+        io.open(os.path.join(_tda, "ALERT_0800.txt"), "w", encoding="utf-8").write("무슨 소리인지 모름")
+        check("alert: 미상 사유도 버리지 않고 unknown 으로 남긴다",
+              any(a["reason"] == "unknown" for a in _tr.read_alerts(_tda)))
+
+        # ── v11.2 공휴일 stale 가드 — 배치는 공휴일에도 돌고 낡은 zip 이 '정상처럼' 온다 ──
+        from datetime import date as _dT
+        _s0 = _tr.stale_check({"sent_at_kst": "2026-07-31 07:00"}, today=_dT(2026, 7, 31))
+        check("stale: 당일 배치는 age 0", _s0["age_days"] == 0 and "당일" in _s0["note"])
+        _s2 = _tr.stale_check({"sent_at_kst": "2026-07-29 07:00"}, today=_dT(2026, 7, 31))
+        check("stale: 2일 전이면 경고", _s2["age_days"] == 2 and "공휴일" in _s2["note"])
+        _sn = _tr.stale_check({}, today=_dT(2026, 7, 31))
+        check("stale: 시각 미상이면 None + 직접확인 안내",
+              _sn["age_days"] is None and "직접 확인" in _sn["note"])
+        _sc = _tr.stale_check({"capture": {"captured_at_kst": "2026-07-30 16:30"}},
+                              today=_dT(2026, 7, 31))
+        check("stale: capture.captured_at_kst 우선 사용", _sc["age_days"] == 1, str(_sc))
     except ImportError:
         print("[SKIP] taildrop: taildrop_receive import 불가")
 
@@ -914,6 +944,15 @@ def test_new_collectors_pure():
         # settled=false → 폐기하되 png 는 돌려준다(재요청 판단용)
         ok6, why6, png6 = _kc.verify_capture("0231", _meta_ok, dict(_cap_ok, settled=False))
         check("kairos: settled=false 폐기", (not ok6) and "settled" in why6, why6)
+        # ★v11.2 masked 의미 변경(Tesseract 설치 후): 0=정상(가린 개수), -1=마스킹 실패
+        ok_m0, _, _ = _kc.verify_capture("0231", _meta_ok, dict(_cap_ok, masked=0))
+        check("kairos: masked=0 은 정상 통과", ok_m0)
+        ok_m3, _, _ = _kc.verify_capture("0231", _meta_ok, dict(_cap_ok, masked=3))
+        check("kairos: masked=3(가린 개수) 통과", ok_m3)
+        ok_mn, why_mn, png_mn = _kc.verify_capture("0231", _meta_ok, dict(_cap_ok, masked=-1))
+        check("kairos: masked=-1(마스킹 실패) 폐기 — 계좌 노출 위험",
+              (not ok_mn) and "masked=-1" in why_mn, why_mn)
+        check("kairos: 마스킹 실패 시 png 도 반환하지 않는다", png_mn == b"")
         check("kairos: settled=false 여도 png 는 반환(재요청 판단)", png6 != b"")
         # PNG 아님
         _bad = _b64.b64encode(b"XX").decode()

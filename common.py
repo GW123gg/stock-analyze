@@ -137,8 +137,11 @@ def resolve_session(output_dir, fallback_age_h=6, prefer_sameday_earliest=False)
 #   path_view·expected_peak_days 를 픽 필수로 둔 이유: timing 이 8회차 동안 '선택'이라 방치됐다가
 #   게이트로 강제한 뒤에야 채워진 전례(A4)가 있다.
 PRED_PATH_VIEWS = ("즉시상승", "눌림후상승", "계단식", "횡보후상승", "이벤트대기")
+# ★v11.3 진입 시점([6.5++]): 리포트는 장 시작 전에 나가는데 추천 당일 갭상승·상한가로 뛰면
+#   독자는 못 산다. 회고 실측 '픽의 절반이 D+1~2 즉시고점(적중 19%)'이 그 문제였다.
+PRED_ENTRY_WINDOWS = ("당일시가", "당일눌림", "당일종가", "익일이후")
 PRED_REQUIRED_PICK = ("ticker", "tag", "timing", "conviction", "preprice", "entry_ref",
-                      "horizon_days", "path_view", "expected_peak_days")
+                      "horizon_days", "path_view", "expected_peak_days", "entry_window")
 PRED_REQUIRED_SHORT = ("ticker", "timing", "conviction", "entry_ref", "horizon_days")
 PRED_TIMINGS = ("임박", "단기", "중기", "장기")     # v10.1: 장기(2개월·T+40) 추가
 PRED_PREPRICES = ("강함", "부분", "미반영")
@@ -290,6 +293,49 @@ def validate_predictions(payload):
                                     f"horizon_days {_hz} 를 초과(채점 창 밖 — 예측이 검증 불가)")
                 except (TypeError, ValueError):
                     errs.append(f"{kind}[{i}] {tag}: expected_peak_days '{epd}' 이 정수가 아님")
+            # ★v11.3 진입 시점 + 익일 전망([6.5++]) — '못 사는 추천'을 줄이기 위한 필드
+            ew = it.get("entry_window")
+            if ew is not None and str(ew).strip() and str(ew).strip() not in PRED_ENTRY_WINDOWS:
+                errs.append(f"{kind}[{i}] {tag}: entry_window '{ew}' 은 "
+                            f"{'/'.join(PRED_ENTRY_WINDOWS)} 중 하나여야 함")
+            pnd = it.get("next_day")
+            if isinstance(pnd, dict):
+                _ps = [pnd.get("prob_up"), pnd.get("prob_flat"), pnd.get("prob_down")]
+                if any(x is None for x in _ps):
+                    errs.append(f"{kind}[{i}] {tag}: next_day 를 넣었으면 prob 3종을 다 채워라")
+                else:
+                    try:
+                        _pu, _pf, _pd2 = (float(x) for x in _ps)
+                    except (TypeError, ValueError):
+                        errs.append(f"{kind}[{i}] {tag}: next_day prob 3종이 숫자가 아님")
+                    else:
+                        if not all(0.0 <= x <= 1.0 for x in (_pu, _pf, _pd2)):
+                            errs.append(f"{kind}[{i}] {tag}: next_day prob 값이 0~1 범위 밖")
+                        elif abs((_pu + _pf + _pd2) - 1.0) > 0.03:
+                            errs.append(f"{kind}[{i}] {tag}: next_day prob 합 "
+                                        f"{_pu + _pf + _pd2:.2f} != 1.00(±0.03)")
+                        if max(_pu, _pf, _pd2) > 0.75 + 1e-9:
+                            errs.append(f"{kind}[{i}] {tag}: next_day 확률 상한 0.75 초과")
+                        _nd2 = str(pnd.get("dir") or "").strip().lower()
+                        _m2 = {"up": _pu, "neutral": _pf, "down": _pd2}
+                        if _nd2 not in _m2:
+                            errs.append(f"{kind}[{i}] {tag}: next_day dir "
+                                        f"'{_nd2 or '누락'}' 은 up/down/neutral 중 하나여야 함")
+                        elif _m2[_nd2] < max(_pu, _pf, _pd2) - 1e-9:
+                            errs.append(f"{kind}[{i}] {tag}: next_day dir '{_nd2}' 이 argmax(prob)와 불일치")
+                _pep = pnd.get("expected_pct")
+                if _pep is not None:
+                    try:
+                        if abs(float(_pep)) > 30.0:      # 상하한가 ±30% 밖은 물리적으로 불가
+                            errs.append(f"{kind}[{i}] {tag}: next_day expected_pct {_pep} 가 "
+                                        f"가격제한폭(±30%) 밖 — 단위 확인")
+                    except (TypeError, ValueError):
+                        errs.append(f"{kind}[{i}] {tag}: next_day expected_pct '{_pep}' 이 숫자가 아님")
+            # ★정합성: 즉시상승인데 '익일이후' 진입은 모순(이미 올랐는데 내일 사라?)
+            if (str(it.get("path_view") or "").strip() == "즉시상승"
+                    and str(ew or "").strip() == "익일이후"):
+                errs.append(f"{kind}[{i}] {tag}: path_view=즉시상승 과 entry_window=익일이후 는 "
+                            f"모순([6.5++]) — 둘 중 하나를 고쳐라")
             eg = it.get("expected_gain_pct")       # 채점 대상: 실측 peak_gain_pct
             if eg is not None:
                 try:

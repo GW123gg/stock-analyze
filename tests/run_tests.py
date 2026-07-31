@@ -52,7 +52,9 @@ def test_validate_predictions():
     ok_pick = {"ticker": "005930", "tag": "단기스윙", "timing": "단기", "conviction": 0.5,
                "preprice": "부분", "entry_ref": 70000, "horizon_days": 5,
                # v10.1 시간축 전망(픽 필수)
-               "path_view": "눌림후상승", "expected_peak_days": 4}
+               "path_view": "눌림후상승", "expected_peak_days": 4,
+               # v11.3 진입 시점(픽 필수 — '못 사는 추천' 방지)
+               "entry_window": "당일눌림"}
     ok_short = {"ticker": "000660", "timing": "단기", "conviction": 0.5,
                 "entry_ref": 100000, "horizon_days": 5}
     check("validate: 정상 픽+숏 통과", v({"picks": [ok_pick], "shorts": [ok_short]}) == [])
@@ -91,6 +93,45 @@ def test_validate_predictions():
     bad = dict(base_mc, market_call={"kospi": {"dir": "down", "conviction": 0.75,
                "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
     check("v9.7: conviction!=max(prob) 차단(±0.05)", any("max(prob)" in e for e in v(bad)))
+
+    # ── v11.3 진입 시점 + 픽 익일 전망([6.5++]) — '추천했는데 못 사는' 문제 ──
+    #   회고 실측: 픽의 절반이 D+1~2 즉시고점(적중 19%), 손실 주범은 '진입가가 곧 고점'형.
+    check("v11.3: entry_window 필수(누락 차단)",
+          any("entry_window" in e for e in v({"picks": [
+              {k: val for k, val in ok_pick.items() if k != "entry_window"}]})))
+    check("v11.3: entry_window enum 차단",
+          any("entry_window" in e and "중 하나" in e
+              for e in v({"picks": [dict(ok_pick, entry_window="아무때나")]})))
+    for _w in ("당일시가", "당일눌림", "당일종가", "익일이후"):
+        check("v11.3: entry_window '%s' 허용" % _w,
+              v({"picks": [dict(ok_pick, entry_window=_w)]}) == [])
+    # ★정합성: 즉시상승인데 익일이후 진입은 모순
+    check("v11.3: 즉시상승+익일이후 모순 차단",
+          any("모순" in e for e in v({"picks": [
+              dict(ok_pick, path_view="즉시상승", entry_window="익일이후")]})))
+    check("v11.3: 즉시상승+당일시가는 정상",
+          v({"picks": [dict(ok_pick, path_view="즉시상승", entry_window="당일시가")]}) == [])
+
+    _pnd = {"dir": "up", "prob_up": 0.55, "prob_flat": 0.25, "prob_down": 0.20,
+            "expected_pct": 2.5, "reason": "장 마감 강세 + 외인 순매수 전환"}
+    check("v11.3: 픽 next_day 정상 통과",
+          v({"picks": [dict(ok_pick, next_day=_pnd)]}) == [],
+          str(v({"picks": [dict(ok_pick, next_day=_pnd)]})))
+    check("v11.3: 픽 next_day 없어도 통과(선택)", v({"picks": [ok_pick]}) == [])
+    _drop2 = {k: val for k, val in _pnd.items() if k != "prob_down"}
+    check("v11.3: 픽 next_day prob 일부 누락 차단",
+          any("next_day 를 넣었으면" in e for e in v({"picks": [dict(ok_pick, next_day=_drop2)]})))
+    check("v11.3: 픽 next_day prob 합!=1 차단",
+          any("next_day prob 합" in e
+              for e in v({"picks": [dict(ok_pick, next_day=dict(_pnd, prob_up=0.9))]})))
+    check("v11.3: 픽 next_day dir!=argmax 차단",
+          any("argmax" in e
+              for e in v({"picks": [dict(ok_pick, next_day=dict(_pnd, dir="down"))]})))
+    check("v11.3: 픽 next_day 가격제한폭(±30%) 밖 차단",
+          any("가격제한폭" in e
+              for e in v({"picks": [dict(ok_pick, next_day=dict(_pnd, expected_pct=45))]})))
+    check("v11.3: 상한가 수준(+29%)은 허용(물리적으로 가능)",
+          v({"picks": [dict(ok_pick, next_day=dict(_pnd, expected_pct=29))]}) == [])
 
     # ── v11.1 익일(T+1) 지수 예측(사용자 요청: 하루 뒤 코스피·코스닥이 어떻게 될지) ──
     #   [왜] 기존엔 확률 1세트를 T+1·T+5 양쪽에 채점해 둘 다 놓쳤다(실측 25%/27%).
@@ -779,6 +820,52 @@ def test_new_collectors_pure():
             pass
     except ImportError:
         print("[SKIP] token: gen_token import 불가")
+
+    # ── v11.3 장중 재분석 — '아침에 말한 자리에서 실제로 살 수 있었나'를 재는가 ──
+    try:
+        import intraday_review as _ir
+        for _t, _want in (("08:30", "pre_open"), ("09:00", "intraday"), ("13:00", "intraday"),
+                          ("15:30", "intraday"), ("15:31", "after_close"), ("20:00", "after_close")):
+            check("intraday: 장구간 %s → %s" % (_t, _want), _ir.session_phase(_t) == _want)
+
+        _base = {"ticker": "005930", "entry_ref": 100, "target_pct": 8, "stop_pct": -5}
+        # ★핵심: 갭상승하면 '당일시가' 추천은 실제로 못 산다
+        _r = _ir.review_pick(dict(_base, entry_window="당일시가"),
+                             {"open": 108, "high": 112, "low": 107, "last": 110}, "intraday")
+        check("intraday: 갭 +8% 면 당일시가 진입 불가 판정",
+              _r["entry_check"]["buyable"] is False and "못 산다" in _r["entry_check"]["note"])
+        _r2 = _ir.review_pick(dict(_base, entry_window="당일시가"),
+                              {"open": 101, "high": 104, "low": 100, "last": 103}, "intraday")
+        check("intraday: 갭 +1% 면 진입 가능", _r2["entry_check"]["buyable"] is True)
+        # 눌림 대기: 저가가 진입가 아래로 왔는지가 판정 기준
+        _r3 = _ir.review_pick(dict(_base, entry_window="당일눌림"),
+                              {"open": 102, "high": 105, "low": 98, "last": 104}, "intraday")
+        check("intraday: 눌림 왔으면 진입 기회 있음", _r3["entry_check"]["buyable"] is True)
+        _r4 = _ir.review_pick(dict(_base, entry_window="당일눌림"),
+                              {"open": 105, "high": 109, "low": 103, "last": 108}, "intraday")
+        check("intraday: 눌림 안 왔으면 진입 못 함", _r4["entry_check"]["buyable"] is False)
+        # 종가·익일 진입은 장중에 판정하지 않는다(성급한 단정 금지)
+        _r5 = _ir.review_pick(dict(_base, entry_window="당일종가"),
+                              {"open": 101, "high": 104, "low": 100, "last": 103}, "intraday")
+        check("intraday: 당일종가는 장중 미판정(None)", _r5["entry_check"]["buyable"] is None)
+        _r6 = _ir.review_pick(dict(_base, entry_window="익일이후"),
+                              {"open": 101, "high": 104, "low": 100, "last": 103}, "intraday")
+        check("intraday: 익일이후도 장중 미판정(None)", _r6["entry_check"]["buyable"] is None)
+        # 선언한 계약(target/stop) 터치
+        check("intraday: 고가가 목표 도달", _r["level_flags"].get("target_touched") is True)
+        _r7 = _ir.review_pick(dict(_base, entry_window="당일시가"),
+                              {"open": 99, "high": 100, "low": 94, "last": 95}, "intraday")
+        check("intraday: 저가가 손절 터치", _r7["level_flags"].get("stop_touched") is True)
+        check("intraday: 현재도 손절 아래", _r7["level_flags"].get("below_stop_now") is True)
+        # entry_window 미선언이면 판정 불가로 남긴다(False 로 채우지 않는다)
+        _r8 = _ir.review_pick(dict(_base), {"open": 101, "high": 104, "low": 100, "last": 103},
+                              "intraday")
+        check("intraday: entry_window 없으면 판정 불가 명시",
+              "판정 불가" in _r8["entry_check"]["note"] and "buyable" not in _r8["entry_check"])
+        check("intraday: entry_ref 없으면 no_entry_ref",
+              _ir.review_pick({"ticker": "1"}, {"open": 1}, "intraday")["status"] == "no_entry_ref")
+    except ImportError:
+        print("[SKIP] intraday: intraday_review import 불가")
 
     # ── v11.1 익일 채점 배선 — T+1 은 next_day, T+5 는 본 콜로 갈라져 채점되는가 ──
     try:

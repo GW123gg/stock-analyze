@@ -94,6 +94,42 @@ def test_validate_predictions():
                "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}})
     check("v9.7: conviction!=max(prob) 차단(±0.05)", any("max(prob)" in e for e in v(bad)))
 
+    # ── v11.4 파생상품([6.8]) — 레버리지 상품이라 게이트를 픽보다 엄격히 ──
+    _dv = {"kind": "futures", "underlying": "KOSPI200", "contract": "2026-09", "side": "short",
+           "entry_ref": 956.75, "target_pct": 3, "stop_pct": -2, "conviction": 0.55,
+           "horizon_days": 5, "max_loss_krw": 1200000,
+           "leverage_note": "정규 선물 1계약=지수x25만원", "thesis": "x"}
+    check("v11.4: 정상 선물 통과", v({"derivatives": [_dv]}) == [], str(v({"derivatives": [_dv]})))
+    check("v11.4: derivatives 없거나 비면 통과(파생 안 하는 게 기본)",
+          v({"derivatives": []}) == [] and v({}) == [])
+    # ★★옵션 매도 금지 — 손실 무한이라 설정으로도 못 푼다
+    check("v11.4: 콜 매도 차단",
+          any("옵션 매도 금지" in e
+              for e in v({"derivatives": [dict(_dv, kind="call", side="short", strike=1000)]})))
+    check("v11.4: 풋 매도 차단",
+          any("옵션 매도 금지" in e
+              for e in v({"derivatives": [dict(_dv, kind="put", side="short", strike=900)]})))
+    check("v11.4: 콜 매수는 허용",
+          v({"derivatives": [dict(_dv, kind="call", side="long", strike=1000)]}) == [])
+    check("v11.4: 옵션 strike 누락 차단",
+          any("strike" in e for e in v({"derivatives": [dict(_dv, kind="put", side="long")]})))
+    # 레버리지 인지 강제
+    check("v11.4: max_loss_krw 누락 차단",
+          any("max_loss_krw 필수" in e for e in v({"derivatives": [
+              {k: x for k, x in _dv.items() if k != "max_loss_krw"}]})))
+    check("v11.4: leverage_note 누락 차단",
+          any("leverage_note" in e for e in v({"derivatives": [dict(_dv, leverage_note="")]})))
+    check("v11.4: kind enum 차단",
+          any("kind" in e for e in v({"derivatives": [dict(_dv, kind="stock_futures")]})))
+    check("v11.4: 파생 horizon 40 차단(만기가 있다)",
+          any("1|5|20" in e for e in v({"derivatives": [dict(_dv, horizon_days=40)]})))
+    check("v11.4: conviction 0.8 초과 차단",
+          any("conviction" in e for e in v({"derivatives": [dict(_dv, conviction=0.9)]})))
+    check("v11.4: stop_pct 양수 차단",
+          any("stop_pct" in e for e in v({"derivatives": [dict(_dv, stop_pct=2)]})))
+    check("v11.4: 선물 short 는 허용(헤지·하락 베팅)",
+          v({"derivatives": [dict(_dv, kind="mini_futures", side="short")]}) == [])
+
     # ── v11.3 진입 시점 + 픽 익일 전망([6.5++]) — '추천했는데 못 사는' 문제 ──
     #   회고 실측: 픽의 절반이 D+1~2 즉시고점(적중 19%), 손실 주범은 '진입가가 곧 고점'형.
     check("v11.3: entry_window 필수(누락 차단)",

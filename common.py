@@ -252,6 +252,63 @@ def validate_predictions(payload):
                                         f" 가 비현실적(±15% 초과) — 단위 확인")
                     except (TypeError, ValueError):
                         errs.append(f"market_call.{mkt}.next_day: expected_pct '{_ep}' 이 숫자가 아님")
+    # ── ★v11.4 파생상품([6.8]) — 레버리지 상품이라 게이트를 픽보다 엄격히 둔다 ──
+    DERIV_KINDS = ("futures", "mini_futures", "call", "put")
+    for i, d in enumerate(payload.get("derivatives") or []):
+        if not isinstance(d, dict):
+            errs.append(f"derivatives[{i}]: dict 가 아님")
+            continue
+        _k = str(d.get("kind") or "").strip().lower()
+        _lbl = d.get("contract") or _k or i
+        if _k not in DERIV_KINDS:
+            errs.append(f"derivatives[{i}] {_lbl}: kind '{_k or '누락'}' 은 "
+                        f"{'/'.join(DERIV_KINDS)} 중 하나여야 함([6.8])")
+        _side = str(d.get("side") or "").strip().lower()
+        # ★★옵션 매도 금지 — 손실이 이론상 무한이라 원금을 넘는다. 설정으로도 못 푼다.
+        if _k in ("call", "put"):
+            if _side and _side != "long":
+                errs.append(f"derivatives[{i}] {_lbl}: **옵션 매도 금지**([6.8]) — "
+                            f"손실 무한. call/put 은 side=long 만 허용")
+            if d.get("strike") is None:
+                errs.append(f"derivatives[{i}] {_lbl}: 옵션은 strike(행사가) 필수")
+        elif _k in ("futures", "mini_futures") and _side and _side not in ("long", "short"):
+            errs.append(f"derivatives[{i}] {_lbl}: side '{_side}' 은 long/short 중 하나여야 함")
+        # 레버리지 인지 강제 — 최대손실을 숫자로 못 적으면 추천 자격이 없다
+        _ml = d.get("max_loss_krw")
+        if _ml is None:
+            errs.append(f"derivatives[{i}] {_lbl}: max_loss_krw 필수([6.8] — "
+                        f"최대손실을 숫자로 못 적으면 추천하지 마라)")
+        else:
+            try:
+                if float(_ml) <= 0:
+                    errs.append(f"derivatives[{i}] {_lbl}: max_loss_krw {_ml} 는 양수여야 함")
+            except (TypeError, ValueError):
+                errs.append(f"derivatives[{i}] {_lbl}: max_loss_krw '{_ml}' 이 숫자가 아님")
+        if not str(d.get("leverage_note") or "").strip():
+            errs.append(f"derivatives[{i}] {_lbl}: leverage_note 필수(레버리지 배수·증거금 설명)")
+        _hz = d.get("horizon_days")
+        if _hz is not None:
+            try:
+                if int(_hz) not in (1, 5, 20):
+                    errs.append(f"derivatives[{i}] {_lbl}: horizon_days {_hz} 는 1|5|20 중 하나"
+                                f"(파생은 40 미허용 — 만기가 있다)")
+            except (TypeError, ValueError):
+                errs.append(f"derivatives[{i}] {_lbl}: horizon_days '{_hz}' 이 정수가 아님")
+        _cv2 = d.get("conviction")
+        if _cv2 is not None:
+            try:
+                if not (0.0 <= float(_cv2) <= 0.8 + 1e-9):
+                    errs.append(f"derivatives[{i}] {_lbl}: conviction {_cv2} 는 0~0.8 범위")
+            except (TypeError, ValueError):
+                errs.append(f"derivatives[{i}] {_lbl}: conviction '{_cv2}' 이 숫자가 아님")
+        _sp2 = d.get("stop_pct")
+        if _sp2 is not None:
+            try:
+                if float(_sp2) >= 0:
+                    errs.append(f"derivatives[{i}] {_lbl}: stop_pct {_sp2} 는 음수여야 함")
+            except (TypeError, ValueError):
+                errs.append(f"derivatives[{i}] {_lbl}: stop_pct '{_sp2}' 이 숫자가 아님")
+
     PRED_RATINGS = ("강력매수", "매수", "중립", "비중축소")
     PRED_ACTIONS = ("신규커버", "재확인", "유지", "상향", "하향", "커버종료")
     # 픽·숏 0건은 '오류가 아니다' — 국면 게이트([3-차익실현](5)·F1·F8)가 롱을 전면 보류시킨

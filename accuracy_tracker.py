@@ -25,7 +25,7 @@ accuracy_tracker.py — 과거 예측 사후 채점 & 정확도 점수표 생성
   - 만기 도달분만 채점: 예측일(거래일)로부터 horizon_days 거래일이 지난 픽/숏.
     market_call 은 T+1·T+5 거래일 경과분.
   - 픽 수익률 = (T+h 종가 - entry_ref) / entry_ref
-    적중 = (긍정 태그 픽이고 수익률>0) 또는 (숏이고 수익률<0)
+    적중 = (픽이고 수익률>0 — 태그 무관, 전 픽=상승 기대) 또는 (숏이고 수익률<0)
   - alpha = 픽수익률 - 같은 구간 코스피(KS11) 수익률
   - market_call: 같은 구간 지수 등락 부호와 dir 일치 여부(neutral 은 |등락|<0.5% 면 적중)
   - calibration: conviction 구간별 실제 적중률
@@ -79,8 +79,9 @@ CALIB_BUCKETS = [
     ("(0.80-1.00]", 0.80, 1.00),
 ]
 
-# 긍정(상승 기대) 픽 태그 — 이들은 수익률>0 일 때 적중
-POSITIVE_TAGS = {"단기스윙", "장투가능", "장전선취매"}
+# (★v11.6 죽은 상수 POSITIVE_TAGS 삭제 — 정의만 있고 사용처 0. 실제 채점은 태그 무관
+#  전 픽=상승 기대(grade_pick)라, '태그 기반 방향판정이 있다'는 착시가 방향중립 태그 신설 시
+#  무음 오채점을 부를 수 있었다. 방향중립 태그를 만들면 grade_pick 의 hit 분기를 함께 고쳐라.)
 
 # Windows 콘솔 UTF-8 (이모지는 쓰지 않지만 한글 안전 출력)
 for _stream in (sys.stdout, sys.stderr):
@@ -455,6 +456,60 @@ def grade_pick(pred_date, item, kind):
     }
 
 
+def grade_pick_next_day(pred_date, item, nd):
+    """★v11.6(loop-gaps-2): 픽 익일(T+1) 전망 채점 — kind='pick_nd1'.
+    dir(up/down/neutral)을 T+1 종목 수익률로 판정(neutral 밴드는 시장콜 T+1 과 동일 0.5%).
+    prob 3종이 있으면 Brier 병기(grade_market_call #WS 와 같은 규약). 만기 미도달 시 None."""
+    ticker = str(item.get("ticker") or "").strip()
+    direction = str(nd.get("dir") or "").strip().lower()
+    if not ticker or direction not in ("up", "down", "neutral"):
+        return None
+    entry_ref = _safe_float(item.get("entry_ref"))
+    if entry_ref is None or entry_ref <= 0:
+        return None
+    base_date = _to_date(pred_date)
+    if base_date is None:
+        return None
+    close_1, settle_date = _close_at_horizon(ticker, base_date, 1)
+    if close_1 is None:
+        return None
+    ret_1 = (close_1 / entry_ref - 1.0) * 100.0
+    band = NEUTRAL_BAND_BY_H.get(1, NEUTRAL_BAND_PCT)
+    if direction == "neutral":
+        hit = abs(ret_1) < band
+    elif direction == "up":
+        hit = ret_1 > 0
+    else:
+        hit = ret_1 < 0
+    entry = {
+        "kind": "pick_nd1",
+        "pred_date": str(pred_date),
+        "ticker": ticker,
+        "name": item.get("name") or ticker,
+        "dir": direction,
+        "horizon": 1,
+        "entry_ref": entry_ref,
+        "settle_date": settle_date,
+        "close_h": round(close_1, 2),
+        "return_pct": round(ret_1, 2),
+        "expected_pct": _safe_float(nd.get("expected_pct")),
+        "hit": bool(hit),
+        "graded_at": datetime.now().isoformat(),
+    }
+    pu, pf, pdn = (_safe_float(nd.get("prob_up")), _safe_float(nd.get("prob_flat")),
+                   _safe_float(nd.get("prob_down")))
+    if None not in (pu, pf, pdn) and abs((pu + pf + pdn) - 1.0) < 0.05:
+        if ret_1 > band:
+            o = (1.0, 0.0, 0.0)
+        elif ret_1 < -band:
+            o = (0.0, 0.0, 1.0)
+        else:
+            o = (0.0, 1.0, 0.0)
+        entry["prob_up"], entry["prob_flat"], entry["prob_down"] = pu, pf, pdn
+        entry["brier"] = round((pu - o[0]) ** 2 + (pf - o[1]) ** 2 + (pdn - o[2]) ** 2, 4)
+    return entry
+
+
 def grade_market_call(pred_date, market_name, call, horizon):
     """
     market_call(kospi/kosdaq) 한 개를 T+horizon 으로 채점. 만기 미도달 시 None.
@@ -509,6 +564,42 @@ def grade_market_call(pred_date, market_name, call, horizon):
         entry["prob_up"], entry["prob_flat"], entry["prob_down"] = pu, pf, pd
         entry["brier"] = round((pu - o[0]) ** 2 + (pf - o[1]) ** 2 + (pd - o[2]) ** 2, 4)
     return entry
+
+
+def count_stalled(preds, logdata):
+    """★v11.6(scoring-7): 만기+여유(3주+)가 지났는데도 로그에 없는 픽/숏 수 — 무음 미채점.
+    거래정지·상폐 종목이 표본에서 조용히 사라지는 생존편향(최악의 픽이 빠져 적중률 상방 편향)을
+    scorecard 에 숫자로 노출한다(현재 실측 0건 — 예방 계측)."""
+    existing = set()
+    for e in logdata["entries"]:
+        if e.get("kind") in ("pick", "short"):
+            try:
+                existing.add((e.get("kind"), str(e.get("pred_date")),
+                              str(e.get("ticker")), int(e.get("horizon") or 0)))
+            except Exception:
+                continue
+    today = datetime.now().date()
+    n = 0
+    for pred in preds:
+        pd_ = _to_date(pred.get("date"))
+        if pd_ is None:
+            continue
+        for kind, key_ in (("pick", "picks"), ("short", "shorts")):
+            for item in (pred.get(key_) or []):
+                if not isinstance(item, dict):
+                    continue
+                t = str(item.get("ticker") or "").strip()
+                try:
+                    hz = int(item.get("horizon_days"))
+                except Exception:
+                    continue
+                if not t or hz <= 0:
+                    continue
+                if (kind, str(pred.get("date")), t, hz) in existing:
+                    continue
+                if (today - pd_).days > hz * 1.6 + 21:
+                    n += 1
+    return n
 
 
 def backfill_missing_alpha(logdata):
@@ -585,6 +676,24 @@ def grade_all(preds, logdata):
                 logdata["entries"].append(res)
                 existing[key] = res
                 added += 1
+            # ★v11.6(loop-gaps-2): 픽 next_day(T+1 전망)를 별도 kind='pick_nd1' 로 채점.
+            #   지시서 [6.5++]는 "T+1 로 별도 채점된다"고 약속했는데 코드가 없었다(문서-코드
+            #   계약 위반). 표본 0건인 지금이 적기 — 멱등 로그에 무채점 이력이 쌓이기 전.
+            #   dir 판정은 시장콜 T+1 과 같은 밴드(NEUTRAL_BAND_BY_H[1]) 재사용.
+            _pnd = item.get("next_day")
+            if isinstance(_pnd, dict) and str(_pnd.get("dir") or "").strip():
+                nd_key = _entry_key("pick_nd1", pred_date, ticker, 1)
+                if nd_key not in existing:
+                    try:
+                        nd_res = grade_pick_next_day(pred_date, item, _pnd)
+                    except Exception as e:
+                        log.warning(f"[acc] pick_nd1 채점 예외 ({ticker}@{pred_date}): "
+                                    f"{type(e).__name__}: {e}")
+                        nd_res = None
+                    if nd_res:
+                        logdata["entries"].append(nd_res)
+                        existing[nd_key] = nd_res
+                        added += 1
 
         # ── shorts ──
         for item in (pred.get("shorts") or []):
@@ -630,6 +739,11 @@ def grade_all(preds, logdata):
                                 f"{type(e).__name__}: {e}")
                     res = None
                 if res:
+                    # ★v11.6(loop-gaps-6): 채점 출처 마커 — T+1 이 신방식(next_day 전용 예측)으로
+                    #   채점됐는지 구방식(본 콜 이중사용, 실측 25%)인지 집계에서 분리 가능하게.
+                    #   이게 없으면 v11.1 이 증명하려던 'T+1 개선'을 스스로 측정할 수 없다.
+                    res["scored_from"] = ("next_day" if (horizon == 1 and isinstance(_nd, dict))
+                                          else "main_call")
                     logdata["entries"].append(res)
                     existing[key] = res
                     added += 1
@@ -701,7 +815,7 @@ def aggregate(entries):
     #   최신 pred_date 1건만 집계(로그 파일은 무수정 — 집계 시점 접기라 멱등 원칙과 무충돌).
     _stk_dedup = {}
     for e in rset:
-        if e.get("kind") not in ("pick", "short"):
+        if e.get("kind") not in ("pick", "short", "pick_nd1"):
             continue
         k = (e.get("kind"), e.get("ticker"), e.get("horizon"), str(e.get("settle_date") or ""))
         prev = _stk_dedup.get(k)
@@ -717,6 +831,7 @@ def aggregate(entries):
                   "alpha_sum": 0.0, "alpha_n": 0},
         "shorts": {"total": 0, "hit": 0, "ret_sum": 0.0, "ret_n": 0,
                    "alpha_sum": 0.0, "alpha_n": 0, "idx_down": 0, "idx_n": 0},
+        "picks_nd1": {"total": 0, "hit": 0, "brier_sum": 0.0, "brier_n": 0},   # v11.6 픽 T+1 전망
         "by_tag": {},      # tag -> {total, hit, ret_sum, ret_n, alpha_sum, alpha_n}
         "by_timing": {},   # timing(임박/단기/중기) -> 동일 구조 (T1: 신호별 적중률)
         "calib": {b[0]: {"total": 0, "hit": 0} for b in CALIB_BUCKETS},
@@ -734,7 +849,18 @@ def aggregate(entries):
         if kind == "market" and id(e) not in _mkt_keep:
             continue
         # ★v11.6: 픽·숏도 동일 — 같은 창 중복은 calib·태그·타이밍 전 집계에서 1건으로.
-        if kind in ("pick", "short") and id(e) not in _stk_keep:
+        if kind in ("pick", "short", "pick_nd1") and id(e) not in _stk_keep:
+            continue
+
+        if kind == "pick_nd1":               # v11.6 픽 T+1 전망(별도 kind — 본 픽 집계 불오염)
+            nd = agg["picks_nd1"]
+            nd["total"] += 1
+            if hit:
+                nd["hit"] += 1
+            _b = _safe_float(e.get("brier"))
+            if _b is not None:
+                nd["brier_sum"] += _b
+                nd["brier_n"] += 1
             continue
 
         # calibration (모든 종류 공통; conviction 있는 것만)
@@ -842,8 +968,22 @@ def aggregate(entries):
     return agg
 
 
+def _wilson_ci(hit, n, z=1.96):
+    """Wilson 95% CI (하한%, 상한%) — ★v11.6 소표본 권고 가드. n=0 이면 (None, None)."""
+    if not n:
+        return None, None
+    p = hit / n
+    den = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / den
+    hw = (z / den) * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+    return (center - hw) * 100.0, (center + hw) * 100.0
+
+
 def build_recommendations(agg):
-    """집계 → 한국어 권고 2~4줄(휴리스틱 자동 생성). 이모지 금지."""
+    """집계 → 한국어 권고 2~4줄(휴리스틱 자동 생성). 이모지 금지.
+    ★v11.6(호스트 감사): 최소표본 3→10 상향 + Wilson 95% CI 병기 + CI 반폭 >15%p 면 판단 보류.
+    N=3~5 에서 나온 방향 처방(conviction 하향 등)이 매일 [0.5] 자기보정 입력으로 들어가던
+    노이즈→권고 경로를 차단한다(임계 45/65 자체는 회고 실측 재도출 전까지 잠정 유지)."""
     recs = []
     n = agg["n_pred_dates"]
 
@@ -854,13 +994,18 @@ def build_recommendations(agg):
     # 시장 방향(약세콜 포함) — T+5 우선, 없으면 T+1
     mkt = agg["market"]
     for h in (5, 1):
-        if h in mkt and mkt[h]["total"] >= 3:
+        if h in mkt and mkt[h]["total"] >= 10:
             rate = _pct(mkt[h]["hit"], mkt[h]["total"])
-            if rate is not None and rate < 45:
-                recs.append(f"시장 방향(T+{h}) 적중률 {rate:.0f}% 낮음 "
+            lo95, hi95 = _wilson_ci(mkt[h]["hit"], mkt[h]["total"])
+            ci_txt = f" [95%CI {lo95:.0f}~{hi95:.0f}%]" if lo95 is not None else ""
+            if lo95 is not None and (hi95 - lo95) / 2 > 15:
+                recs.append(f"시장 방향(T+{h}) 적중률 {rate:.0f}%{ci_txt} — CI 반폭 >15%p, "
+                            f"표본부족: 방향 처방 보류.")
+            elif rate is not None and rate < 45:
+                recs.append(f"시장 방향(T+{h}) 적중률 {rate:.0f}%{ci_txt} 낮음 "
                             f"-> 방향성 콜 신중, conviction 하향 권장.")
             elif rate is not None and rate >= 65:
-                recs.append(f"시장 방향(T+{h}) 적중률 {rate:.0f}% 양호 -> 현 판단 유지.")
+                recs.append(f"시장 방향(T+{h}) 적중률 {rate:.0f}%{ci_txt} 양호 -> 현 판단 유지.")
             break
 
     # 태그별 성과 — ★서술만, 처방 금지(회고 6회 연속 기각: 2026-06-27~07-12)
@@ -869,7 +1014,7 @@ def build_recommendations(agg):
     #   실제로 회고가 완전표본으로 6회 재검한 결과 '단기스윙 부진'은 태그가 아니라 국면·출처 귀속이었고,
     #   태그 축소 처방은 매번 기각됐다. 그래서 여기서는 수치만 보고하고 판단은 회고/[0.5]에 넘긴다.
     for tag, t in sorted(agg["by_tag"].items(), key=lambda kv: -kv[1]["total"]):
-        if t["total"] < 3:
+        if t["total"] < 10:      # v11.6: 3→10
             continue
         avg_ret = _pct_avg(t["ret_sum"], t["ret_n"])
         rate = _pct(t["hit"], t["total"])
@@ -890,7 +1035,7 @@ def build_recommendations(agg):
     if len(recs) < 4:
         for label, lo, hi in reversed(CALIB_BUCKETS):
             c = agg["calib"].get(label, {})
-            if c.get("total", 0) >= 3:
+            if c.get("total", 0) >= 10:      # v11.6: 3→10
                 rate = _pct(c["hit"], c["total"])
                 mid = (lo + hi) / 2 * 100
                 if rate is not None and rate < mid - 15:
@@ -974,6 +1119,13 @@ def build_scorecard(agg, total_entries, n_added):
             # 숏 주석(아래)과 동형 — '평균 수익률 음수 = 종목선별 실패'라는 오독을 매 회차 차단한다.
             L.append("  ※ 픽 평균 수익률이 음수여도 alpha>=0 이면 손실은 시장 베타다 —"
                      " 처방은 '픽 억제'가 아니라 순노출 축소(회고 3회 재현, [0.5]/F8-b).")
+    nd = agg.get("picks_nd1") or {}
+    if nd.get("total"):
+        _ndr = _pct(nd["hit"], nd["total"])
+        _l = f"- 픽 익일(T+1) 전망: 적중 {nd['hit']}/{nd['total']} ({_fmt_rate(_ndr)})"
+        if nd.get("brier_n"):
+            _l += f" | Brier {nd['brier_sum'] / nd['brier_n']:.3f} (무정보 0.667)"
+        L.append(_l + "  (v11.6 신설 — 표본 30건+ 전까지 참고만)")
     s = agg["shorts"]
     if s["total"] > 0:
         srate = _pct(s["hit"], s["total"])
@@ -1086,6 +1238,13 @@ def build_scorecard(agg, total_entries, n_added):
     L.append("주2(재채점 이력): 2026-08-01 장중 미완성 봉으로 채점됐던 43건"
              "(07-06·07-15·07-20 장중 런)을 확정 종가로 재채점 — 이전 scorecard 와 수치가 다르면"
              " 이 재베이스라인이 원인이다(원장 등재). 이후 장중 실행은 당일 정산 봉을 자동 보류한다.")
+    if agg.get("n_deriv_unscored"):
+        L.append(f"주3(파생): 파생 추천 누적 {agg['n_deriv_unscored']}건은 현재 **무채점 채널**이다"
+                 " — 성과 서사 인용 금지. 첫 표본 발생 시 선물 방향 채점 다리를 추가한다.")
+    if agg.get("n_stalled") is not None:
+        L.append(f"주4(미채점 잔존): 만기+3주 경과에도 채점되지 않은 픽/숏 {agg['n_stalled']}건"
+                 " — 0 이 아니면 거래정지·상폐 의심(최악의 픽이 표본에서 빠지는 생존편향)."
+                 " 적중률 해석 시 이 소실을 감안하라.")
     return "\n".join(L) + "\n"
 
 
@@ -1175,6 +1334,12 @@ def main():
 
     try:
         agg = aggregate(logdata["entries"])
+        # ★v11.6: 무채점 채널 가시화 — 파생(채점 다리 미구현)·미채점 잔존(정지·상폐 의심)
+        try:
+            agg["n_deriv_unscored"] = sum(len(p.get("derivatives") or []) for p in preds)
+            agg["n_stalled"] = count_stalled(preds, logdata)
+        except Exception:
+            agg["n_deriv_unscored"] = agg["n_stalled"] = None
         text = build_scorecard(agg, total, n_added)
         _atomic_write(SCORECARD_PATH, text)
         log.info(f"[acc] scorecard 작성: {SCORECARD_PATH} "

@@ -58,6 +58,10 @@ GUIDE_FILE  = os.path.join(BASE_DIR, "회고분석_지시사항.md")
 # ※ 실제 드롭 파일명은 회차마다 날짜가 붙는다(#P0-1 불변 드롭): retro_dataset_2026-07-17.json
 #   회고는 inbox/latest.json 의 roles/files 로 실제 파일명을 찾는다.
 PUSH_FILES  = ["retro_dataset.json", "retro_dataset.csv", "scorecard.md", "market_calls.json"]
+# ★v11.6(호스트 감사 loop-gaps-4): 세션 산출 장중 실측 — '살 수 있었나 M/N' 성적표가
+#   세션에서만 계산되고 증발하던 경로를 회고로 연결. 라벨·사후검증 전용(파일 안에
+#   retro_use=forbidden_as_pre_feature 마커 — pre_* 피처 사용 금지는 회고분석_지시사항 참조).
+SESSION_PUSH_FILES = ["intraday_review.json"]
 KEEP_VERSIONS = 7          # 역할별 보관 회차 수(오래된 버전 자동 정리)
 # 회고 Cowork 가 outbox 에 작성하는 '기존 분석 Cowork 용 추가 지시' → 호스트가 이 이름으로 회수
 FEEDBACK_NAME = "PART_A_추가지시.md"
@@ -99,6 +103,24 @@ def load_config() -> dict:
 
 
 from common import atomic_write_text as _atomic_write  # 원자적 텍스트 저장(common.py 통합)
+
+
+def _latest_session_file(fname: str):
+    """output/ 최신 세션(날짜 역순)의 fname 경로. 없으면 None(★v11.6 — _archive 제외)."""
+    out_dir = os.path.join(BASE_DIR, "output")
+    if not os.path.isdir(out_dir):
+        return None
+    try:
+        names = sorted(os.listdir(out_dir), reverse=True)
+    except Exception:
+        return None
+    for name in names:
+        if name.startswith("_"):
+            continue
+        p = os.path.join(out_dir, name, fname)
+        if os.path.isfile(p):
+            return p
+    return None
 
 
 def _atomic_copy(src: str, dest: str):
@@ -271,8 +293,13 @@ def push() -> bool:
     #   되돌림 대상 자체가 없어 경합이 성립하지 않는다. 회고는 latest.json 의 files 를 보고 읽는다.
     stamp = datetime.now().strftime("%Y-%m-%d")
     copied, name_map = [], {}
-    for fn in PUSH_FILES:
-        src = os.path.join(BASE_DIR, fn)
+    # ★v11.6: 루트 파일 + 최신 세션의 장중 실측 파일을 같은 규약(버저닝·검증)으로 드롭
+    _push_pairs = [(fn, os.path.join(BASE_DIR, fn)) for fn in PUSH_FILES]
+    for fn in SESSION_PUSH_FILES:
+        _sp = _latest_session_file(fn)
+        if _sp:
+            _push_pairs.append((fn, _sp))
+    for fn, src in _push_pairs:
         if not os.path.isfile(src):
             continue
         stem, ext = os.path.splitext(fn)
@@ -344,7 +371,7 @@ def _drop_legacy_names(inbox: str, name_map: dict):
     남겨두면 회고가 습관적으로 그 이름을 읽어 '낡은 회차 데이터'로 분석할 위험이 있다
     (이번 회차 파일은 버전명으로 이미 안전하게 드롭됨 — 원본은 BASE_DIR 에 그대로 있으니 무손실)."""
     # #A8: name_map(이번 회차 성공분)만 돌면 복사 실패한 역할의 낡은 고정이름이 영구 잔존 -> PUSH_FILES 전체 순회
-    for orig in PUSH_FILES:
+    for orig in PUSH_FILES + SESSION_PUSH_FILES:
         legacy = os.path.join(inbox, orig)
         if not os.path.isfile(legacy):
             continue
@@ -359,7 +386,7 @@ def _prune_versions(inbox: str, keep: int = 7):
     """버저닝 드롭이 무한 증식하지 않게 파일 역할별 최근 keep 개만 남긴다(오래된 것부터 삭제).
     latest.json 이 가리키는 현재 회차는 항상 최신이라 보존된다. 삭제 실패는 무시(무해)."""
     import re as _re
-    for fn in PUSH_FILES:
+    for fn in PUSH_FILES + SESSION_PUSH_FILES:
         stem, ext = os.path.splitext(fn)
         pat = _re.compile(r"^%s_\d{4}-\d{2}-\d{2}%s$" % (_re.escape(stem), _re.escape(ext)))
         try:

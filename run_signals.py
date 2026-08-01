@@ -241,6 +241,24 @@ def main():
                                           res["note"] or ""))
         results.append(res)
 
+    # ★v11.6(호스트 감사 leakage-3): asof 지연을 숫자로 병기 — '방금 재생성됐지만 내용은 낡은'
+    #   파일(실측 07-29 short.json: generated_at 당일 06:42, 종목 asof=07-24)은 mtime 기반
+    #   STALE 이 못 잡는다. 공매도 T+2 공표처럼 정당한 지연도 있으므로 판정은 유지하고
+    #   지연 일수만 비고에 붙인다(CLAUDE.md '지연 거래일 수를 숫자로' 원칙).
+    _today = datetime.now().date()
+    _wd = _today.weekday()
+    _allow = 3 if _wd == 0 else (2 if _wd == 6 else 1)   # 월=금요일까지 허용, 일=금, 그외=전일
+    for r in results:
+        a = str(r.get("asof") or "")[:10]
+        if len(a) == 10 and a[:4].isdigit():
+            try:
+                _lag = (_today - datetime.strptime(a, "%Y-%m-%d").date()).days
+            except ValueError:
+                _lag = None
+            if _lag is not None and _lag > _allow:
+                r["asof_lag_days"] = _lag
+                r["note"] = ((r["note"] + " | ") if r["note"] else "") + ("★asof 지연 %d일" % _lag)
+
     print("\n" + "=" * 100)
     print("%-11s %-8s %-7s %-19s %s" % ("KEY", "판정", "소요", "기준일/생성", "비고"))
     print("-" * 100)
@@ -256,6 +274,22 @@ def main():
         print("\n[run_signals] ★분석 전에 위 필수 항목을 먼저 보라. 'STALE' 은 과거 파일이"
               " 남아 있는 것이라 파일 존재만으로는 절대 성공이 아니다.")
     print("=" * 100)
+
+    # ★v11.6(leakage-3): 판정 요약을 세션에 남긴다 — 지금은 콘솔에만 찍혀 회고·분석가가
+    #   "그날 신호가 STALE/지연이었나"를 사후 참조할 방법이 없었다.
+    try:
+        from common import save_json_atomic
+        save_json_atomic(os.path.join(session, "run_signals_summary.json"),
+                         {"generated_at": datetime.now().isoformat(timespec="seconds"),
+                          "what": ("run_signals 판정 요약 — 그날 신호 수집이 STALE/지연/실패였는지 "
+                                   "사후 참조용(회고 국면입력 신뢰도 판단·분석가 근거 각주)"),
+                          "n_required_bad": len(bad),
+                          "results": [{k: r.get(k) for k in
+                                       ("key", "desc", "verdict", "asof", "asof_lag_days",
+                                        "note", "rc", "took")} for r in results]})
+        print("[run_signals] 판정 요약 저장: run_signals_summary.json")
+    except Exception as e:
+        print("[run_signals] 요약 저장 실패(무시): %s" % type(e).__name__)
     return 1 if bad else 0
 
 

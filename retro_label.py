@@ -158,6 +158,38 @@ def _ks11_series():
     return _KS11_SERIES
 
 
+_KQ11_SERIES = None
+
+
+def _kq11_series():
+    """[(date, close)] 오름차순 — 소속시장 알파용 KOSDAQ 종가. 전 구간 1회 조회(★v11.6 scoring-3)."""
+    global _KQ11_SERIES
+    if _KQ11_SERIES is None:
+        _KQ11_SERIES = []
+        if FDR_OK:
+            try:
+                df = fdr.DataReader("KQ11", "2025-01-01")
+                for idx, cl in zip(df.index, df["Close"].tolist()):
+                    if cl == cl:
+                        _KQ11_SERIES.append((idx.date(), float(cl)))
+            except Exception as e:
+                log.warning("[retro] KOSDAQ 시계열 조회 실패(소속시장 알파 생략): %s", type(e).__name__)
+    return _KQ11_SERIES
+
+
+def _index_ret_h(ser, base_date, horizon):
+    """지수 시계열에서 D-1 앵커 → T+h 수익률(%). _kospi_ret_h 와 같은 규약(v10.5 앵커)."""
+    if base_date is None or not horizon or not ser:
+        return None
+    start = next((i for i, (d, _c) in enumerate(ser) if d >= base_date), None)
+    if start is None or start == 0 or start + horizon >= len(ser):
+        return None
+    c0, c1 = ser[start - 1][1], ser[start + horizon][1]
+    if not c0:
+        return None
+    return round((c1 / c0 - 1.0) * 100.0, 2)
+
+
 def _kospi_ret_h(base_date, horizon):
     """진입 **전일(D-1) 종가** -> T+horizon 종가의 KOSPI 수익률(%) — 알파(ret_h - kospi_ret_h) 라벨용.
     '과열추격 -9%가 종목선택 실패인가, 그 뒤 지수가 빠진 것(베타)인가'를 분리한다. 미만기/결측이면 None.
@@ -520,7 +552,12 @@ PRE_COLS = [
 # 라벨side 보강 컬럼(보유 후 결과 — 진입규칙 사용 금지). cats/titles 도 CSV 에 포함(JSON 과 일관, 조용한 드롭 방지)
 ENRICH_COLS = ["dist_disc_count", "dist_disc_cats", "dist_disc_titles", "dist_disc_truncated"]
 # #E 메타 컬럼(현재값 프록시 — 진입시점 아님·버킷 분류 전용): 주도주 예외·KOSPI/KOSDAQ 분해용
-META_COLS = ["market_cap_eok", "cap_bucket", "exchange"]
+# + ★v11.6 빈티지 메타: feature_vintage_ok(세션 신호파일이 전부 장개시 전 생성인가),
+#   feature_vintage_late('late' 파일 목록 — 그 파일 유래 피처는 D-당일 데이터 혼입 가능),
+#   pre_short_asof / pre_short_asof_lag_days(공매도 공표 지연 — 숫자로).
+META_COLS = ["market_cap_eok", "cap_bucket", "exchange",
+             "feature_vintage_ok", "feature_vintage_late",
+             "pre_short_asof", "pre_short_asof_lag_days"]
 # DART 분배공시 매칭 토글(--no-dart 로 끔). 키 없으면 자동 graceful.
 DART_ENRICH = True
 
@@ -548,6 +585,9 @@ FEATURE_COLS = [
     # v9.8 신용잔고(빚투) — 2026-07-21 이후 세션에만 값(그 전은 결측=정상). SNAPSHOT_MARKET_COLS 와
     # ★반드시 동기 유지(여기 없으면 _row_for 831행 루프가 컬럼을 아예 안 실어 무음 no-op — 하네스가 계약검사).
     "pre_margin_total_eok", "pre_margin_d5_chg_pct", "pre_margin_pct_rank",
+    # ★v11.6(leakage-3) 스냅샷 빈티지 — vkospi·신용잔고는 공표 지연으로 상시 D-2 실측.
+    #   '지연 거래일 수를 숫자로'(CLAUDE.md) 원칙을 데이터셋에도 적용 — 회고가 지연을 보고 판단.
+    "pre_vkospi_asof", "pre_margin_asof",
 ]
 # 위 중 '시장수준(그날 공통)' 컬럼 — _row_for 가 종목별 feats 가 아니라 regime 에서 읽어야 하는 것들.
 SNAPSHOT_MARKET_COLS = {
@@ -556,6 +596,8 @@ SNAPSHOT_MARKET_COLS = {
     "pre_base_rate", "pre_usdkrw_chg5d",
     # v9.8 신용잔고(빚투) — 2026-07-21 이후 세션에만 값(그 전은 결측=정상)
     "pre_margin_total_eok", "pre_margin_d5_chg_pct", "pre_margin_pct_rank",
+    # v11.6 스냅샷 빈티지(시장수준)
+    "pre_vkospi_asof", "pre_margin_asof",
 }
 LABEL_COLS = [
     "matured", "label_status", "fwd_days_avail", "ret_h_pct",
@@ -572,6 +614,12 @@ LABEL_COLS = [
     "entry_volume", "avg_volume_20d", "avg_volume_20d_ex_entry", "peak_day_vol_ratio", "trough_day_vol_ratio",
     # 투자자별 순매수(보유기간, 억원) — 누가 사고 팔았나
     "flow_foreign_eok", "flow_inst_eok", "flow_indiv_eok",
+    # ★v11.6(호스트 감사): entry_window 사후검증(추천일 시가·저가 — 라벨측 데이터, 룩어헤드 아님)
+    #   entry_buyable: 당일시가=갭+3%이하 / 당일눌림=저가가 진입가 이하 / 당일종가·익일이후=None(유보)
+    "entry_gap_pct", "entry_low_pct", "entry_buyable",
+    # ★v11.6(scoring-3): 소속 시장 지수 차감 알파 병기 — 기존 alpha_h_pct(KS11 고정)는 불변 유지.
+    #   KOSDAQ 88/330행(26.7%)이 KOSPI 로 차감돼 괴리 국면에서 계통 편향 — 회고는 이 열을 우선하라.
+    "kosdaq_ret_h_pct", "alpha_vs_own_idx_pct",
 ]
 SNAPSHOT_START_DATE = "2026-07-18"   # signals_snapshot_* 도입일. 그 이전 결측은 '정상'이다.
 
@@ -615,6 +663,9 @@ BASE_COLS = [
     #   path_view/expected_peak_days ↔ days_to_peak, expected_gain_pct ↔ peak_gain_pct,
     #   expected_pullback_pct ↔ max_drawdown_pct. 2026-07-26 이전 추천은 전부 null(정상).
     "path_view", "expected_peak_days", "expected_gain_pct", "expected_pullback_pct",
+    # ★v11.6(호스트 감사 loop-gaps-1/2) 진입시점·익일 전망(예측) — 2026-08-01 이전 추천은 null(정상).
+    #   entry_window ↔ entry_buyable(라벨), next_day_* ↔ ret_1(라벨). ★표본 30건+ 전까지 규칙화 금지.
+    "entry_window", "next_day_dir", "next_day_prob_up", "next_day_expected_pct",
 ]
 
 
@@ -634,6 +685,34 @@ def _by_ticker(payload):
             if code:
                 out[code] = t
     return out
+
+
+def _file_vintage(session_dir, fname, pred_date_str):
+    """★v11.6(호스트 감사 leakage-2): 신호파일 빈티지 판정 — 'ok' | 'late' | None(파일 없음).
+    'late' = generated_at(없으면 mtime)이 pred_date 09:00(장개시) 이후 — 저녁 세션·백필·장중
+    재실행으로 D-당일 장중/종가 데이터가 섞였을 수 있어 pre_* 계약(06:30 이전 값) 위반 가능.
+    실증: 07-06 16:14 세션의 force/flow/short 가 20시 생성(만기 10행 오염), 07-20 세션
+    market_context 가 10:20 장중 재작성(5행 regime 오염). 값은 드롭하지 않고 플래그만 남긴다
+    — 판정·제외는 회고 몫(원장 규약)."""
+    path = os.path.join(session_dir, fname)
+    if not os.path.isfile(path):
+        return None
+    gen = None
+    j = _load_json(path)
+    if isinstance(j, dict):
+        gen = str(j.get("generated_at") or "")[:19] or None
+    if not gen:
+        try:
+            gen = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            return None
+    cutoff = "%sT09:00:00" % pred_date_str
+    return "late" if gen >= cutoff else "ok"
+
+
+# 빈티지 판정 대상 신호파일(세션 로컬 — 스냅샷 5종은 snapshot_signals 가 아침에 동결하므로 제외)
+_VINTAGE_FILES = ("force_scores.json", "overheat.json", "disclosures.json", "short.json",
+                  "flow_data.json", "mirae_data.json", "market_context.json")
 
 
 def load_signal_snapshot(session_dir):
@@ -678,7 +757,10 @@ def load_signal_snapshot(session_dir):
                   "short_pressure_score": t.get("short_pressure_score"),
                   "short_trend": t.get("trend"),
                   "_snap_pre_short_balance_ratio": t.get("short_balance_ratio"),
-                  "_snap_pre_short_change_10d": t.get("balance_change_10d")})
+                  "_snap_pre_short_change_10d": t.get("balance_change_10d"),
+                  # ★v11.6(leakage-3): 공매도 공표 지연을 '숫자로' 행에 동봉 — 07-29 실측:
+                  #   generated_at 은 당일 06:42(STALE 미판정)인데 asof=07-24(3거래일 지연)
+                  "_snap_pre_short_asof": t.get("asof")})
     # flow_data.json (#C1: pre_foreign_*/pre_inst_*/pre_indiv_* 백필 스냅샷 — 추천 아침 산출물이라 asof 동일)
     fl = _by_ticker(_load_json(os.path.join(session_dir, "flow_data.json")))
     for code, t in fl.items():
@@ -707,6 +789,16 @@ def load_signal_snapshot(session_dir):
     # 아침 [6.6]F1/F8 게이트의 1차 입력(국면·PCR·거시·공포)이 회고 학습에 전혀 없던 공백을 메운다.
     # 동결본이 없는 과거 세션은 전부 None(룩어헤드 없음 — 그날 존재하던 값만 씀).
     regime.update(_snapshot_market_feats(session_dir))
+    # ★v11.6(leakage-2): 세션 신호파일 빈티지 판정 — #C1 이 '세션 파일=아침 산출'을 가정하나
+    #   검사는 없었다. 저녁 세션·장중 재실행이 만든 'late' 파일을 행 단위 플래그로 노출한다.
+    _pd_str = os.path.basename(str(session_dir).rstrip("\\/"))[:10]
+    _vint = {}
+    for _fn in _VINTAGE_FILES:
+        _v = _file_vintage(session_dir, _fn, _pd_str)
+        if _v is not None:
+            _vint[_fn] = _v
+    regime["_feature_vintage"] = _vint
+    regime["_feature_vintage_ok"] = (all(v == "ok" for v in _vint.values()) if _vint else None)
     return feats, regime
 
 
@@ -734,12 +826,14 @@ def _snapshot_market_feats(session_dir):
         out["pre_vkospi_d5_chg"] = lt.get("d5_chg_pct") if isinstance(lt, dict) else None
         out["pre_vkospi_pct_rank"] = vk.get("pct_rank_60d")
         out["pre_vkospi_label"] = vk.get("level_label")   # '공포' 판별(F1/F8 입력)
+        out["pre_vkospi_asof"] = vk.get("asof_date")      # ★v11.6 빈티지(상시 D-2 실측 — 지연을 숫자로)
     cb = _load_json(os.path.join(session_dir, "signals_snapshot_credit_balance.json"))
     if isinstance(cb, dict) and isinstance(cb.get("margin_loan"), dict):
         ml = cb["margin_loan"]                            # v9.8 신용잔고(빚투) — [5.12]
         out["pre_margin_total_eok"] = ml.get("total_eok")
         out["pre_margin_d5_chg_pct"] = ml.get("d5_chg_pct")
         out["pre_margin_pct_rank"] = ml.get("pct_rank_60d")
+        out["pre_margin_asof"] = cb.get("asof_date")      # ★v11.6 빈티지
     return out
 
 
@@ -797,8 +891,11 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
     def at(k):
         return round(rets[k], 2) if k < len(rets) else None
 
-    profit_take = (peak_gain >= PROFIT_TAKE_MIN_PEAK and
-                   post_peak_dd is not None and post_peak_dd <= PROFIT_TAKE_GIVEBACK)
+    # ★v11.6(scoring-10b): 만기행만 판정 — 미만기 행의 True/False 는 다음 재생성에서 뒤집힐 수
+    #   있는 값인데 확정 라벨처럼 보였다(실측 maturing True 5건). 미만기는 None(판정 유보).
+    profit_take = ((peak_gain >= PROFIT_TAKE_MIN_PEAK and
+                    post_peak_dd is not None and post_peak_dd <= PROFIT_TAKE_GIVEBACK)
+                   if matured else None)
 
     # ── 거래량(distribution) 지표 ── 고점/저점 당일 거래량이 평소보다 크면 '큰손 매도(차익실현)' 신호
     def _v(i):
@@ -831,6 +928,9 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
     kospi_rh = _kospi_ret_h(base_date, horizon) if matured else None
     alpha_h = (round(ret_h - kospi_rh, 2)
                if (ret_h is not None and kospi_rh is not None) else None)
+    # ★v11.6(scoring-3): KOSDAQ 지수도 같은 규약으로 — 소속시장 알파(alpha_vs_own_idx_pct)는
+    #   exchange 를 아는 _row_for 에서 조립한다(기존 alpha_h_pct 는 KS11 고정 그대로 병존).
+    kosdaq_rh = _index_ret_h(_kq11_series(), base_date, horizon) if matured else None
 
     # 손절 반사실 라벨(#S2, 사각지대 #5) — "규칙을 지켰다면 결과가 얼마였나".
     # 즉시고점군 ret_h -13%를 손절선이 얼마나 줄였을지 회고가 정량 답하게 한다(경로 기반, 종가 근사).
@@ -888,9 +988,10 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         "days_to_trough": worst_k,
         "post_trough_rebound_pct": round(post_trough_rb, 2) if post_trough_rb is not None else None,
         "kospi_ret_h_pct": kospi_rh, "alpha_h_pct": alpha_h,
+        "kosdaq_ret_h_pct": kosdaq_rh,
         "ret_if_stop8_pct": ret_stop8, "ret_if_stop8_tp12_pct": ret_stop8_tp12,
         "ret_if_stop8_tp12_cap_pct": ret_stop8_tp12_cap,
-        "profit_take_flag": bool(profit_take),
+        "profit_take_flag": (bool(profit_take) if profit_take is not None else None),
         "settle_close": settle_close_v, "last_close": last_close_v,
         # 거래량
         "entry_volume": int(entry_vol) if entry_vol else None,
@@ -903,6 +1004,30 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         "flow_inst_eok": inv.get("flow_inst_eok"),
         "flow_indiv_eok": inv.get("flow_indiv_eok"),
     }
+
+
+def _entry_day_ohlc(ticker, base_date):
+    """추천일(D — 주말 추천이면 다음 거래일) 시가·저가. entry_window 사후검증 라벨용(★v11.6).
+    당일 OHLC 는 라벨측(사후) 데이터라 룩어헤드 아님. acc._fetch_history 캐시 재사용(심볼당 1회).
+    실패 시 (None, None) — 라벨 결측이 조용한 오답보다 낫다."""
+    if not ACC_OK or base_date is None:
+        return None, None
+    try:
+        df = acc._fetch_history(ticker, (base_date - timedelta(days=10)).strftime("%Y-%m-%d"))
+        if df is None or df.empty:
+            return None, None
+        for ix in df.index:
+            d = ix.date() if hasattr(ix, "date") else None
+            if d is not None and d >= base_date:
+                r = df.loc[ix]
+                o = r.get("Open") if hasattr(r, "get") else None
+                lo = r.get("Low") if hasattr(r, "get") else None
+                o = float(o) if (o is not None and o == o and float(o) > 0) else None
+                lo = float(lo) if (lo is not None and lo == lo and float(lo) > 0) else None
+                return o, lo
+    except Exception:
+        pass
+    return None, None
 
 
 def _row_for(item, kind, pred_date, base_date, feats, regime):
@@ -930,7 +1055,14 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         "expected_peak_days": item.get("expected_peak_days"),
         "expected_gain_pct": item.get("expected_gain_pct"),
         "expected_pullback_pct": item.get("expected_pullback_pct"),
+        # v11.6 진입시점·익일 전망(예측) — 도입(2026-08-01) 전 추천은 null 이 정상
+        "entry_window": (str(item.get("entry_window")).strip()
+                         if item.get("entry_window") else None),
     }
+    _pnd = item.get("next_day") if isinstance(item.get("next_day"), dict) else {}
+    row["next_day_dir"] = _pnd.get("dir")
+    row["next_day_prob_up"] = _pnd.get("prob_up")
+    row["next_day_expected_pct"] = _pnd.get("expected_pct")
     # 피처(추천 시점 스냅샷)
     f = feats.get(code, {})
     for col in FEATURE_COLS:
@@ -978,13 +1110,30 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
                         row[col] = round(float(v) / tv_eok, 2)   # 5일 순매수 / 평균 일거래대금(배)
     except Exception:
         pass
-    # hit: 픽=상승, 숏=하락 (만기/부분 무관하게 ret_h 기준)
+    # hit: 픽=상승, 숏=하락 (★만기행만 — 미만기 행은 ret_h 가 None 이라 hit 도 None)
     rh = lab.get("ret_h_pct")
     if rh is None:
         row["hit"] = None
     else:
         row["hit"] = (rh < 0) if kind == "short" else (rh > 0)
     row["_note"] = lab.get("note")
+    # ★v11.6(loop-gaps-1): entry_window 사후검증 라벨 — "그 자리에서 실제로 살 수 있었나".
+    #   판정식은 intraday_review.review_pick 과 동일 계약(갭 +3% / 저가 터치). 시스템 최대
+    #   실패(픽 절반 즉시고점·적중 19%)의 교정용 필드가 이제서야 폐루프에 들어간다.
+    #   ★만기 30건+ 전까지 이 라벨로 규칙을 만들지 마라(라벨 축적 단계).
+    row["entry_gap_pct"] = row["entry_low_pct"] = row["entry_buyable"] = None
+    if entry_ref and entry_ref > 0 and base_date is not None:
+        _o, _lo = _entry_day_ohlc(code, base_date)
+        if _o is not None:
+            row["entry_gap_pct"] = round((_o / entry_ref - 1.0) * 100.0, 2)
+        if _lo is not None:
+            row["entry_low_pct"] = round((_lo / entry_ref - 1.0) * 100.0, 2)
+        _ew = row.get("entry_window")
+        if _ew == "당일시가" and row["entry_gap_pct"] is not None:
+            row["entry_buyable"] = bool(row["entry_gap_pct"] <= 3.0)
+        elif _ew == "당일눌림" and row["entry_low_pct"] is not None:
+            row["entry_buyable"] = bool(row["entry_low_pct"] <= 0.0)
+        # 당일종가/익일이후/미지정 → None(판정 유보 — intraday_review 와 동일)
     # 분배성 공시 매칭(#4) — 만기행만(DART 호출 절약), 토글 ON 일 때
     # ★공시창 마감 게이트: 조회 구간 끝(base+horizon+14일)이 아직 안 지났으면 산출 자체를 하지 않는다.
     #   창이 열려 있는 동안 찍은 0/건수는 '아직 안 들어온 공시'를 무공시로 굳혀 회차마다 값이 흔들렸다.
@@ -1009,12 +1158,42 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         row["exchange"] = _norm_market(_mkt)   # A19: KOSDAQ GLOBAL → KOSDAQ 병합(분할 집계 방지)
     except Exception:
         row["market_cap_eok"] = row["cap_bucket"] = row["exchange"] = None
+    # ★v11.6(leakage-2/3): 빈티지 메타 — 세션 신호파일 late 여부 + 공매도 asof 지연(캘린더일)
+    row["feature_vintage_ok"] = regime.get("_feature_vintage_ok") if isinstance(regime, dict) else None
+    _vd = regime.get("_feature_vintage") if isinstance(regime, dict) else None
+    row["feature_vintage_late"] = (",".join(sorted(k for k, v in _vd.items() if v == "late"))
+                                   or None) if isinstance(_vd, dict) else None
+    row["pre_short_asof"] = f.get("_snap_pre_short_asof")
+    row["pre_short_asof_lag_days"] = None
+    try:
+        _sa = str(row["pre_short_asof"] or "")[:10]
+        if _sa and base_date is not None:
+            row["pre_short_asof_lag_days"] = (base_date - datetime.strptime(_sa, "%Y-%m-%d").date()).days
+    except Exception:
+        pass
+    # ★v11.6(scoring-3): 소속시장 지수 차감 알파 — KOSDAQ 종목은 KQ11, 그 외는 KS11 로 차감.
+    #   기존 alpha_h_pct(KS11 고정)는 이력 호환을 위해 불변 병존 — 회고는 이 열을 우선하라.
+    row["alpha_vs_own_idx_pct"] = None
+    _rh_v = lab.get("ret_h_pct")
+    if _rh_v is not None:
+        _own = (lab.get("kosdaq_ret_h_pct") if row.get("exchange") == "KOSDAQ"
+                else lab.get("kospi_ret_h_pct"))
+        if _own is not None:
+            row["alpha_vs_own_idx_pct"] = round(_rh_v - _own, 2)
     # #6 rec_id/parent — (ticker,date,kind)=parent(한 추천), +horizon=rec_id(행). 다중horizon·중복 인지용.
     row["parent_rec_id"] = "%s_%s_%s" % (code, pred_date, kind)
     row["rec_id"] = "%s_h%s" % (row["parent_rec_id"], horizon if horizon else "NA")
     # #10 label_status enum — matured 3값(True/False/None) 모호 해소.
     m = lab.get("matured")
     row["label_status"] = "matured" if m is True else ("maturing" if m is False else "no_label")
+    # ★v11.6(scoring-7): 좀비 maturing 감지 — 만기 경과 충분(캘린더 여유 3주+)인데 종목 봉이
+    #   계속 부족하면 거래정지·상폐 의심. 무음 영구 보류는 '최악의 픽이 표본에서 사라지는'
+    #   생존편향이므로 no_label(stalled_no_price)로 전환해 회고가 카운트하게 한다(현재 실측 0건).
+    if (row["label_status"] == "maturing" and base_date is not None and horizon):
+        _cal_days = (datetime.now().date() - base_date).days
+        if _cal_days > horizon * 1.6 + 21:
+            row["label_status"] = "no_label"
+            row["_note"] = "stalled_no_price"
     # #7 외인수급 단위 sanity(억원 가정). 단일 종목 5일 |50조|·20일 |100조| 초과면 단위오류 의심 → flag(클리핑 아님).
     f5, f20 = row.get("pre_foreign_5d_eok"), row.get("pre_foreign_20d_eok")
     row["flow_unit_check"] = "suspect" if ((f5 is not None and abs(f5) > 500000)
@@ -1029,9 +1208,14 @@ def build_rows():
     # pre_* 는 '그 시점의 사실'이라 한번 계산되면 불변 — 새벽(KRX 취약 시간) 재실행에서 라이브 폴백이
     # 실패해도 과거에 성공한 값을 잃지 않는다(archive 행 pre_* 커버리지가 회차마다 출렁이던 원인 제거).
     prev_pre = {}
+    _prev_lookahead_build = False
     try:
         _prev = _load_json(DATASET_JSON)
         if isinstance(_prev, dict):
+            # ★v11.6(leakage-4): 이전 빌드가 A22/A32 룩어헤드 픽스일(2026-07-27) 이전이면
+            #   pre_tech 6종+pre_kospi_ret5d 은 당일종가가 섞인 구코드 값 — 캐리포워드로
+            #   되살리면 '전 행 재계산' 리베이스라인이 조용히 무력화된다(A30 게이트와 동일 패턴).
+            _prev_lookahead_build = str(_prev.get("generated_at") or "") < "2026-07-27"
             for pr in _prev.get("rows", []) or []:
                 rid = pr.get("rec_id")
                 if rid:
@@ -1068,7 +1252,12 @@ def build_rows():
                     log.warning("[retro] 행 생성 예외(무시) %s: %s",
                                 item.get("ticker"), type(e).__name__)
     # #A5: 이번 실행에서 None 인 pre_* 를 이전 dataset 값으로 복원(점시점 사실 — 룩어헤드 없음)
+    # ★v11.6(leakage-4): 단 이전 빌드가 룩어헤드 픽스(2026-07-27) 이전이면 A22/A32 관련
+    #   컬럼은 복원하지 않는다 — 오염값 부활 차단(라이브 재계산 실패 시 결측 > 오염).
+    _A32_COLS = {"pre_rsi14", "pre_up_streak", "pre_ret_20d_pct", "pre_dist_52w_high_pct",
+                 "pre_disparity20", "pre_overheat", "pre_kospi_ret5d"}
     carried = 0
+    blocked = 0
     if prev_pre:
         for r in rows:
             old = prev_pre.get(r.get("rec_id"))
@@ -1076,6 +1265,9 @@ def build_rows():
                 continue
             for col in PRE_COLS:
                 if r.get(col) is None and old.get(col) is not None:
+                    if _prev_lookahead_build and col in _A32_COLS:
+                        blocked += 1
+                        continue
                     r[col] = old[col]
                     carried += 1
             # ENRICH(사후 공시 라벨)도 캐리포워드 — 창이 닫힌 뒤 산출된 값은 불변이므로
@@ -1090,6 +1282,9 @@ def build_rows():
                         carried += 1
     if carried:
         log.info("[retro] pre_*/enrich 캐리포워드: 이전 dataset 에서 %d개 값 복원", carried)
+    if blocked:
+        log.info("[retro] ★캐리포워드 차단 %d개 — 이전 빌드가 룩어헤드 픽스(07-27) 이전이라 "
+                 "A22/A32 컬럼은 복원 안 함(오염 부활 방지)", blocked)
     if n_arch:
         log.info("[retro] 아카이브 리포트 %d일 추가 채점 포함", n_arch)
     # #A10(회고 07-17 요청): market_call 원본을 회고에 전달 — 12회 내내 미조명이던 최악 지표(T+5 23%)의
@@ -1127,7 +1322,9 @@ def _save_json_atomic(path, obj):
 
 
 def _save_csv(path, rows):
-    cols = BASE_COLS + FEATURE_COLS + PRE_COLS + META_COLS + LABEL_COLS + ENRICH_COLS + ["hit"]
+    # ★v11.6(scoring-10a): 말미 +["hit"] 제거 — LABEL_COLS 에 이미 있어 CSV 에 'hit' 열이
+    #   물리적으로 2개 생겼다(실측 114열, pandas 로드 시 hit.1 생성 — 위치 파서 오작동 소지).
+    cols = BASE_COLS + FEATURE_COLS + PRE_COLS + META_COLS + LABEL_COLS + ENRICH_COLS
     # 원자적 저장(.tmp -> os.replace): 쓰는 중 종료(타임아웃 taskkill 등)에도 부분 CSV 가 남지 않게.
     tmp = path + ".tmp"
     try:
@@ -1210,10 +1407,19 @@ def main():
                  "회고 Cowork 가 '예상대로 왜 안 올랐는지/차익실현 타이밍'을 학습하는 입력."),
         "price_source": "금융위원회(FSC) 공식 종가 우선, 실패 시 FinanceDataReader 폴백",
         "label_guide": {
+            "entry_window": "[예측·v11.6] 분석가가 선언한 진입 시점(당일시가/당일눌림/당일종가/익일이후). 2026-08-01 이전 추천은 null(정상)",
+            "entry_gap_pct": "[라벨·v11.6] 추천일 시가 갭(%, 시가/entry_ref-1). entry_window 사후검증용 — 당일 OHLC 는 라벨측 데이터(진입규칙 사용 금지)",
+            "entry_low_pct": "[라벨·v11.6] 추천일 저가(%, 저가/entry_ref-1) — 당일눌림 진입 가능성 판정",
+            "entry_buyable": "[라벨·v11.6] 그 자리에서 실제로 살 수 있었나 — 당일시가: 갭<=+3%, 당일눌림: 저가<=진입가. 당일종가/익일이후/미지정=null(판정 유보). ★만기 30건+ 전까지 규칙화 금지",
+            "next_day_dir": "[예측·v11.6] 픽 익일(T+1) 방향 전망(up/down/neutral) — ret_1 라벨과 대조 채점. accuracy_log 의 kind=pick_nd1 이 자동 채점",
+            "next_day_prob_up": "[예측·v11.6] 픽 익일 상승 확률(분석가 제출)",
+            "next_day_expected_pct": "[예측·v11.6] 픽 익일 기대 등락(%)",
+            "kosdaq_ret_h_pct": "[라벨·v11.6] 같은 창 KOSDAQ(KQ11) 수익률 — 소속시장 알파 분모(D-1 앵커, kospi_ret_h_pct 와 동일 규약)",
+            "alpha_vs_own_idx_pct": "[라벨·v11.6] 소속시장 지수 차감 알파 — KOSDAQ 종목은 KQ11, 그 외 KS11. ★회고는 alpha_h_pct(KS11 고정, 이력 호환용)보다 이 열을 우선하라(KOSDAQ 88행 계통편향 제거)",
             "peak_gain_pct": "진입가 대비 기간 내 최대 상승률(%)",
             "days_to_peak": "고점까지 걸린 거래일 수(작을수록 차익실현 빠름)",
             "post_peak_drawdown_pct": "고점 이후 저점까지 되돌림(%) — 차익실현 매물 강도",
-            "profit_take_flag": "고점 +%.0f%% 이상 후 -%.0f%% 이상 반납한 '차익실현형 고점'"
+            "profit_take_flag": "고점 +%.0f%% 이상 후 -%.0f%% 이상 반납한 '차익실현형 고점' — ★만기행만 판정(미만기 null, v11.6: 재생성마다 뒤집힐 수 있는 잠정값이 확정처럼 보이던 것 교정)"
                                 % (PROFIT_TAKE_MIN_PEAK, -PROFIT_TAKE_GIVEBACK),
             "matured": "horizon 만기 도달 여부(False/None 행은 라벨 부분/없음 — 참고만)",
             "entry_volume": "추천일 거래량",

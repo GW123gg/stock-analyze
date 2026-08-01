@@ -273,6 +273,13 @@ def _close_at_horizon(symbol, base_date, horizon_days):
         sdate_str = sdate.strftime("%Y-%m-%d") if sdate else None
         if val <= 0:
             return None, None
+        # ★v11.6(호스트 감사 2026-08-01): 정산 봉이 '오늘'인데 아직 15:40 KST 이전이면
+        #   FDR 이 돌려준 **미완성 장중 봉**이다 — 채점 보류(멱등 로그에 한 번 실리면 영구 동결).
+        #   실측: 장중 실행 3회(07-06 11:25 · 07-15 11:11 · 07-20 10:25)가 43건을 장중가로
+        #   채점했고 HIT-FLIP 2건(058470@07-10, 017670@07-08) 포함 — 해당 43건은 08-01 재채점.
+        if sdate is not None and sdate == datetime.now().date() \
+                and datetime.now().strftime("%H:%M") < "15:40":
+            return None, None
         return val, sdate_str
     except Exception:
         return None, None
@@ -396,6 +403,22 @@ def grade_pick(pred_date, item, kind):
     if close_h is None:
         return None  # 만기 미도달 또는 데이터 부족 → 보류(멱등: 다음 실행에서 재시도)
 
+    # ★v11.6(호스트 감사): entry_ref(계약상 예측 시점 D-1 종가)를 실측 D-1 종가와 대조.
+    #   실측: 주말 세션 중복쌍 14그룹 중 8그룹이 서로 다른 entry_ref(예: 039030@06-27 -8.5% 괴리).
+    #   (a) 배수 점프(0.5x 미만/2x 초과) = 액면분할·병합·오기록 의심 → 채점 보류
+    #       (유령 수익률이 append-only 멱등 로그에 영구 오염되는 것을 원천 차단.
+    #        predictions 의 entry_ref 를 사람이 고치면 다음 실행에서 정상 채점된다).
+    #   (b) 5% 초과 괴리 = suspect 플래그만 병기 — ★자동 정정 금지(판정은 회고 몫, 원장 규약).
+    actual_d1 = _close_before(ticker, base_date)
+    ref_gap_pct = None
+    if actual_d1 is not None and actual_d1 > 0:
+        _ratio = entry_ref / actual_d1
+        if _ratio < 0.5 or _ratio > 2.0:
+            log.warning(f"[acc] {ticker}@{pred_date} entry_ref {entry_ref} vs 실측 D-1 종가 "
+                        f"{actual_d1:.0f} 배수 점프({_ratio:.2f}x) — 기업행위/오기록 의심, 채점 보류")
+            return None
+        ref_gap_pct = (_ratio - 1.0) * 100.0
+
     ret_pct = (close_h / entry_ref - 1.0) * 100.0
 
     # 같은 구간 코스피 수익률 → alpha (★anchor_before: 종목 다리 entry_ref=D-1 종가와 같은 빈티지)
@@ -426,6 +449,8 @@ def grade_pick(pred_date, item, kind):
         "alpha_pct": round(alpha, 2) if alpha is not None else None,
         "conviction": conv,
         "hit": bool(hit),
+        "entry_ref_gap_pct": round(ref_gap_pct, 2) if ref_gap_pct is not None else None,
+        "entry_ref_suspect": bool(ref_gap_pct is not None and abs(ref_gap_pct) > 5.0),
         "graded_at": datetime.now().isoformat(),
     }
 
@@ -484,6 +509,40 @@ def grade_market_call(pred_date, market_name, call, horizon):
         entry["prob_up"], entry["prob_flat"], entry["prob_down"] = pu, pf, pd
         entry["brier"] = round((pu - o[0]) ** 2 + (pf - o[1]) ** 2 + (pd - o[2]) ** 2, 4)
     return entry
+
+
+def backfill_missing_alpha(logdata):
+    """★v11.6(호스트 감사 2026-08-01): 지수 다리 일시 실패로 alpha_pct=None 인 확정 엔트리의
+    지수만 재계산해 백필한다. return_pct 등 확정 필드는 불변(멱등 원칙 유지) — 정산이 끝난
+    과거 창의 지수 시세는 불변이므로 백필은 룩어헤드가 아니다.
+    실측: 장중 런 2회(07-06·07-20)에서 KS11 당일 봉 부재로 30건(13.1%)이 영구 결측 상태였고
+    scorecard 알파 평균이 무음으로 표본 축소된 채 보고되고 있었다."""
+    fixed = 0
+    today = datetime.now().date()
+    for e in logdata["entries"]:
+        if e.get("kind") not in ("pick", "short"):
+            continue
+        if e.get("alpha_pct") is not None or e.get("return_pct") is None:
+            continue
+        sd = _to_date(e.get("settle_date"))
+        bd = _to_date(e.get("pred_date"))
+        try:
+            hz = int(e.get("horizon"))
+        except Exception:
+            continue
+        if sd is None or bd is None or sd >= today:
+            continue  # 정산 미확정 창은 건드리지 않는다
+        try:
+            kospi_ret, _ = _index_return(KOSPI_SYMBOL, bd, hz, anchor_before=True)
+        except Exception:
+            kospi_ret = None
+        if kospi_ret is None:
+            continue
+        e["kospi_return_pct"] = round(kospi_ret, 2)
+        e["alpha_pct"] = round(float(e["return_pct"]) - kospi_ret, 2)
+        e["alpha_backfilled_at"] = datetime.now().isoformat()
+        fixed += 1
+    return fixed
 
 
 def grade_all(preds, logdata):
@@ -635,6 +694,21 @@ def aggregate(entries):
             _mkt_dedup[k] = e
     _mkt_keep = set(id(e) for e in _mkt_dedup.values())
 
+    # ★v11.6(호스트 감사 2026-08-01): #A14 같은 창 접기를 **픽·숏에도 확장**.
+    #   주말·휴장일 발행 픽은 다음 거래일 픽과 같은 정산 창을 본다 — 같은 결과가 2~3표로
+    #   계상돼 유효 N 과대·오차 자기상관(실측: 중복 그룹 14개·초과 엔트리 18건, 예: 000270
+    #   pred 07-17/18/19 3건 전부 ret -12.89 동일 창). (kind,ticker,horizon,settle_date)당
+    #   최신 pred_date 1건만 집계(로그 파일은 무수정 — 집계 시점 접기라 멱등 원칙과 무충돌).
+    _stk_dedup = {}
+    for e in rset:
+        if e.get("kind") not in ("pick", "short"):
+            continue
+        k = (e.get("kind"), e.get("ticker"), e.get("horizon"), str(e.get("settle_date") or ""))
+        prev = _stk_dedup.get(k)
+        if prev is None or str(e.get("pred_date") or "") > str(prev.get("pred_date") or ""):
+            _stk_dedup[k] = e
+    _stk_keep = set(id(e) for e in _stk_dedup.values())
+
     agg = {
         "n_pred_dates": len(recent),
         "date_range": (min(recent), max(recent)) if recent else (None, None),
@@ -658,6 +732,9 @@ def aggregate(entries):
         # #A14 같은 창 중복 콜 접기 — ★calibration 집계보다 먼저 스킵해야 시장콜 중복이
         #   calib 버킷에 이중계상되지 않는다(시장콜은 conviction 을 가지므로 아래 calib 에 들어간다).
         if kind == "market" and id(e) not in _mkt_keep:
+            continue
+        # ★v11.6: 픽·숏도 동일 — 같은 창 중복은 calib·태그·타이밍 전 집계에서 1건으로.
+        if kind in ("pick", "short") and id(e) not in _stk_keep:
             continue
 
         # calibration (모든 종류 공통; conviction 있는 것만)
@@ -753,9 +830,9 @@ def aggregate(entries):
                 if sk < 0:
                     s["idx_down"] = s.get("idx_down", 0) + 1
 
-    # 예시 종목(최근 픽/숏 중 수익률 극단 몇 개)
+    # 예시 종목(최근 픽/숏 중 수익률 극단 몇 개) — 같은 창 중복 접기 후
     scored = [e for e in rset if e.get("kind") in ("pick", "short")
-              and e.get("return_pct") is not None]
+              and e.get("return_pct") is not None and id(e) in _stk_keep]
     scored_sorted = sorted(scored, key=lambda e: e.get("return_pct"), reverse=True)
     hits = [e for e in scored_sorted if e.get("hit")]
     misses = [e for e in scored_sorted if not e.get("hit")]
@@ -888,7 +965,8 @@ def build_scorecard(agg, total_entries, n_added):
         rate = _pct(p["hit"], p["total"])
         avg_ret = _pct_avg(p["ret_sum"], p["ret_n"])
         avg_alpha = _pct_avg(p["alpha_sum"], p["alpha_n"])
-        L.append(f"- 채점 픽 수: {p['total']}건")
+        L.append(f"- 채점 픽 수: {p['total']}건 (주말·휴장 중복 픽은 같은 정산 창 1건으로 접음 — "
+                 "2026-08-01 집계분부터, #A14 확장)")
         L.append(f"- 적중률: {p['hit']}/{p['total']} ({_fmt_rate(rate)})")
         L.append(f"- 평균 수익률: {_fmt_pct(avg_ret)}")
         L.append(f"- 평균 alpha(코스피 대비): {_fmt_pct(avg_alpha)}")
@@ -1005,6 +1083,9 @@ def build_scorecard(agg, total_entries, n_added):
     L.append("주: 공개데이터(FinanceDataReader) 기반 사후 채점이며, entry_ref 는 "
              "예측 시점 값 그대로 사용(룩어헤드 없음). 만기 미도달 건은 자동 보류 후 "
              "다음 실행에서 재시도됩니다.")
+    L.append("주2(재채점 이력): 2026-08-01 장중 미완성 봉으로 채점됐던 43건"
+             "(07-06·07-15·07-20 장중 런)을 확정 종가로 재채점 — 이전 scorecard 와 수치가 다르면"
+             " 이 재베이스라인이 원인이다(원장 등재). 이후 장중 실행은 당일 정산 봉을 자동 보류한다.")
     return "\n".join(L) + "\n"
 
 
@@ -1079,6 +1160,14 @@ def main():
     except Exception as e:
         log.warning(f"[acc] 채점 루프 예외: {type(e).__name__}: {e}")
         n_added = 0
+
+    # ★v11.6: alpha 결측 백필(지수 다리만 재계산 — 확정 필드 불변)
+    try:
+        n_backfilled = backfill_missing_alpha(logdata)
+        if n_backfilled:
+            log.info(f"[acc] alpha 백필 {n_backfilled}건 (지수 다리 일시 실패분)")
+    except Exception as e:
+        log.warning(f"[acc] alpha 백필 예외: {type(e).__name__}: {e}")
 
     save_log(logdata)
     total = len(logdata["entries"])

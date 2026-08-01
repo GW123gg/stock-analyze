@@ -94,12 +94,22 @@ def parse_report(md):
 
 
 def _entry_close(ticker, date_obj):
+    """★v11.6(호스트 감사 2026-08-01): 앵커를 **D-1 종가**(date_obj 미만 마지막 봉)로 교정.
+    구현이 'd >= date_obj 첫 종가'(=추천일 D 종가, 주말 리포트면 다음 거래일 종가)라
+    예측행(entry_ref=D-1 종가 계약)과 빈티지가 달랐고, 알파 지수다리(v10.5 에서 D-1 앵커로
+    통일)와도 역방향 비대칭 — 추천일 하루치 종목 변동이 라벨에서 통째로 빠졌다
+    (실측: 2026-05-30 005930 D 종가 349,000 vs D-1 317,000 — 첫날 +10.1% 소실).
+    반영 시 archive 행(191행) ret/alpha 전량 리베이스라인 — 원장 A표 등재, 회고 통지."""
     if not FSC_OK:
         return None
     try:
+        last = None
         for d, c in fsc.get_close_series(ticker, date_obj):
-            if d >= date_obj:
-                return c
+            if d < date_obj:
+                last = c
+            else:
+                break
+        return last
     except Exception:
         pass
     return None
@@ -111,6 +121,9 @@ def _fill(items, date_obj):
         it2 = dict(it)
         it2["horizon_days"] = HORIZON_BY_TAG.get(it.get("tag", ""), 5)
         it2["entry_ref"] = _entry_close(it["ticker"], date_obj)
+        # ★v11.6: archive 앵커는 FSC 시세로 추정한 값 — 예측행과 구분되도록 명시
+        #   (기존엔 미설정 → retro_label 이 bool(None)=False 로 기록해 전 행이 '실측'처럼 보였다)
+        it2["entry_ref_estimated"] = True
         out.append(it2)
     return out
 

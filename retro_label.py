@@ -561,7 +561,11 @@ META_COLS = ["market_cap_eok", "cap_bucket", "exchange",
 # DART 분배공시 매칭 토글(--no-dart 로 끔). 키 없으면 자동 graceful.
 DART_ENRICH = True
 
-# 차익실현형 고점 판정 임계치(튜닝 가능)
+# 차익실현형 고점 판정 임계치 — ★v11.6 동결(2026-08-01 민감도 실측 후)
+#   격자 검증: peak {5,7,10} x giveback {-3,-5,-7} 9셀 전부에서 'True군 알파 > False군 알파'
+#   부호 유지(차이 +2.87 ~ +7.05%p, 만기 픽 325행·현행 셀 True 57행/29종목).
+#   임계 선택이 결론을 만든 게 아님이 확인됨 — [0.5] profit_take 가드레일의 근거 성립.
+#   ★변경 시 [0.5] '4회 검증' 카운터 리셋 + 원장 C표 리베이스라인 규약 준수(임의 튜닝 금지).
 PROFIT_TAKE_MIN_PEAK = 7.0     # 고점까지 +7% 이상 올랐다가
 PROFIT_TAKE_GIVEBACK = -5.0    # 고점 대비 -5% 이상 반납하면 '차익실현형'
 
@@ -666,6 +670,9 @@ BASE_COLS = [
     # ★v11.6(호스트 감사 loop-gaps-1/2) 진입시점·익일 전망(예측) — 2026-08-01 이전 추천은 null(정상).
     #   entry_window ↔ entry_buyable(라벨), next_day_* ↔ ret_1(라벨). ★표본 30건+ 전까지 규칙화 금지.
     "entry_window", "next_day_dir", "next_day_prob_up", "next_day_expected_pct",
+    # ★v11.6(feedback-stability-8) 게이트 발동 기록 — '게이트가 강등시킨 픽 vs 통과 픽' 성과 대조용.
+    #   분석가가 [7.5] 선택 필드로 제출(도입 전·미제출은 null 정상).
+    "applied_gates", "rule_regime",
 ]
 
 
@@ -1063,6 +1070,12 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
     row["next_day_dir"] = _pnd.get("dir")
     row["next_day_prob_up"] = _pnd.get("prob_up")
     row["next_day_expected_pct"] = _pnd.get("expected_pct")
+    # v11.6 게이트 발동 기록 — 리스트는 CSV 안전하게 세미콜론 문자열로 압축
+    _ag = item.get("applied_gates")
+    row["applied_gates"] = (";".join(str(x)[:40] for x in _ag[:12])
+                            if isinstance(_ag, list) and _ag else None)
+    row["rule_regime"] = (str(item.get("rule_regime"))[:40]
+                          if item.get("rule_regime") else None)
     # 피처(추천 시점 스냅샷)
     f = feats.get(code, {})
     for col in FEATURE_COLS:

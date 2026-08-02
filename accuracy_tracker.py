@@ -146,13 +146,32 @@ def _iter_prediction_files():
                 yield p
 
 
+def _was_sent(session_dir):
+    """세션이 실제 메일 발송됐다는 증거 — sent_index.json 등재 또는 MAIL_DONE.flag (★v11.7 A38)."""
+    name = os.path.basename(session_dir)
+    try:
+        si_path = os.path.join(BASE_DIR, "sent_index.json")
+        if os.path.isfile(si_path):
+            with open(si_path, encoding="utf-8", errors="replace") as f:
+                if name in (json.load(f) or {}):
+                    return True
+    except Exception:
+        pass
+    return os.path.isfile(os.path.join(session_dir, "MAIL_DONE.flag"))
+
+
 def load_predictions():
     """
     모든 predictions.json 로드. (date, session) 기준 중복 제거 — 같은 날짜는
     파일 mtime 이 가장 최신인 1개만 채택.
+    ★v11.7(A38): 단 **실발송 증거가 있는 구세션**의 픽/숏 중 최신본에 없는
+    (kind,ticker,horizon) 항목은 병합한다. 실측 2026-07-06: 11:27 발송(픽6·숏3) 뒤
+    16:14 재실행 발송(픽8·숏2)이 최신본이 되며 11:27 에만 있던 픽3·숏3이 6회차 동안
+    무채점이었다 — 발송된 예측은 전부 채점 대상이다(같은 항목의 수정 재발송은 최신본 우선).
     Returns: list[dict] (predictions, 각 dict 에 '_src' 경로 주입), 날짜 오름차순.
     """
-    by_date = {}  # date -> (mtime, pred_dict)
+    by_date = {}    # date -> (mtime, pred_dict)
+    losers = {}     # date -> [(mtime, pred_dict), ...] (같은 날짜의 비최신본)
     for path in _iter_prediction_files():
         try:
             mtime = os.path.getmtime(path)
@@ -174,7 +193,42 @@ def load_predictions():
         data["_src"] = path
         prev = by_date.get(date)
         if prev is None or mtime > prev[0]:
+            if prev is not None:
+                losers.setdefault(date, []).append(prev)
             by_date[date] = (mtime, data)
+        else:
+            losers.setdefault(date, []).append((mtime, data))
+    # ★v11.7(A38): 실발송 구세션의 고유 항목 병합
+    for date, lst in losers.items():
+        winner = by_date.get(date)
+        if winner is None:
+            continue
+        wdata = winner[1]
+        have = set()
+        for kind, key in (("pick", "picks"), ("short", "shorts")):
+            for it in (wdata.get(key) or []):
+                if isinstance(it, dict):
+                    have.add((kind, str(it.get("ticker") or ""), str(it.get("horizon_days") or "")))
+        for _mt, ldata in sorted(lst, key=lambda x: -x[0]):   # 최신 구본부터
+            sess_dir = os.path.dirname(str(ldata.get("_src") or ""))
+            if not sess_dir or not _was_sent(sess_dir):
+                continue   # 발송 안 된 재실행·테스트본은 병합 금지(비발행 예측 유입 차단)
+            merged = 0
+            for kind, key in (("pick", "picks"), ("short", "shorts")):
+                for it in (ldata.get(key) or []):
+                    if not isinstance(it, dict):
+                        continue
+                    k = (kind, str(it.get("ticker") or ""), str(it.get("horizon_days") or ""))
+                    if k in have or not k[1]:
+                        continue
+                    it2 = dict(it)
+                    it2["_merged_from"] = os.path.basename(sess_dir)
+                    wdata.setdefault(key, []).append(it2)
+                    have.add(k)
+                    merged += 1
+            if merged:
+                log.info(f"[acc] {date}: 실발송 구세션 {os.path.basename(sess_dir)} 의 "
+                         f"고유 예측 {merged}건 병합(A38)")
     preds = [v[1] for v in by_date.values()]
     preds.sort(key=lambda d: str(d.get("date") or ""))
     return preds

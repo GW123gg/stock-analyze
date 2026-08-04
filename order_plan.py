@@ -313,6 +313,8 @@ def main():
                     help="계좌·시세 조회 없이 predictions 만으로 초안(네트워크 없음)")
     ap.add_argument("--arm", type=int, default=None, metavar="N",
                     help="N번 제안을 폼에 채운다(★가격 입력·확인은 하지 않는다)")
+    ap.add_argument("--to-node", action="store_true",
+                    help="계획을 카이로스 노트북 order_inbox 로 보낸다(거기서 auto_trade.py 가 읽는다)")
     args = ap.parse_args()
 
     sess = find_session(args.session)
@@ -422,6 +424,26 @@ def main():
         log.info("저장: %s", os.path.join(sess, "order_plan.json"))
     except Exception as e:
         log.warning("저장 실패: %s", e)
+
+    # ── 노드로 전송 ──
+    if args.to_node:
+        import subprocess
+        key = os.path.join(os.path.expanduser("~"), ".ssh", "id_ed25519_node1")
+        src = os.path.join(sess, "order_plan.json")
+        dst = "Owner@100.84.184.80:C:/Users/Owner/Desktop/kairos_pc/order_inbox/order_plan.json"
+        try:
+            r = subprocess.run(["scp", "-i", key, "-o", "StrictHostKeyChecking=accept-new",
+                                "-o", "ConnectTimeout=15", src, dst],
+                               capture_output=True, text=True, timeout=120)
+            if r.returncode == 0:
+                log.info("노드 전송 완료 -> order_inbox/order_plan.json")
+                log.info("  노트북에서 auto_trade.cmd 를 실행하면 이 계획을 읽는다"
+                         "(스위치 enabled=1 필요).")
+            else:
+                log.error("노드 전송 실패(rc=%d): %s", r.returncode,
+                          (r.stderr or "")[:200])
+        except Exception as e:
+            log.error("노드 전송 예외: %s", e)
 
     # ── arm(폼 채우기) ──
     if args.arm is not None:

@@ -60,9 +60,19 @@ class TradeError(RuntimeError):
 # =====================================================================
 # 설정·토큰
 # =====================================================================
+CAPTURE_TOKEN_FILE = os.path.join(HERE, "kairos_api.txt")   # 폴백(같은 토큰을 쓰는 구성)
+
+
 def load_token(path=TOKEN_FILE) -> str:
-    """kairos_trade_api.txt 에서 토큰. 'token=...' 또는 한 줄. 없으면 ''."""
+    """kairos_trade_api.txt 에서 토큰. 'token=...' 또는 한 줄.
+
+    ★폴백: 그 파일이 없으면 `kairos_api.txt`(캡처용)를 쓴다 — 실측 2026-08-05, 이 설치는
+      8788·8443 에 **같은 토큰 값**을 쓰고 있어 양쪽 다 인증된다. 서버를 분리해 토큰을
+      따로 쓰고 싶으면 kairos_trade_api.txt 를 만들면 그쪽이 우선한다.
+    """
     if not os.path.isfile(path):
+        if path == TOKEN_FILE and os.path.isfile(CAPTURE_TOKEN_FILE):
+            return load_token(CAPTURE_TOKEN_FILE)
         return ""
     try:
         with open(path, encoding="utf-8", errors="replace") as f:

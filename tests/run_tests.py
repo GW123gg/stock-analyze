@@ -927,6 +927,43 @@ def test_new_collectors_pure():
         check("venue: 안내문에 '한 시장만' 규율", "한 시장만" in _v16["guidance"])
         # 15:40 시간외 종가는 가격 지정이 안 된다(종가 고정) — 호가 제안 시 중요
         _v1545 = _ir.tradable_venues("15:45")
+        # ── v11.12 포트폴리오 — 돈 계산이라 하네스로 고정 ──
+        import portfolio_review as _pf
+        _r, _w = _pf.parse_row({"매수일시": "2026-07-15", "종목코드": "5930",
+                                "종목명": "삼성전자", "평단가": "71,500", "수량": "10"})
+        check("pf: 6자리 zfill + 콤마 숫자 파싱",
+              _r and _r["ticker"] == "005930" and _r["avg_price"] == 71500.0 and _r["qty"] == 10,
+              str((_r, _w)))
+        check("pf: 종목코드 없으면 거부", _pf.parse_row({"평단가": "100", "수량": "1"})[0] is None)
+        check("pf: 수량 0 거부",
+              _pf.parse_row({"종목코드": "005930", "평단가": "100", "수량": "0"})[0] is None)
+        check("pf: 숫자 아닌 평단가 거부",
+              _pf.parse_row({"종목코드": "005930", "평단가": "비쌈", "수량": "1"})[0] is None)
+        # 가중평균 — 여러 번 나눠 산 경우
+        _m = _pf.merge_lots([
+            {"ticker": "005930", "name": "삼성전자", "avg_price": 300000, "qty": 3,
+             "buy_date": "2026-07-15", "memo": ""},
+            {"ticker": "005930", "name": "삼성전자", "avg_price": 320000, "qty": 2,
+             "buy_date": "2026-07-22", "memo": ""}])
+        check("pf: 분할매수 가중평균 308,000 · 5주",
+              len(_m) == 1 and _m[0]["avg_price"] == 308000.0 and _m[0]["qty"] == 5, str(_m))
+        check("pf: 매수일은 가장 이른 날", _m[0]["buy_date"] == "2026-07-15")
+        _c = _pf.compute_position({"ticker": "005930", "name": "삼성전자", "avg_price": 100000,
+                                   "qty": 2, "buy_date": "2026-07-01"},
+                                  110000, index_ret_pct=4.0,
+                                  today=__import__("datetime").date(2026, 7, 31))
+        check("pf: 손익 +20,000 / +10% / 알파 +6%",
+              _c["pnl"] == 20000 and _c["pnl_pct"] == 10.0 and _c["alpha_pct"] == 6.0, str(_c))
+        check("pf: 보유일수 30일", _c["held_days"] == 30, str(_c.get("held_days")))
+        _cn = _pf.compute_position({"ticker": "005930", "name": "x", "avg_price": 100,
+                                    "qty": 1, "buy_date": "2026-07-01"}, None)
+        check("pf: 현재가 조회 실패면 손익 None(추측 금지)",
+              _cn["pnl"] is None and "조회 실패" in _cn.get("_note", ""), str(_cn))
+        _t = _pf.portfolio_totals([
+            {"ticker": "A", "name": "가", "value": 700, "cost": 500},
+            {"ticker": "B", "name": "나", "value": 300, "cost": 500}])
+        check("pf: 합계·집중도", _t["total_pnl"] == 0 and _t["top_weight_pct"] == 70.0, str(_t))
+
         # ── v11.11 프리마켓 지표 — '맹신 금지' 설계가 코드로 지켜지는지 고정 ──
         import premarket_signals as _ps
         _lv = [{"price": 1000 + i, "bid_qty": 100, "ask_qty": 50} for i in range(10)]

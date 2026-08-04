@@ -927,6 +927,70 @@ def test_new_collectors_pure():
         check("venue: 안내문에 '한 시장만' 규율", "한 시장만" in _v16["guidance"])
         # 15:40 시간외 종가는 가격 지정이 안 된다(종가 고정) — 호가 제안 시 중요
         _v1545 = _ir.tradable_venues("15:45")
+        # ── v11.9 주문 제안 순수계산 — 돈이 걸린 산수라 하네스로 고정한다 ──
+        import order_plan as _op
+        # 진입시점 규율: 선언가 위로 달아났으면 추격하지 않는다(즉시고점 실패의 원인)
+        _p, _n = _op.plan_price("당일눌림", 10000, 9500)
+        check("order: 눌림 도달이면 선언가 이하로 매수", _p == 10000 and "눌림 도달" in _n, str((_p, _n)))
+        _p, _n = _op.plan_price("당일눌림", 10000, 10300)
+        check("order: 선언가 +3%면 대기 지정가(밴드 내)", _p == 10000 and "대기" in _n, str((_p, _n)))
+        _p, _n = _op.plan_price("당일눌림", 10000, 10600)
+        check("order: 선언가 +6%면 추격 금지(None)", _p is None and "추격 금지" in _n, str((_p, _n)))
+        check("order: 익일이후는 오늘 주문 아님",
+              _op.plan_price("익일이후", 10000, 9000)[0] is None)
+        check("order: 당일시가는 장중이면 시점 지남",
+              _op.plan_price("당일시가", 10000, 9900, phase="intraday")[0] is None)
+        check("order: 당일시가는 장전이면 유효",
+              _op.plan_price("당일시가", 10000, None, phase="pre_open")[0] == 10000)
+        # 수량 산정: 예수금·비중·한도(10주·200만원)·수수료
+        _q, _nn = _op.plan_qty(1_000_000, 8, 10000)
+        check("order: 예수금 100만·비중8%·1만원 -> 8주", _q == 8, str((_q, _nn)))
+        _q, _ = _op.plan_qty(100_000_000, 50, 10000)
+        check("order: 수량한도 10주 캡", _q == 10, str(_q))
+        _q, _ = _op.plan_qty(100_000_000, 50, 500_000)
+        check("order: 금액한도 200만원 캡(500,000원 -> 4주)", _q == 4, str(_q))
+        _q, _nn = _op.plan_qty(593, 8, 10000)
+        check("order: 예수금 593원이면 0주 + 사유", _q == 0 and "못 산다" in _nn, str((_q, _nn)))
+        _q, _ = _op.plan_qty(10_000, 100, 10_000)
+        check("order: 수수료 때문에 1주도 못 사면 0주", _q == 0, str(_q))
+        # 매도 신호는 픽이 스스로 선언한 계약 기준
+        check("order: 손절선 이탈 -> 손절",
+              _op.sell_signal({"currently_below_stop": True})[0] == "손절")
+        check("order: 목표 도달 -> 익절", _op.sell_signal({"target_hit": True})[0] == "익절")
+        check("order: 신호 없으면 None", _op.sell_signal({})[0] is None)
+        check("order: 만기 경과 -> 만기청산",
+              _op.sell_signal({}, horizon_expired=True)[0] == "만기청산")
+        # 자체 검증 — 어차피 서버가 422 낼 것을 사람에게 보이지 않는다
+        check("order: last_price 없으면 밴드검사 불가로 문제 보고",
+              any("가격밴드 검사 불가" in e for e in
+                  _op.validate_proposal({"qty": 1, "price": 1000, "side": "buy"})))
+        check("order: 금액한도 초과 검출",
+              any("금액한도" in e for e in _op.validate_proposal(
+                  {"qty": 10, "price": 500_000, "last_price": 500_000, "side": "buy"})))
+        check("order: 정상 매수 제안은 문제 없음",
+              _op.validate_proposal({"qty": 5, "price": 10_000,
+                                     "last_price": 10_100, "side": "buy"}) == [])
+        check("order: 보유 없는 매도는 거부",
+              any("보유수량" in e for e in _op.validate_proposal(
+                  {"qty": 1, "price": 1000, "last_price": 1000, "side": "sell"})))
+        # ★fire 는 명시 승인 없이는 호출 자체가 막혀야 한다(주문 제출로 이어지는 유일 지점)
+        import trade_client as _tc
+        try:
+            _tc.fire(10000, 10000)
+            check("order: fire 는 명시 승인 없이 막힌다", False, "예외가 안 났다")
+        except _tc.TradeError as _e:
+            check("order: fire 는 명시 승인 없이 막힌다", "명시적 승인" in str(_e), str(_e))
+        try:
+            _tc.arm("005930", "buy", 0)
+            check("order: arm 수량 0 거부", False, "예외가 안 났다")
+        except _tc.TradeError:
+            check("order: arm 수량 0 거부", True)
+        try:
+            _tc.arm("005930", "long", 1)
+            check("order: arm side 검증", False, "예외가 안 났다")
+        except _tc.TradeError:
+            check("order: arm side 검증", True)
+
         check("venue: 시간외 종가는 가격 고정 명시",
               any("종가" in x["method"] for x in _v1545["open_venues"]
                   if x["venue"] == "KRX 시간외 종가"))

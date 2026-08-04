@@ -927,6 +927,50 @@ def test_new_collectors_pure():
         check("venue: 안내문에 '한 시장만' 규율", "한 시장만" in _v16["guidance"])
         # 15:40 시간외 종가는 가격 지정이 안 된다(종가 고정) — 호가 제안 시 중요
         _v1545 = _ir.tradable_venues("15:45")
+        # ── v11.11 프리마켓 지표 — '맹신 금지' 설계가 코드로 지켜지는지 고정 ──
+        import premarket_signals as _ps
+        _lv = [{"price": 1000 + i, "bid_qty": 100, "ask_qty": 50} for i in range(10)]
+        _bi, _n = _ps.book_imbalance(_lv)          # 매수 1000 / 매도 500
+        check("pms: 불균형 매수우위 산출", abs(_bi - 0.3333) < 0.001 and "매수 우위" in _n, str((_bi, _n)))
+        _thin = [{"price": 1000, "bid_qty": 5, "ask_qty": 3}]
+        _bi2, _n2 = _ps.book_imbalance(_thin)
+        check("pms: ★얇은 호가면 불균형 무효화(None)", _bi2 is None and "얇다" in _n2, str((_bi2, _n2)))
+        check("pms: 호가 없으면 None", _ps.book_imbalance(None)[0] is None)
+        _sp, _spn = _ps.spread_pct(1000, 1005)
+        check("pms: 스프레드 계산", abs(_sp - 0.498) < 0.01, str(_sp))
+        check("pms: 역전 호가는 None", _ps.spread_pct(1005, 1000)[0] is None)
+        _g, _gn = _ps.gap_pct(10600, 10000)
+        check("pms: 갭 +6%는 추격 금지 경고", abs(_g - 6.0) < 0.01 and "추격 금지" in _gn, str((_g, _gn)))
+        check("pms: 전일종가 0이면 None", _ps.gap_pct(1000, 0)[0] is None)
+        # ★ladder_ok=False 면 호가 지표를 만들지 않는다(추측 금지)
+        _sig = _ps.compute({"quote": {"price": 10200}, "ladder": {"levels": _lv},
+                            "quote_ok": True, "ladder_ok": False}, prev_close=10000)
+        check("pms: ★ladder_ok=false면 호가지표 전부 None",
+              _sig["book_imbalance"] is None and _sig["spread_pct"] is None
+              and _sig["gap_pct"] == 2.0, str(_sig)[:120])
+        # evaluate: 지표는 '막는 쪽'으로만 강하게 작동한다
+        _ok = _ps.compute({"quote": {"price": 10200},
+                           "ladder": {"levels": _lv, "best_bid": 10200, "best_ask": 10205},
+                           "quote_ok": True, "ladder_ok": True}, prev_close=10000)
+        _r = _ps.evaluate({"require": {"book_imbalance_min": 0.15,
+                                       "gap_between": [-1, 3]}}, _ok)
+        check("pms: 조건 충족이면 go", _r["verdict"] == "go", str(_r))
+        _hi = _ps.compute({"quote": {"price": 10800},
+                           "ladder": {"levels": _lv, "best_bid": 10800, "best_ask": 10805},
+                           "quote_ok": True, "ladder_ok": True}, prev_close=10000)
+        _r2 = _ps.evaluate({"require": {"book_imbalance_min": 0.15}}, _hi)
+        check("pms: ★갭 +8%면 지표가 좋아도 avoid",
+              _r2["verdict"] == "avoid" and any("추격 금지" in b for b in _r2["blocks"]), str(_r2))
+        _r3 = _ps.evaluate({}, _ok)
+        check("pms: ★정량조건 없으면 지표만으로 go 안 함",
+              _r3["verdict"] == "hold" and any("지표만으로는" in x for x in _r3["reasons"]), str(_r3))
+        _bad = _ps.compute({"quote": {"price": 10200}, "ladder": {}, "quote_ok": False,
+                            "ladder_ok": False}, prev_close=10000)
+        _r4 = _ps.evaluate({"require": {"gap_between": [-1, 3]}}, _bad)
+        check("pms: quote_ok=false면 avoid", _r4["verdict"] == "avoid", str(_r4))
+        _r5 = _ps.evaluate({"require": {"book_imbalance_min": 0.1}}, _sig)   # ladder 실패
+        check("pms: 불균형 못 구하면 판정 불가(hold)", _r5["verdict"] == "hold", str(_r5))
+
         # ── v11.9 주문 제안 순수계산 — 돈이 걸린 산수라 하네스로 고정한다 ──
         import order_plan as _op
         # 진입시점 규율: 선언가 위로 달아났으면 추격하지 않는다(즉시고점 실패의 원인)

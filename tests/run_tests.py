@@ -937,8 +937,10 @@ def test_new_collectors_pure():
     try:
         import pandas as _pdN
         import accuracy_tracker as _atN
-        _idxN = _pdN.to_datetime(["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30",
-                                  "2026-07-31", "2026-08-03", "2026-08-04"])
+        # ★픽스처 날짜는 항상 과거로(v11.8 가드: 오늘 이후 봉 정산 금지 — 실행일과 겹치면 보류됨.
+        #   2026-08-04 실측: 구 픽스처 마지막 날짜가 실행일과 같아 T+5 가 보류돼 위양성 실패)
+        _idxN = _pdN.to_datetime(["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04",
+                                  "2026-06-05", "2026-06-08", "2026-06-09"])
         # T+1 -3%(하락) · T+5 +2%(상승) — 두 지평 방향이 반대인 케이스
         _dfN = _pdN.DataFrame({"Close": [100.0, 100.0, 97.0, 98.0, 99.0, 101.0, 102.0]}, index=_idxN)
         _oldN = _atN._fetch_history
@@ -946,14 +948,14 @@ def test_new_collectors_pure():
             _atN._fetch_history = lambda s, start: _dfN
             _callN = {"dir": "up", "prob_up": 0.5, "prob_flat": 0.3, "prob_down": 0.2,
                       "next_day": {"dir": "down", "prob_up": 0.2, "prob_flat": 0.2, "prob_down": 0.6}}
-            _r1 = _atN.grade_market_call("2026-07-28", "kospi", _callN["next_day"], 1)
-            _r5 = _atN.grade_market_call("2026-07-28", "kospi", _callN, 5)
+            _r1 = _atN.grade_market_call("2026-06-02", "kospi", _callN["next_day"], 1)
+            _r5 = _atN.grade_market_call("2026-06-02", "kospi", _callN, 5)
             check("nextday: T+1 은 next_day(down)로 적중", _r1 and _r1.get("hit") is True, str(_r1))
             check("nextday: T+5 는 본 콜(up)로 적중", _r5 and _r5.get("hit") is True, str(_r5))
             check("nextday: 두 지평이 서로 다른 방향을 각각 채점",
                   _r1.get("dir") == "down" and _r5.get("dir") == "up")
             # 본 콜을 T+1 에 쓰면 틀린다 — next_day 분리의 실익 확인
-            _r1_old = _atN.grade_market_call("2026-07-28", "kospi", _callN, 1)
+            _r1_old = _atN.grade_market_call("2026-06-02", "kospi", _callN, 1)
             check("nextday: 구 방식(본 콜을 T+1 에)이었다면 오답이었을 것",
                   _r1_old and _r1_old.get("hit") is False, str(_r1_old))
         finally:

@@ -143,15 +143,17 @@ _KS11_SERIES = None
 
 
 def _ks11_series():
-    """[(date, close)] 오름차순 — 알파 라벨용 KOSPI 종가. 전 구간 1회 조회(행별 재조회 금지)."""
+    """[(date, close)] 오름차순 — 알파 라벨용 KOSPI 종가. 전 구간 1회 조회(행별 재조회 금지).
+    ★v11.8(A40): 오늘 날짜 봉 제외 — 확정 전 장중 스냅샷 유입 차단(compute_labels 와 동일 원칙)."""
     global _KS11_SERIES
     if _KS11_SERIES is None:
         _KS11_SERIES = []
         if FDR_OK:
             try:
+                _today = datetime.now().date()
                 df = fdr.DataReader("KS11", "2025-01-01")
                 for idx, cl in zip(df.index, df["Close"].tolist()):
-                    if cl == cl:  # NaN 제외
+                    if cl == cl and idx.date() < _today:  # NaN·오늘 봉 제외
                         _KS11_SERIES.append((idx.date(), float(cl)))
             except Exception as e:
                 log.warning("[retro] KOSPI 시계열 조회 실패(알파 라벨 생략): %s", type(e).__name__)
@@ -168,9 +170,10 @@ def _kq11_series():
         _KQ11_SERIES = []
         if FDR_OK:
             try:
+                _today = datetime.now().date()
                 df = fdr.DataReader("KQ11", "2025-01-01")
                 for idx, cl in zip(df.index, df["Close"].tolist()):
-                    if cl == cl:
+                    if cl == cl and idx.date() < _today:  # v11.8(A40) 오늘 봉 제외
                         _KQ11_SERIES.append((idx.date(), float(cl)))
             except Exception as e:
                 log.warning("[retro] KOSDAQ 시계열 조회 실패(소속시장 알파 생략): %s", type(e).__name__)
@@ -856,6 +859,13 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         return {"matured": None, "note": "fetch_err:%s" % type(e).__name__}
     if not series:
         return {"matured": None, "note": "no_price"}
+    # ★v11.8(A40): '오늘' 날짜 봉은 라벨 계산에서 제외 — 확정 전 장중 스냅샷일 수 있다
+    #   (실측 2026-08-04 16:01: FDR 지수가 -1.13% 장중값, 실제 종가 +1.62%). 정상 흐름
+    #   (새벽 03:38·아침 06:35)엔 오늘 봉이 없어 비용 0, 오후 수동 재생성만 안전해진다.
+    _today = datetime.now().date()
+    series = [(d, c, v) for d, c, v in series if d is None or d < _today]
+    if not series:
+        return {"matured": None, "note": "no_price"}
     dates = [d for d, _c, _v in series]       # date 객체(오름차순)
     closes = [c for _d, c, _v in series]
     vols = [v for _d, _c, v in series]        # 거래량(차익실현·큰손 매도 신호)
@@ -1023,9 +1033,12 @@ def _entry_day_ohlc(ticker, base_date):
         df = acc._fetch_history(ticker, (base_date - timedelta(days=10)).strftime("%Y-%m-%d"))
         if df is None or df.empty:
             return None, None
+        _today = datetime.now().date()
         for ix in df.index:
             d = ix.date() if hasattr(ix, "date") else None
             if d is not None and d >= base_date:
+                if d >= _today:
+                    return None, None   # ★v11.8(A40): 오늘 봉은 미확정일 수 있다 — 내일 계산
                 r = df.loc[ix]
                 o = r.get("Open") if hasattr(r, "get") else None
                 lo = r.get("Low") if hasattr(r, "get") else None

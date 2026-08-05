@@ -981,6 +981,131 @@ def test_new_collectors_pure():
             {"ticker": "A", "name": "가", "value": 700, "cost": 500},
             {"ticker": "B", "name": "나", "value": 300, "cost": 500}])
         check("pf: 합계·집중도", _t["total_pnl"] == 0 and _t["top_weight_pct"] == 70.0, str(_t))
+        # ── v11.13 다중 사용자 + 증권사 구분 ──
+        check("pf: 카이로스는 자동매매 대상", _pf.is_auto_broker("카이로스") is True)
+        check("pf: 미래에셋도 대상", _pf.is_auto_broker("미래에셋") is True)
+        check("pf: ★KB 는 참고만(자동매매 아님)", _pf.is_auto_broker("KB") is False)
+        check("pf: 빈 증권사는 기본 대상", _pf.is_auto_broker("") is True)
+        check("pf: 이메일 파일명 추출",
+              _pf.email_from_path("portfolios/a@b.com.csv") == "a@b.com")
+        # ── v11.13 실사고 대응: 탭 CSV·증권사 추정·코드/이름 대조 ──
+        check("pf: 구분자 자동판별(쉼표)", _pf.sniff_delimiter("a,b,c") == ",")
+        check("pf: ★탭 구분 파일도 읽는다(엑셀 유니코드 텍스트 저장)",
+              _pf.sniff_delimiter("증권사	종목코드	종목명") == "	")
+        check("pf: 세미콜론 구분", _pf.sniff_delimiter("a;b;c;d") == ";")
+        check("pf: 메모에서 증권사 추정(카이로스)",
+              _pf.broker_from_memo("카이로스(미래에셋)") == "카이로스")
+        check("pf: 메모에서 증권사 추정(KB)", _pf.broker_from_memo("kb증권") == "KB")
+        check("pf: 메모에 증권사 없으면 None", _pf.broker_from_memo("장기보유") is None)
+        # ★증권사 열이 없는 옛 파일에서 KB 보유가 '자동매매 대상'으로 잡히면 안 된다
+        _rk, _ = _pf.parse_row({"종목코드": "005930", "종목명": "삼성전자",
+                                "평단가": "100", "수량": "1", "메모": "kb증권"})
+        check("pf: ★메모가 KB 면 자동매매 대상 아님",
+              _rk and _rk["broker"] == "KB" and _rk["auto_tradable"] is False, str(_rk))
+        _re_, _why = _pf.parse_row({"종목코드": "005930", "종목명": "삼성전자",
+                                    "평단가": "", "수량": "1"})
+        check("pf: 평단가 빈칸은 0 으로 삼키지 않고 거절",
+              _re_ is None and "비어" in _why, "%s / %s" % (_re_, _why))
+        # 코드/이름 대조 — 네트워크 없이 조회부만 대체
+        check("pf: 이름 정규화(공백·대소문자 무시)",
+              _pf._norm_name("삼성 E&A") == _pf._norm_name("삼성E&A"))
+        _orig_on = _pf.official_name
+        try:
+            _pf.official_name = lambda t: {"030420": "디패션", "034020": "두산에너빌리티"}.get(t)
+            check("pf: ★코드가 다른 회사면 불일치(030420=디패션)",
+                  _pf.verify_ticker_name("030420", "두산에너빌리티") == (False, "디패션"))
+            check("pf: 맞으면 통과", _pf.verify_ticker_name("034020", "두산에너빌리티")[0] is True)
+            check("pf: 이름을 안 적었으면 검사 안 함",
+                  _pf.verify_ticker_name("030420", "")[0] is True)
+            check("pf: 조회 불가는 불일치가 아니다(막지 않는다)",
+                  _pf.verify_ticker_name("999999", "아무거나")[0] is True)
+        finally:
+            _pf.official_name = _orig_on
+        check("pf: 이메일 아닌 파일명은 None",
+              _pf.email_from_path("portfolios/_README.txt") is None
+              and _pf.email_from_path("portfolios/notanemail.csv") is None)
+        # ★증권사가 다르면 같은 종목이어도 합치지 않는다(자동매매 가능분이 틀어진다)
+        _mb = _pf.merge_lots([
+            {"ticker": "005930", "name": "삼성", "avg_price": 100, "qty": 1,
+             "buy_date": "", "memo": "", "broker": "카이로스", "auto_tradable": True},
+            {"ticker": "005930", "name": "삼성", "avg_price": 200, "qty": 1,
+             "buy_date": "", "memo": "", "broker": "KB", "auto_tradable": False}])
+        check("pf: ★증권사 다르면 분리 보관", len(_mb) == 2, str(_mb))
+        # 매수일시 없어도 파싱 성공(불타기/물타기라 선택 필드)
+        _rn, _ = _pf.parse_row({"증권사": "KB", "종목코드": "005930", "종목명": "삼성",
+                                "평단가": "100", "수량": "1"})
+        check("pf: 매수일시 없어도 통과 + 증권사 반영",
+              _rn and _rn["buy_date"] == "" and _rn["auto_tradable"] is False, str(_rn))
+        # 동기화: 이메일 대소문자 통합·불량행 격리
+        import portfolio_sync as _ps
+        _by, _bad = _ps.group_by_email([
+            {"email": "A@Example.COM", "broker": "카이로스", "ticker": "34020",
+             "name": "두산", "avg_price": "50,000", "qty": "3", "memo": ""},
+            {"email": "a@example.com", "broker": "KB", "ticker": "005930",
+             "name": "삼성", "avg_price": "300000", "qty": "2", "memo": ""},
+            {"email": "없음", "broker": "카이로스", "ticker": "005930",
+             "name": "x", "avg_price": "1", "qty": "1", "memo": ""},
+            {"email": "b@x.com", "broker": "카이로스", "ticker": "abc",
+             "name": "x", "avg_price": "1", "qty": "1", "memo": ""}])
+        check("pfsync: 이메일 대소문자 통합(1명 2종)",
+              list(_by) == ["a@example.com"] and len(_by["a@example.com"]) == 2, str(_by))
+        check("pfsync: 선행 0 복원 + 엑셀 안전표기",
+              _by["a@example.com"][0]["종목코드"] == '="034020"')
+        check("pfsync: 불량행 2건 격리(조용히 넘기지 않음)", len(_bad) == 2, str(_bad))
+        check("pfsync: 매수일시는 웹에서 안 받는다",
+              _by["a@example.com"][0]["매수일시"] == "")
+
+        # ★★유출 가드 — 여러 명이 등록됐을 때 이름 없는 산출물을 쓰면
+        #   B 가 A 의 보유·전략 글을 그대로 받는다. 실제로 재현해서 막혔는지 본다.
+        import portfolio_mail as _pm
+        _tdp = tempfile.mkdtemp(prefix="pfleak_")
+        try:
+            _pfd, _sd = os.path.join(_tdp, "pf"), os.path.join(_tdp, "sess")
+            os.makedirs(_pfd); os.makedirs(_sd)
+            _csv = chr(10).join([
+                "증권사,종목코드,종목명,평단가,수량,메모,매수일시",
+                '카이로스,"=""005930""",삼성전자,100,1,,', ""])
+            for _em in ("a@x.com", "b@y.com"):
+                io.open(os.path.join(_pfd, _em + ".csv"), "w",
+                        encoding="utf-8-sig").write(_csv)
+            # A 것만 '이름 없는' 구버전 파일로 존재(email 필드 없음 = 소유자 검사 무력)
+            json.dump({"holdings": [{"name": "삼성전자"}], "total": {}},
+                      io.open(os.path.join(_sd, "portfolio_review.json"), "w",
+                              encoding="utf-8"), ensure_ascii=False)
+            io.open(os.path.join(_sd, "portfolio_strategy.md"), "w",
+                    encoding="utf-8").write("A 의 계좌 이야기")
+
+            _orig_dir, _orig_argv = _pm.PORTFOLIO_DIR, sys.argv
+            try:
+                _pm.PORTFOLIO_DIR = _pfd
+                sys.argv = ["x", "--all", "--session", _sd]
+                _rc2 = _pm.main()          # --send 없음 = 미리보기만
+            finally:
+                _pm.PORTFOLIO_DIR, sys.argv = _orig_dir, _orig_argv
+            _leaked = [f for f in os.listdir(_sd) if f.endswith(".html")
+                       and "A 의 계좌 이야기" in io.open(os.path.join(_sd, f),
+                                                    encoding="utf-8").read()]
+            check("pfmail: ★2명일 때 이름없는 산출물로 발송하지 않는다",
+                  _rc2 != 0 and not _leaked, "rc=%s leaked=%s" % (_rc2, _leaked))
+
+            # 1명이면 하위호환 — 이름 없는 파일을 본인에게 쓴다
+            os.remove(os.path.join(_pfd, "b@y.com.csv"))
+            for _f in os.listdir(_sd):
+                if _f.endswith(".html"):
+                    os.remove(os.path.join(_sd, _f))
+            try:
+                _pm.PORTFOLIO_DIR = _pfd
+                sys.argv = ["x", "--all", "--session", _sd]
+                _rc1 = _pm.main()
+            finally:
+                _pm.PORTFOLIO_DIR, sys.argv = _orig_dir, _orig_argv
+            _used = [f for f in os.listdir(_sd) if f.endswith(".html")
+                     and "A 의 계좌 이야기" in io.open(os.path.join(_sd, f),
+                                                  encoding="utf-8").read()]
+            check("pfmail: 1명이면 이름없는 파일 폴백은 유지(하위호환)",
+                  _rc1 == 0 and len(_used) == 1, "rc=%s used=%s" % (_rc1, _used))
+        finally:
+            shutil.rmtree(_tdp, ignore_errors=True)
 
         # ── v11.11 프리마켓 지표 — '맹신 금지' 설계가 코드로 지켜지는지 고정 ──
         import premarket_signals as _ps

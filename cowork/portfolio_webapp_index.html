@@ -1,0 +1,326 @@
+<!--
+  portfolio_webapp_index.html — 포트폴리오 등록 화면  [v11.13]
+
+  ★Apps Script 프로젝트에 **"index" 라는 이름의 HTML 파일**로 넣어라.
+    (편집기 왼쪽 파일 + → HTML → 이름 `index` → 이 내용 전체 붙여넣기)
+    portfolio_webapp.gs 의 doGet 이 createHtmlOutputFromFile('index') 로 불러온다.
+
+  ★서버 호출은 반드시 google.script.run 이다.
+    이 화면은 googleusercontent.com 샌드박스 iframe 안에서 뜨기 때문에
+    fetch(window.location.href) 로 /exec 를 부르면 교차출처라 전부 막힌다.
+
+  로컬에서 열면 화면 모양은 보이지만 버튼은 동작하지 않는다(google 객체가 없음) —
+  아래 스크립트가 그 경우 "미리보기 모드" 안내를 띄운다.
+-->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>포트폴리오 등록</title>
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: #eef1f6; margin: 0; padding: 18px; color: #222;
+  }
+  .card {
+    max-width: 560px; margin: 0 auto; background: #fff;
+    border-radius: 10px; padding: 22px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  h2 { margin: 0 0 4px; font-size: 19px; }
+  .sub { color: #777; font-size: 12px; margin-bottom: 18px; }
+  fieldset { border: 0; padding: 0; margin: 0; }
+  legend {
+    font-size: 12px; font-weight: 600; color: #2a5db0;
+    padding: 0; margin: 18px 0 2px;
+  }
+  label { display: block; font-size: 12px; color: #555; margin: 10px 0 4px; }
+  input, select {
+    width: 100%; box-sizing: border-box; padding: 9px 10px;
+    border: 1px solid #d4d9e3; border-radius: 6px; font-size: 14px; background: #fff;
+  }
+  input:focus, select:focus { outline: 2px solid #b9cdf0; border-color: #2a5db0; }
+  button {
+    margin-top: 14px; width: 100%; padding: 11px; border: 0; border-radius: 6px;
+    background: #2a5db0; color: #fff; font-size: 15px; cursor: pointer;
+  }
+  button:hover { background: #24519c; }
+  button:disabled { background: #9aa7bd; cursor: default; }
+  button.sec { background: #6b7280; }
+  button.sec:hover { background: #5b626e; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > div { flex: 1; min-width: 0; }
+  /* 폰에서는 2열이 좁아 라벨이 뭉개진다 — 세로로 쌓는다 */
+  @media (max-width: 460px) {
+    body { padding: 10px; }
+    .card { padding: 16px; }
+    .row2 { display: block; }
+  }
+  .msg {
+    margin-top: 12px; padding: 10px; border-radius: 6px;
+    font-size: 13px; display: none; line-height: 1.5;
+  }
+  .msg.ok { background: #e8f5e9; color: #1b5e20; display: block; }
+  .msg.err { background: #ffebee; color: #b71c1c; display: block; }
+  .msg.info { background: #eef2fa; color: #26437a; display: block; }
+  hr { margin: 18px 0; border: 0; border-top: 1px solid #eef0f5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 14px; }
+  th, td { padding: 7px 5px; text-align: right; border-bottom: 1px solid #eef0f5; }
+  th { color: #555; background: #f5f7fb; font-weight: 600; }
+  td:first-child, th:first-child { text-align: left; }
+  td a { color: #b71c1c; text-decoration: none; font-size: 12px; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px;
+    background: #eef2fa; color: #26437a; margin-left: 4px; vertical-align: 1px;
+  }
+  .tag.manual { background: #fff3e0; color: #8a5a00; }
+  .note { font-size: 11px; color: #999; line-height: 1.7; margin-top: 18px; }
+  .note b { color: #666; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>포트폴리오 등록</h2>
+  <div class="sub">등록하면 매일 아침 본인 메일로 보유 현황과 전략이 갑니다.</div>
+
+  <fieldset>
+    <legend>1. 본인 확인</legend>
+    <label for="email">이메일 (이 주소로만 메일이 갑니다)</label>
+    <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+    <button class="sec" id="btnCode" type="button">확인 코드 받기</button>
+    <label for="code">확인 코드 (메일로 받은 6자리)</label>
+    <input id="code" inputmode="numeric" maxlength="6" placeholder="123456">
+  </fieldset>
+
+  <hr>
+
+  <fieldset>
+    <legend>2. 보유 종목</legend>
+    <label for="broker">증권사</label>
+    <select id="broker">
+      <option>카이로스</option>
+      <option>KB</option>
+      <option>삼성</option>
+      <option>키움</option>
+      <option>NH</option>
+      <option>한국투자</option>
+      <option>토스</option>
+      <option>기타</option>
+    </select>
+
+    <div class="row2">
+      <div>
+        <label for="ticker">종목코드 (앞의 0을 빼먹어도 됩니다)</label>
+        <input id="ticker" inputmode="numeric" maxlength="8" placeholder="034020">
+      </div>
+      <div>
+        <label for="name">종목명</label>
+        <input id="name" placeholder="두산에너빌리티">
+      </div>
+    </div>
+
+    <div class="row2">
+      <div>
+        <label for="price">평단가 (여러 번 샀으면 평균단가)</label>
+        <input id="price" inputmode="numeric" placeholder="50000">
+      </div>
+      <div>
+        <label for="qty">수량</label>
+        <input id="qty" inputmode="numeric" placeholder="3">
+      </div>
+    </div>
+
+    <label for="memo">메모 (선택)</label>
+    <input id="memo" placeholder="산 이유 등">
+
+    <button id="btnAdd" type="button">추가하기</button>
+    <button class="sec" id="btnMine" type="button">내 포트폴리오 보기</button>
+  </fieldset>
+
+  <div id="msg" class="msg"></div>
+  <div id="list"></div>
+
+  <div class="note">
+    · 증권사가 <b>카이로스</b>인 종목만 자동매매 대상입니다. KB 등은 참고용이며 직접 매매하셔야 합니다.<br>
+    · <b>종목명을 정확히</b> 적어 주세요. 코드와 실제 종목명이 다르면 그 종목은 분석하지 않습니다
+      (오타 하나로 전혀 다른 회사가 분석되는 걸 막습니다).<br>
+    · 매수일시는 받지 않습니다 — 나눠 사면 의미가 없어서요. 평단가만 정확하면 됩니다.<br>
+    · <b>같은 종목·증권사를 다시 추가하면 덮어씁니다</b> — 물타기·불타기로 평단이 바뀌면
+      새 평단과 총수량을 넣으세요.<br>
+    · 본인 이메일로만 조회·수신됩니다. 남의 포트폴리오는 볼 수 없습니다.<br>
+    · 투자 판단과 책임은 본인에게 있습니다. 참고 자료입니다.
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var el = function (id) { return document.getElementById(id); };
+  var busy = false;
+
+  function show(text, kind) {
+    var m = el('msg');
+    m.textContent = text;
+    m.className = 'msg ' + (kind || 'info');
+  }
+
+  function setBusy(on) {
+    busy = on;
+    ['btnCode', 'btnAdd', 'btnMine'].forEach(function (id) { el(id).disabled = on; });
+  }
+
+  // ★서버 호출 통로. google.script.run 이 없으면(로컬에서 파일을 연 경우) 안내만 한다.
+  function call(fnName, args, done) {
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      show('미리보기 모드입니다 — 배포된 웹 앱 주소에서 열어야 동작합니다.', 'info');
+      return;
+    }
+    if (busy) { return; }
+    setBusy(true);
+    google.script.run
+      .withSuccessHandler(function (raw) {
+        setBusy(false);
+        var r;
+        try { r = JSON.parse(raw); }
+        catch (e) { show('서버 응답을 읽지 못했습니다.', 'err'); return; }
+        done(r);
+      })
+      .withFailureHandler(function (err) {
+        setBusy(false);
+        show('오류: ' + (err && err.message ? err.message : err), 'err');
+      })[fnName].apply(null, args);
+  }
+
+  function creds() {
+    return { email: el('email').value.trim(), code: el('code').value.trim() };
+  }
+
+  el('btnCode').addEventListener('click', function () {
+    var e = el('email').value.trim();
+    if (!e) { show('이메일을 먼저 입력하세요', 'err'); return; }
+    show('코드 보내는 중...', 'info');
+    call('apiRequestCode', [e], function (r) {
+      show(r.ok ? '메일로 코드를 보냈습니다 (15분 유효)' : r.error, r.ok ? 'ok' : 'err');
+    });
+  });
+
+  el('btnAdd').addEventListener('click', function () {
+    var c = creds();
+    if (!c.email || !c.code) { show('이메일과 확인 코드를 입력하세요', 'err'); return; }
+    call('apiAdd', [{
+      email: c.email, code: c.code,
+      broker: el('broker').value,
+      ticker: el('ticker').value.trim(),
+      name: el('name').value.trim(),
+      avg_price: el('price').value.trim(),
+      qty: el('qty').value.trim(),
+      memo: el('memo').value.trim()
+    }], function (r) {
+      if (!r.ok) { show(r.error, 'err'); return; }
+      show(r.updated ? '덮어썼습니다 (평단·수량 갱신)' : '추가되었습니다', 'ok');
+      ['ticker', 'name', 'price', 'qty', 'memo'].forEach(function (i) { el(i).value = ''; });
+      loadMine();
+    });
+  });
+
+  el('btnMine').addEventListener('click', function () {
+    var c = creds();
+    if (!c.email || !c.code) { show('이메일과 확인 코드를 입력하세요', 'err'); return; }
+    loadMine();
+  });
+
+  function loadMine() {
+    var c = creds();
+    if (!c.email || !c.code) { return; }
+    call('apiMine', [c.email, c.code], function (r) {
+      if (!r.ok) { show(r.error, 'err'); return; }
+      render(r.rows || []);
+    });
+  }
+
+  // ★textContent 로만 넣는다 — 종목명에 따옴표·꺾쇠가 들어가도 화면이 깨지지 않는다.
+  function render(rows) {
+    var box = el('list');
+    box.textContent = '';
+    if (!rows.length) {
+      var p = document.createElement('div');
+      p.className = 'sub';
+      p.style.marginTop = '14px';
+      p.textContent = '아직 등록된 종목이 없습니다.';
+      box.appendChild(p);
+      return;
+    }
+
+    var table = document.createElement('table');
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    ['종목', '증권사', '평단가', '수량', ''].forEach(function (h) {
+      var th = document.createElement('th');
+      th.textContent = h;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    rows.forEach(function (x) {
+      var tr = document.createElement('tr');
+
+      var tdName = document.createElement('td');
+      tdName.textContent = x.name || x.ticker;
+      var code = document.createElement('div');
+      code.style.cssText = 'color:#999;font-size:11px;';
+      code.textContent = x.ticker;
+      tdName.appendChild(code);
+      tr.appendChild(tdName);
+
+      var tdBroker = document.createElement('td');
+      tdBroker.textContent = x.broker;
+      var auto = ['카이로스', '미래에셋', '미래에셋카이로스'].indexOf(String(x.broker).trim()) >= 0;
+      var tag = document.createElement('span');
+      tag.className = 'tag' + (auto ? '' : ' manual');
+      tag.textContent = auto ? '자동' : '참고';
+      tdBroker.appendChild(tag);
+      tr.appendChild(tdBroker);
+
+      [Number(x.avg_price).toLocaleString(), x.qty].forEach(function (v) {
+        var td = document.createElement('td');
+        td.textContent = String(v);
+        tr.appendChild(td);
+      });
+
+      var tdDel = document.createElement('td');
+      var a = document.createElement('a');
+      a.href = '#';
+      a.textContent = '삭제';
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        if (!window.confirm((x.name || x.ticker) + ' 을(를) 지울까요?')) { return; }
+        var c = creds();
+        call('apiDelete', [{
+          email: c.email, code: c.code,
+          ticker: String(x.ticker), broker: String(x.broker)
+        }], function (r) {
+          show(r.ok ? '삭제했습니다' : r.error, r.ok ? 'ok' : 'err');
+          loadMine();
+        });
+      });
+      tdDel.appendChild(a);
+      tr.appendChild(tdDel);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    box.appendChild(table);
+  }
+
+  if (typeof google === 'undefined' || !google.script) {
+    show('미리보기 모드 — 배포된 웹 앱 주소에서 열어야 버튼이 동작합니다.', 'info');
+  }
+})();
+</script>
+</body>
+</html>

@@ -988,6 +988,39 @@ def test_new_collectors_pure():
         check("pf: 빈 증권사는 기본 대상", _pf.is_auto_broker("") is True)
         check("pf: 이메일 파일명 추출",
               _pf.email_from_path("portfolios/a@b.com.csv") == "a@b.com")
+        # ── v11.13 초대제 허용목록 (해시만 올린다) ──
+        import portfolio_allowlist as _al
+        check("allow: 이메일 정규화(대소문자)", _al.normalize(" A@B.COM ") == "a@b.com")
+        check("allow: 형식 아닌 값 거절",
+              _al.normalize("없음") is None and _al.normalize("") is None)
+        # ★로그에 원문이 새면 안 된다 — mail_config 내용은 밖으로 못 나간다
+        _mk = _al.mask("student01@example.kr")
+        check("allow: 마스킹이 원문을 안 드러낸다",
+              "2024010203" not in _mk and "ushs" not in _mk and _mk.endswith(".kr"), _mk)
+        # ★Apps Script 의 hmacHex_ 가 내는 값과 **바이트 단위로 같아야** 한다.
+        #   아래 기대값은 Apps Script 의 부호있는 바이트 변환을 Node 로 재현해 얻은 것이다.
+        #   어긋나면 대조가 전부 실패해 **아무도 등록하지 못한다**(전원 차단).
+        #   한글 주소까지 넣은 이유: UTF-8 인코딩이 양쪽에서 같아야 하기 때문이다.
+        _VEC = [
+            ("a@b.com",
+             "a40b8e6864e2ef145080116b5cad980d41a90860f5d9f5011c0331daf89ed614"),
+            ("student01@example.kr",
+             "57e55129b434cf63abd69540954c8ea7784131cd1d7d1a84b0ff28f3403fdd4b"),
+            ("한글@테스트.com",
+             "332cf5d2cc62360f6a32ae11cee0c711aaa3c2debc75a3380f3cadfc60689db4"),
+        ]
+        for _em, _exp in _VEC:
+            _got = _al.hash_all([_em], "test-secret-12345")[0]
+            check("allow: ★HMAC 고정 벡터 %s" % _al.mask(_em), _got == _exp,
+                  "got=%s exp=%s" % (_got, _exp))
+        check("allow: 해시 길이·형식(64자 16진)",
+              all(len(h) == 64 and all(c in "0123456789abcdef" for c in h)
+                  for h in _al.hash_all(["a@b.com", "한글@테스트.com"], "k")))
+        check("allow: SECRET 이 다르면 해시도 다르다",
+              _al.hash_all(["a@b.com"], "k1") != _al.hash_all(["a@b.com"], "k2"))
+        check("allow: 같은 입력은 항상 같은 해시",
+              _al.hash_all(["a@b.com"], "k") == _al.hash_all(["a@b.com"], "k"))
+
         # ── v11.13 실사고 대응: 탭 CSV·증권사 추정·코드/이름 대조 ──
         check("pf: 구분자 자동판별(쉼표)", _pf.sniff_delimiter("a,b,c") == ",")
         check("pf: ★탭 구분 파일도 읽는다(엑셀 유니코드 텍스트 저장)",

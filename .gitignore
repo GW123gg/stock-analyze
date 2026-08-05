@@ -47,3 +47,6 @@ tmp_cap/
 # ===== 개인 보유 정보 (v11.12) =====
 # portfolio.csv 는 *.csv 전역 규칙(32행)이 이미 막는다. 아래는 json 산출본만 추가.
 portfolio_review.json
+
+# --normalize 가 만드는 백업. 원본이 보유 내역이라 그대로 개인정보다.
+*.bak

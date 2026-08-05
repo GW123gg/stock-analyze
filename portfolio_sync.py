@@ -50,21 +50,55 @@ logging.basicConfig(level=logging.INFO, format="[pfsync] %(message)s")
 log = logging.getLogger("pfsync")
 
 
-def load_config():
-    """url·secret. ★값을 출력하지 않는다."""
-    cfg = {}
-    if not os.path.isfile(CONFIG_FILE):
-        return cfg
+GS_FILE = os.path.join(HERE, "cowork", "portfolio_webapp.gs")
+
+
+def secret_from_gs(path=None):
+    """웹앱 소스(.gs)의 `var SECRET = '...'` 를 읽는다. 못 읽으면 None.
+
+    ★.gs 가 정본이다 — 거기 적힌 값이 곧 배포된 값이라 설정 파일과 어긋날 수가 없다.
+      (실측: 설정 파일의 secret 줄이 편집기 덮어쓰기로 두 번 사라졌다. 그때마다
+       손으로 복구하는 대신 정본에서 가져온다.)
+    """
+    p = path or GS_FILE
+    if not os.path.isfile(p):
+        return None
     try:
-        with open(CONFIG_FILE, encoding="utf-8-sig", errors="replace") as f:
-            for raw in f:
-                s = raw.strip()
-                if not s or s.startswith("#") or "=" not in s:
-                    continue
-                k, _, v = s.partition("=")
-                cfg[k.strip().lower()] = v.strip()
-    except Exception as e:
-        log.warning("설정 읽기 실패: %s", e)
+        import re
+        with open(p, encoding="utf-8", errors="replace") as f:
+            m = re.search(r"var\s+SECRET\s*=\s*'([^']*)'", f.read())
+        if not m:
+            return None
+        v = m.group(1)
+        return v if (v and "CHANGE_ME" not in v and len(v) >= 16) else None
+    except Exception:
+        return None
+
+
+def load_config():
+    """url·secret. ★값을 출력하지 않는다.
+
+    secret 이 설정에 없으면 .gs 에서 채운다(둘은 어차피 같아야 한다).
+    """
+    cfg = {}
+    if os.path.isfile(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, encoding="utf-8-sig", errors="replace") as f:
+                for raw in f:
+                    s = raw.strip()
+                    if not s or s.startswith("#") or "=" not in s:
+                        continue
+                    k, _, v = s.partition("=")
+                    cfg[k.strip().lower()] = v.strip()
+        except Exception as e:
+            log.warning("설정 읽기 실패: %s", e)
+
+    if not cfg.get("secret"):
+        gs = secret_from_gs()
+        if gs:
+            cfg["secret"] = gs
+            log.info("secret 을 cowork/portfolio_webapp.gs 에서 가져왔다"
+                     "(설정 파일에 없음 — 정상 동작).")
     return cfg
 
 

@@ -935,6 +935,24 @@ def test_new_collectors_pure():
               _r and _r["ticker"] == "005930" and _r["avg_price"] == 71500.0 and _r["qty"] == 10,
               str((_r, _w)))
         check("pf: 종목코드 없으면 거부", _pf.parse_row({"평단가": "100", "수량": "1"})[0] is None)
+        # ★엑셀이 종목코드를 망가뜨리는 두 방식 — 선행 0 소실·텍스트서식. 전부 받아야 한다.
+        check("pf: 엑셀 선행0 소실 복원(34020->034020)",
+              _pf.normalize_ticker("34020") == ("034020", True))
+        check("pf: 정상 6자리는 복원 표시 안 함",
+              _pf.normalize_ticker("034020") == ("034020", False))
+        check("pf: 엑셀 텍스트서식 =\"034020\" 수용",
+              _pf.normalize_ticker('="034020"')[0] == "034020")
+        check("pf: HTS 표기 A034020 수용", _pf.normalize_ticker("A034020")[0] == "034020")
+        check("pf: 공백 포함 수용", _pf.normalize_ticker(" 34020 ")[0] == "034020")
+        check("pf: 7자리 이상 거부", _pf.normalize_ticker("1234567")[0] is None)
+        check("pf: 문자 거부", _pf.normalize_ticker("abc")[0] is None)
+        check("pf: 빈 값 거부", _pf.normalize_ticker("")[0] is None)
+        check("pf: 엑셀 안전 표기 생성", _pf.excel_safe_ticker("034020") == '="034020"')
+        # 망가진 코드로도 파싱이 끝까지 성공해야(사용자가 고치기 전에도 동작)
+        _rb, _ = _pf.parse_row({"종목코드": "34020", "종목명": "두산에너빌리티",
+                                "평단가": "50000", "수량": "3"})
+        check("pf: 망가진 코드로도 파싱 성공 + 복원 표시",
+              _rb and _rb["ticker"] == "034020" and _rb["ticker_fixed"] is True, str(_rb))
         check("pf: 수량 0 거부",
               _pf.parse_row({"종목코드": "005930", "평단가": "100", "수량": "0"})[0] is None)
         check("pf: 숫자 아닌 평단가 거부",

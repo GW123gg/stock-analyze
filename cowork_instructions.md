@@ -2377,6 +2377,10 @@ A. 호스트 supervisor 가 (꺼져 있거나 새 코드 미반영으로) RUN_NO
 
 ■ 순서 (predictions.json·trade_plan.json 저장 뒤에)
 
+0. ★`run_command("python portfolio_review.py --normalize", ...)` — **엑셀이 망가뜨린 CSV 를 먼저 고친다.**
+   엑셀은 CSV 를 열 때 `034020` 을 **숫자로 인식해 34020 으로 저장**하고(선행 0 소실),
+   BOM 이 없으면 cp949 로 읽어 **한글이 깨진다**. 이 명령이 둘 다 고치고 `.bak` 로 백업한다.
+   (읽기 쪽은 어차피 자동 복원하므로 안 돌려도 계산은 맞다 — 파일을 깨끗이 두기 위한 것이다.)
 1. `run_command("python portfolio_review.py", ...)` → 세션에 `portfolio_review.json`
    (각 보유의 손익·보유일수·**지수대비 알파**·우리 추천 이력·오늘 픽 여부 — 사실만 담긴다)
 2. 그 사실을 읽고 **네가 판단을 써라** → 세션에 `portfolio_strategy.md` 저장

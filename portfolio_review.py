@@ -58,6 +58,38 @@ except Exception:
 # =====================================================================
 # 순수 계산 (하네스가 검증한다)
 # =====================================================================
+def normalize_ticker(raw):
+    """엑셀이 망가뜨린 종목코드를 6자리로 복원. 반환 (ticker|None, 복원했나:bool).
+
+    ★엑셀은 CSV 의 `034020` 을 **숫자로 인식해 34020 으로 저장**한다(선행 0 소실).
+      한국 종목코드는 6자리 고정이라 5자리 이하는 무조건 선행 0 누락이므로 복원이 안전하다.
+    받아주는 형태: 034020 / 34020 / ="034020"(엑셀 텍스트 서식) / A034020(HTS 표기) / 공백 포함
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return None, False
+    # ="034020" — 엑셀에서 텍스트로 강제할 때 쓰는 형식
+    if s.startswith('="') and s.endswith('"'):
+        s = s[2:-1].strip()
+    elif s.startswith("=") and len(s) > 1:
+        s = s[1:].strip().strip('"')
+    s = s.strip('"').strip("'").replace(" ", "").replace("-", "")
+    # A034020 / KR7034020003 같은 접두 표기
+    if len(s) > 6 and s[0].isalpha() and s[1:].isdigit():
+        s = s[1:]
+    if not s.isdigit():
+        return None, False
+    if len(s) > 6:
+        return None, False
+    fixed = len(s) < 6
+    return s.zfill(6), fixed
+
+
+def excel_safe_ticker(tk):
+    """엑셀이 다시 열어도 선행 0 을 안 지우게 하는 표기. `="034020"` 형식."""
+    return '="%s"' % tk
+
+
 def parse_row(row):
     """CSV 한 행 → 표준 dict. 못 읽으면 (None, 사유)."""
     def g(*names):
@@ -67,12 +99,12 @@ def parse_row(row):
                     return (row[k] or "").strip()
         return ""
 
-    tk = g("종목코드", "ticker", "코드")
-    if not tk:
+    tk_raw = g("종목코드", "ticker", "코드")
+    if not tk_raw:
         return None, "종목코드 없음"
-    tk = tk.zfill(6) if tk.isdigit() else tk
-    if not (tk.isdigit() and len(tk) == 6):
-        return None, "종목코드 형식 오류: %s" % tk
+    tk, fixed = normalize_ticker(tk_raw)
+    if not tk:
+        return None, "종목코드 형식 오류: %s" % tk_raw
     try:
         price = float(str(g("평단가", "avg_price", "매입가")).replace(",", ""))
         qty = int(float(str(g("수량", "qty", "주식개수", "개수")).replace(",", "")))
@@ -83,7 +115,8 @@ def parse_row(row):
     d = g("매수일시", "buy_date", "매수일")[:10].replace("/", "-").replace(".", "-")
     return {"ticker": tk, "name": g("종목명", "name") or tk,
             "avg_price": price, "qty": qty, "buy_date": d,
-            "memo": g("메모", "memo", "note")}, ""
+            "memo": g("메모", "memo", "note"),
+            "ticker_fixed": fixed, "ticker_raw": tk_raw}, ""
 
 
 def merge_lots(rows):
@@ -258,8 +291,65 @@ def load_portfolio(path=CSV_FILE):
         if "예시 행" in (p.get("memo") or ""):
             warns.append("%d행은 예시 행입니다 — 지우고 실제 보유를 넣으세요" % i)
             continue
+        if p.get("ticker_fixed"):
+            warns.append("%d행 종목코드 복원: %s -> %s (엑셀이 선행 0 을 지웠다 — "
+                         "`--normalize` 로 파일을 고칠 수 있다)"
+                         % (i, p.get("ticker_raw"), p["ticker"]))
         rows.append(p)
     return merge_lots(rows), warns
+
+
+def normalize_csv(path=CSV_FILE):
+    """엑셀이 망가뜨린 CSV 를 제자리에서 고친다. 반환 (고친행수, 메시지리스트).
+
+    하는 일: ① 종목코드 6자리 복원 + `="034020"` 표기로 저장(엑셀이 다시 안 지운다)
+             ② **UTF-8 BOM 으로 저장** — BOM 이 없으면 엑셀이 cp949 로 읽어 한글이 깨진다
+    원본은 `portfolio.csv.bak` 로 백업한다.
+    """
+    msgs = []
+    if not os.path.isfile(path):
+        return 0, ["파일이 없습니다: %s" % path]
+    raw = None
+    for enc in ("utf-8-sig", "cp949", "utf-8"):
+        try:
+            with open(path, encoding=enc, newline="") as f:
+                rd = csv.DictReader(f)
+                raw = list(rd)
+                cols = rd.fieldnames or []
+            msgs.append("읽기 인코딩: %s" % enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+        except Exception as e:
+            return 0, ["읽기 실패: %s" % e]
+    if raw is None:
+        return 0, ["인코딩 판별 실패"]
+
+    n_fix = 0
+    tcol = next((c for c in cols if c and c.strip().replace(" ", "")
+                 in ("종목코드", "ticker", "코드")), None)
+    if not tcol:
+        return 0, ["'종목코드' 열을 찾지 못했습니다 (열: %s)" % ", ".join(cols)]
+    for r in raw:
+        tk, fixed = normalize_ticker(r.get(tcol))
+        if tk:
+            if fixed:
+                msgs.append("복원: %s -> %s" % (r.get(tcol), tk))
+                n_fix += 1
+            r[tcol] = excel_safe_ticker(tk)
+    try:
+        import shutil
+        shutil.copy2(path, path + ".bak")
+        # ★utf-8-sig = BOM 포함. 엑셀이 UTF-8 로 인식해 한글이 안 깨진다.
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(raw)
+    except Exception as e:
+        return 0, msgs + ["저장 실패: %s" % e]
+    msgs.append("저장 완료(UTF-8 BOM + 엑셀 안전 종목코드). 백업: %s.bak"
+                % os.path.basename(path))
+    return n_fix, msgs
 
 
 # =====================================================================
@@ -270,7 +360,16 @@ def main():
     ap.add_argument("--csv", default=CSV_FILE)
     ap.add_argument("--session", default=None, help="세션폴더(없으면 오늘 세션 자동)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--normalize", action="store_true",
+                    help="엑셀이 망가뜨린 CSV 를 고친다(선행 0 복원 + UTF-8 BOM 저장)")
     args = ap.parse_args()
+
+    if args.normalize:
+        n, msgs = normalize_csv(args.csv)
+        for m in msgs:
+            log.info("%s", m)
+        log.info("종목코드 복원 %d건", n)
+        return 0
 
     positions, warns = load_portfolio(args.csv)
     for w in warns:

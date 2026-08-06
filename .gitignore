@@ -50,3 +50,6 @@ portfolio_review.json
 
 # --normalize 가 만드는 백업. 원본이 보유 내역이라 그대로 개인정보다.
 *.bak
+
+# 전야 리서치 산출물(매일 밤 덮어씀 — 커밋 대상 아님)
+night_preview.md

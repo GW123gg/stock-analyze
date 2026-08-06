@@ -988,6 +988,30 @@ def test_new_collectors_pure():
         check("pf: 빈 증권사는 기본 대상", _pf.is_auto_broker("") is True)
         check("pf: 이메일 파일명 추출",
               _pf.email_from_path("portfolios/a@b.com.csv") == "a@b.com")
+        # ── v11.14 리포트 린트 ([7.0] 계약 기계 검사) ──
+        import report_lint as _rl
+        _NL = chr(10)
+        _good = ("# 리서치" + _NL + "## 오늘의 픽" + _NL + "표" + _NL
+                 + "## 내일 체크포인트" + _NL + "- a" + _NL + "---" + _NL
+                 + "## 부록 — 분석 근거" + _NL + "상세")
+        _iss, _m = _rl.lint_report(_good)
+        check("lint: 깨끗한 리포트는 무경고", _iss == [], str(_iss))
+        check("lint: 본문/부록 분리 측정",
+              _m["body_b"] > 0 and _m["app_b"] > 0 and _m["md_b"] == _m["body_b"] + _m["app_b"])
+        _iss2, _ = _rl.lint_report("## 오늘의 픽 F1 [5.9] force_scores T+1~2")
+        check("lint: 금지토큰 4종 + 구분자·체크포인트 누락 = 6건", len(_iss2) == 6,
+              "%d건: %s" % (len(_iss2), _iss2))
+        _iss3, _m3 = _rl.lint_report(_good, html_bytes=150_000)
+        check("lint: 실측 HTML 이 접힘 임계 초과면 경고",
+              any("접힌다" in i for i in _iss3) and _m3["est_render_b"] == 150_000)
+        _big = _good + "x" * 30_000
+        _iss4, _ = _rl.lint_report(_big)
+        check("lint: 추정(x4.1)으로도 크기 경고", any("접힌다" in i for i in _iss4))
+        _iss5, _ = _rl.lint_report(_good + chr(0x1F600))
+        check("lint: 4바이트 이모지 검출", any("4바이트" in i for i in _iss5))
+        check("lint: 항상 자문(발송 차단 아님) — 상수 확인",
+              _rl.GMAIL_CLIP_B == 102_400 and _rl.MD_BUDGET_B < _rl.GMAIL_CLIP_B / _rl.RENDER_RATIO)
+
         # ── v11.13 초대제 허용목록 (해시만 올린다) ──
         import portfolio_allowlist as _al
         check("allow: 이메일 정규화(대소문자)", _al.normalize(" A@B.COM ") == "a@b.com")

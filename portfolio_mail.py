@@ -150,7 +150,9 @@ def render_html(review, strategy_md, when=None):
         H.append('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
                  'style="border-collapse:collapse;font-size:13px;margin-bottom:8px;">')
         H.append('<tr style="background:#eef2fa;">')
-        for h in ("종목", "수량", "평단가", "현재가", "손익", "수익률", "지수대비", "보유"):
+        # ★증권사를 빼면 어느 것이 자동매매 대상인지 받는 사람이 알 수 없다.
+        #   '보유'(보유일수)는 매수일시를 안 받기로 해서 늘 비어 있으므로 뺐다.
+        for h in ("종목", "증권사", "수량", "평단가", "현재가", "손익", "수익률", "지수대비"):
             H.append('<th style="padding:8px 6px;text-align:right;color:#333;'
                      'border-bottom:1px solid #dde3ee;font-weight:600;">%s</th>' % h)
         H.append('</tr>')
@@ -161,6 +163,16 @@ def render_html(review, strategy_md, when=None):
             H.append('<td style="padding:8px 6px;text-align:left;border-bottom:1px solid #f0f2f7;">'
                      '<b>%s</b><div style="color:#999;font-size:11px;">%s</div></td>'
                      % (_esc(p.get("name")), _esc(p.get("ticker"))))
+            # 증권사 + 자동매매 대상 여부
+            _auto = p.get("auto_tradable", True)
+            H.append('<td style="padding:8px 6px;text-align:left;'
+                     'border-bottom:1px solid #f0f2f7;white-space:nowrap;">'
+                     '%s<span style="font-size:10px;padding:1px 4px;border-radius:3px;'
+                     'margin-left:4px;background:%s;color:%s;">%s</span></td>'
+                     % (_esc(p.get("broker") or "-"),
+                        "#eef2fa" if _auto else "#fff3e0",
+                        "#26437a" if _auto else "#8a5a00",
+                        "자동" if _auto else "참고"))
             for v in (p.get("qty"), _won(p.get("avg_price")), _won(p.get("last_close"))):
                 H.append('<td style="padding:8px 6px;text-align:right;'
                          'border-bottom:1px solid #f0f2f7;">%s</td>' % _esc(v))
@@ -170,19 +182,18 @@ def render_html(review, strategy_md, when=None):
                      'border-bottom:1px solid #f0f2f7;">%s</td>' % (cc, _pct(p.get("pnl_pct"))))
             H.append('<td style="padding:8px 6px;text-align:right;color:%s;'
                      'border-bottom:1px solid #f0f2f7;">%s</td>' % (ca, _pct(p.get("alpha_pct"))))
-            H.append('<td style="padding:8px 6px;text-align:right;color:#777;'
-                     'border-bottom:1px solid #f0f2f7;">%s일</td>'
-                     % _esc(p.get("held_days") if p.get("held_days") is not None else "-"))
             H.append('</tr>')
         H.append('</table>')
         H.append('<div style="font-size:11px;color:#999;margin-bottom:16px;">'
                  '지수대비 = 내 수익률 - 같은 기간 코스피 수익률. '
-                 '음수여도 지수가 더 빠졌으면 종목 선택은 나쁘지 않았던 것이다.</div>')
+                 '음수여도 지수가 더 빠졌으면 종목 선택은 나쁘지 않았던 것이다.<br>'
+                 '<b>자동</b> = 카이로스(미래에셋) 계좌라 자동매매가 다룰 수 있는 물량. '
+                 '<b>참고</b> = 다른 증권사라 직접 매매하셔야 합니다.</div>')
     else:
         H.append('<div style="padding:14px;background:#fff8e1;border-radius:8px;'
                  'font-size:13px;color:#7a5c00;margin-bottom:16px;">'
-                 'portfolio.csv 에 보유 종목이 없습니다. 엑셀로 열어 매수일시·종목코드·'
-                 '종목명·평단가·수량을 채우면 다음 메일부터 표시됩니다.</div>')
+                 '아직 등록된 보유 종목이 없습니다. 등록 화면에서 증권사·종목코드·'
+                 '종목명·평단가·수량을 넣으면 다음 메일부터 표시됩니다.</div>')
 
     # ── 전략(분석가가 쓴 부분) ──
     if strategy_md.strip():

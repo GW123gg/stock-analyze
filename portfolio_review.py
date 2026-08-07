@@ -45,7 +45,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CSV_FILE = os.path.join(HERE, "portfolio.csv")          # 구 단일 파일(하위호환)
 PORTFOLIO_DIR = os.path.join(HERE, "portfolios")       # ★사람마다 <이메일>.csv
 
-# ★자동매매(카이로스) 대상 증권사. 그 외는 '참고만'(사용자가 직접 매매).
+# ★자동매매 대상 증권사(미래에셋 계좌 = 노드 러너가 붙는 곳). 그 외는 '참고만'.
+#   '카이로스' 는 그 노트북의 옛 이름 — 기존 CSV 호환용으로 계속 인식한다.
 AUTO_BROKERS = ("카이로스", "미래에셋", "미래에셋카이로스", "kairos", "mirae")
 OUTPUT_DIR = os.path.join(HERE, "output")
 
@@ -64,7 +65,7 @@ except Exception:
 # 순수 계산 (하네스가 검증한다)
 # =====================================================================
 def is_auto_broker(broker):
-    """이 증권사가 자동매매(카이로스) 대상인가. 아니면 '참고만'이다.
+    """이 증권사가 자동매매 대상인가. 아니면 '참고만'이다.
 
     ★KB 등 다른 증권사 보유는 이 시스템이 주문을 낼 수 없다 — 사용자가 직접 매매한다.
       그래도 포트폴리오 전체를 봐야 비중·집중도·전략 판단이 맞으므로 함께 읽되, 구분해서 보여준다.
@@ -250,7 +251,7 @@ def sniff_delimiter(head_line):
 # ★모르면 카이로스로 두지 않는다 — 자동매매 대상이 아닌 물량을 대상으로 오인하면
 #   러너가 만질 수 없는 주식을 계획에 넣는다.
 _BROKER_HINTS = (
-    ("카이로스", ("카이로스", "kairos", "미래에셋", "미래에셋대우", "mirae")),
+    ("미래에셋", ("미래에셋", "미래에셋대우", "mirae", "카이로스", "kairos")),
     ("KB", ("kb", "케이비", "국민")),
     ("삼성", ("삼성증권",)),
     ("키움", ("키움",)),
@@ -311,7 +312,7 @@ def parse_row(row):
     memo = g("메모", "memo", "note")
     # ★증권사 열이 없는 옛 파일은 메모에서 찾아본다. 그래도 없을 때만 카이로스로 둔다
     #   (사용자의 자동매매 계좌가 카이로스라 그것이 기존 동작이다).
-    broker = g("증권사", "broker", "계좌") or broker_from_memo(memo) or "카이로스"
+    broker = g("증권사", "broker", "계좌") or broker_from_memo(memo) or "미래에셋"
 
     # 매수 시점 평균 환율(원/1단위). 해외만 필요하다.
     buy_fx = None
@@ -358,7 +359,7 @@ def merge_lots(rows):
                      "ticker": r["ticker"], "name": r["name"], "qty": 0, "cost": 0.0,
                      "fx_cost": 0.0,
                      "buy_date": r["buy_date"], "lots": 0, "memo": r.get("memo", ""),
-                     "broker": r.get("broker") or "카이로스",
+                     "broker": r.get("broker") or "미래에셋",
                      "auto_tradable": r.get("auto_tradable", True)}
         b = by[t]
         b["qty"] += r["qty"]
@@ -785,7 +786,7 @@ def _print_table(payload):
                  format(tot["total_pnl"], ","),
                  ("%+.2f%%" % tot["total_pnl_pct"]) if tot.get("total_pnl_pct") is not None else "-"))
         if tot.get("n_manual"):
-            print("  자동매매 대상 %d종 %s원 / * 참고(직접매매) %d종 %s원"
+            print("  주문 가능 %d종 %s원 / * 직접 매매 %d종 %s원"
                   % (tot["n_auto"], format(tot["auto_value"], ","),
                      tot["n_manual"], format(tot["manual_value"], ",")))
         if tot.get("top_weight_pct"):

@@ -982,7 +982,7 @@ def test_new_collectors_pure():
             {"ticker": "B", "name": "나", "value": 300, "cost": 500}])
         check("pf: 합계·집중도", _t["total_pnl"] == 0 and _t["top_weight_pct"] == 70.0, str(_t))
         # ── v11.13 다중 사용자 + 증권사 구분 ──
-        check("pf: 카이로스는 자동매매 대상", _pf.is_auto_broker("카이로스") is True)
+        check("pf: 미래에셋은 자동매매 대상", _pf.is_auto_broker("미래에셋") is True)
         check("pf: 미래에셋도 대상", _pf.is_auto_broker("미래에셋") is True)
         check("pf: ★KB 는 참고만(자동매매 아님)", _pf.is_auto_broker("KB") is False)
         check("pf: 빈 증권사는 기본 대상", _pf.is_auto_broker("") is True)
@@ -1140,8 +1140,13 @@ def test_new_collectors_pure():
         check("pf: ★탭 구분 파일도 읽는다(엑셀 유니코드 텍스트 저장)",
               _pf.sniff_delimiter("증권사	종목코드	종목명") == "	")
         check("pf: 세미콜론 구분", _pf.sniff_delimiter("a;b;c;d") == ";")
-        check("pf: 메모에서 증권사 추정(카이로스)",
-              _pf.broker_from_memo("카이로스(미래에셋)") == "카이로스")
+        # ★기존 CSV 가 '카이로스'(노트북 옛 이름)로 적혀 있어도 계속 인식해야 한다.
+        #   라벨만 미래에셋으로 바뀌었고 매칭 키워드는 그대로다.
+        check("pf: 메모에서 증권사 추정(카이로스 표기도 인식)",
+              _pf.broker_from_memo("카이로스(미래에셋)") == "미래에셋")
+        check("pf: 옛 표기 '카이로스' 도 자동매매 대상 유지",
+              _pf.is_auto_broker("카이로스") is True
+              and _pf.is_auto_broker("미래에셋") is True)
         check("pf: 메모에서 증권사 추정(KB)", _pf.broker_from_memo("kb증권") == "KB")
         check("pf: 메모에 증권사 없으면 None", _pf.broker_from_memo("장기보유") is None)
         # ★증권사 열이 없는 옛 파일에서 KB 보유가 '자동매매 대상'으로 잡히면 안 된다

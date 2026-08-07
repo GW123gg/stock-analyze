@@ -169,7 +169,7 @@ def group_by_email(rows):
                 continue
         by.setdefault(em, []).append({
             "국가": meta["name"],
-            "증권사": str(r.get("broker") or "카이로스").strip(),
+            "증권사": str(r.get("broker") or "미래에셋").strip(),
             "종목코드": pr.excel_safe_ticker(tk),      # ★엑셀이 선행 0 을 안 지우게
             "종목명": str(r.get("name") or "").strip(),
             "평단가": int(price) if price == int(price) else price,

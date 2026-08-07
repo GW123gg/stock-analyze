@@ -150,8 +150,8 @@ def render_html(review, strategy_md, when=None):
         H.append('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
                  'style="border-collapse:collapse;font-size:13px;margin-bottom:8px;">')
         H.append('<tr style="background:#eef2fa;">')
-        # ★증권사를 빼면 어느 것이 자동매매 대상인지 받는 사람이 알 수 없다.
-        #   '보유'(보유일수)는 매수일시를 안 받기로 해서 늘 비어 있으므로 뺐다.
+        # 증권사 = 어느 계좌 물량인지. '보유'(보유일수)는 매수일시를 안 받기로 해서
+        # 늘 비어 있으므로 뺐다.
         for h in ("종목", "국가", "증권사", "수량", "평단가", "현재가", "손익(원)", "수익률", "환차익", "지수대비"):
             H.append('<th style="padding:8px 6px;text-align:right;color:#333;'
                      'border-bottom:1px solid #dde3ee;font-weight:600;">%s</th>' % h)
@@ -167,16 +167,10 @@ def render_html(review, strategy_md, when=None):
             _cn = p.get("country_name") or "한국"
             H.append('<td style="padding:8px 6px;text-align:left;'
                      'border-bottom:1px solid #f0f2f7;white-space:nowrap;">%s</td>' % _esc(_cn))
-            # 증권사 + 자동매매 대상 여부
-            _auto = p.get("auto_tradable", True)
+            # 증권사 — 어느 계좌에 있는 물량인지
             H.append('<td style="padding:8px 6px;text-align:left;'
-                     'border-bottom:1px solid #f0f2f7;white-space:nowrap;">'
-                     '%s<span style="font-size:10px;padding:1px 4px;border-radius:3px;'
-                     'margin-left:4px;background:%s;color:%s;">%s</span></td>'
-                     % (_esc(p.get("broker") or "-"),
-                        "#eef2fa" if _auto else "#fff3e0",
-                        "#26437a" if _auto else "#8a5a00",
-                        "자동" if _auto else "참고"))
+                     'border-bottom:1px solid #f0f2f7;white-space:nowrap;">%s</td>'
+                     % _esc(p.get("broker") or "-"))
             _dp = 2 if p.get("currency") == "USD" else (1 if p.get("currency") == "JPY" else 0)
             def _amt(x):
                 if x is None:
@@ -205,8 +199,7 @@ def render_html(review, strategy_md, when=None):
                  '<b>해외 종목</b>: 평단가·현재가는 <b>현지 통화</b>($, 엔), 손익·수익률은 <b>원화</b>. '
                  '<b>환차익</b>은 그 수익률 중 환율이 만든 몫이다 — 주가가 올라도 원화가 강세면 '
                  '내 돈은 안 늘 수 있다.<br>'
-                 '<b>자동</b> = 카이로스(미래에셋) 계좌라 자동매매가 다룰 수 있는 물량. '
-                 '<b>참고</b> = 다른 증권사라 직접 매매하셔야 합니다.</div>')
+                 '</div>')
     else:
         H.append('<div style="padding:14px;background:#fff8e1;border-radius:8px;'
                  'font-size:13px;color:#7a5c00;margin-bottom:16px;">'
@@ -241,7 +234,6 @@ def render_html(review, strategy_md, when=None):
     H.append('<div style="margin-top:22px;padding-top:12px;border-top:1px solid #e8ebf2;'
              'font-size:11px;color:#999;line-height:1.6;">'
              '이 메일은 개인 보유 현황이라 <b>본인에게만</b> 발송됩니다(일반 리서치 메일과 별개).<br>'
-             '* 표시는 자동매매 대상이 아닌 계좌입니다 — 직접 매매하셔야 합니다.<br>'
              '투자 판단과 책임은 본인에게 있습니다. 수치는 직전 거래일 종가 기준입니다.</div>')
     H.append('</div></div>')
     return "\n".join(H)

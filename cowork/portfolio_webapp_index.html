@@ -183,8 +183,6 @@
   <div id="appMsg" class="msg"></div>
 
   <div class="note">
-    · 증권사가 <b>카이로스</b>인 종목만 자동매매 대상입니다(<span class="tag">자동</span>).
-      KB 등은 <span class="tag manual">참고</span>이며 직접 매매하셔야 합니다.<br>
     · <b>종목명을 정확히</b> 적어 주세요. 코드와 실제 종목명이 다르면 그 종목은 분석하지 않습니다
       (오타 하나로 전혀 다른 회사가 분석되는 걸 막습니다).<br>
     · 매수일시는 받지 않습니다 — 나눠 사면 의미가 없어서요. <b>평단가만 정확하면</b> 됩니다.
@@ -194,7 +192,7 @@
     · <b>미국·일본은 매수환율</b>을 함께 넣어 주세요. <b>평단가는 현지 통화</b>(달러·엔)로,
       환율은 <b>1달러당 원 / 1엔당 원</b>입니다(예: 1380 / 9.02).
       ※ 엔은 증권사가 '100엔당'으로 보여주는 경우가 많습니다 — 900이 아니라 <b>9.00</b>입니다.<br>
-    · 해외 종목은 <b>자동매매 대상이 아닙니다</b> — 증권사를 카이로스로 골라도 참고용입니다.<br>
+    · <b>증권사</b>는 그 종목을 보유한 계좌를 골라 주세요.<br>
     · 이미 등록된 줄의 <b>국가·증권사·종목코드는 고칠 수 없습니다</b>. 잘못 넣었으면 지우고 다시 넣으세요.<br>
     · 고친 줄은 <span style="background:#fffdf3;padding:0 4px;">노란색</span>,
       새 줄은 <span style="background:#f4f9f4;padding:0 4px;">초록색</span>으로 표시됩니다.
@@ -206,7 +204,7 @@
 (function () {
   'use strict';
 
-  var BROKERS = ['카이로스', 'KB', '삼성', '키움', 'NH', '한국투자', '토스', '기타'];
+  var BROKERS = ['미래에셋', 'KB', '삼성', '키움', 'NH', '한국투자', '토스', '기타'];
   // ★국가마다 종목코드 체계·통화가 다르다. 해외는 매수 평균환율이 있어야
   //   원화 손익을 낼 수 있다(주가가 올라도 원화 강세면 내 돈은 안 는다).
   var COUNTRIES = [
@@ -220,7 +218,6 @@
     }
     return COUNTRIES[0];
   }
-  var AUTO_BROKERS = ['카이로스', '미래에셋', '미래에셋카이로스'];
 
   var session = { email: '', code: '' };
   var rowSeq = 0;
@@ -370,7 +367,7 @@
     var cm = cmeta(cc);
 
     var ctry   = makeCountrySelect(cc, existing);
-    var broker = makeBrokerSelect(d.broker || '카이로스', existing);
+    var broker = makeBrokerSelect(d.broker || '미래에셋', existing);
     var ticker = makeInput(d.ticker, { maxlength: 10,
                                        placeholder: cm.ph, readonly: existing });
     var name   = makeInput(d.name, { placeholder: '두산에너빌리티' });

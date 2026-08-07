@@ -248,6 +248,21 @@ def test_validate_predictions():
     check("v9.6: dir!=argmax(prob) 차단", any("argmax" in e for e in v(bad)))
     bad = dict(base_mc, market_call={"kospi": {"dir": "down", "prob_up": 0.1, "prob_flat": 0.1, "prob_down": 0.8}})
     check("v9.6: 확률 상한 0.75 초과 차단(겸손 규칙)", any("0.75" in e for e in v(bad)))
+    # ── A43 규약 골든(v11.21) — 게이트는 v9.8 부터 기구현. 문서 명문화와 함께 케이스 동결 ──
+    ok43 = dict(base_mc, market_call={"kospi": {"dir": "neutral", "conviction": 0.4,
+                "prob_up": 0.3, "prob_flat": 0.4, "prob_down": 0.3}})
+    check("A43: argmax=flat 이면 dir=neutral 통과(동치)", v(ok43) == [], str(v(ok43)))
+    bad43 = dict(base_mc, market_call={"kospi": {"dir": "neutral", "conviction": 0.5,
+                 "prob_up": 0.5, "prob_flat": 0.3, "prob_down": 0.2}})
+    check("A43: argmax=up 인데 dir=neutral 차단(07-24 kosdaq형)",
+          any("argmax" in e for e in v(bad43)))
+    tie43 = dict(base_mc, market_call={"kospi": {"dir": "up", "conviction": 0.4,
+                 "prob_up": 0.4, "prob_flat": 0.4, "prob_down": 0.2}})
+    check("A43: 동률(1e-9 이내)은 통과 — 재작성 시 회귀 주의", v(tie43) == [], str(v(tie43)))
+    flat43 = dict(base_mc, market_call={"kospi": {"dir": "flat", "conviction": 0.4,
+                  "prob_up": 0.3, "prob_flat": 0.4, "prob_down": 0.3}})
+    check("A43: ★dir='flat' 토큰 거부(문서가 동치를 근거로 허용하면 발송 전멸)",
+          any("up/down/neutral" in e for e in v(flat43)))
     ok_rated = dict(ok_pick, rating="매수", rating_action="신규커버", target_price=85000)
     check("v9.6: 커버리지 필드 정상 통과", v({"picks": [ok_rated], "shorts": []}) == [])
     bad_rated = dict(ok_pick, rating="적극매수")
@@ -302,6 +317,12 @@ def test_compute_labels_golden():
         check("labels: peak_gain=+10 / days_to_peak=1",
               lab["peak_gain_pct"] == 10.0 and lab["days_to_peak"] == 1)
         check("labels: days_to_trough=3(저점 88)", lab["days_to_trough"] == 3, str(lab["days_to_trough"]))
+        # ── A42 숏 익절 실행가능 반사실(원장 23회차) ──
+        check("A42: D+4 커버 = 4행 종가 수익률(-8.0)",
+              lab["short_cover_d4_ret_pct"] == -8.0, str(lab["short_cover_d4_ret_pct"]))
+        check("A42: -9% 최초 도달일 = D+3(-12.0 실측 — -9 체결 가정 금지)",
+              lab["short_stop9_day"] == 3 and lab["short_stop9_ret_pct"] == -12.0,
+              "%s/%s" % (lab["short_stop9_day"], lab["short_stop9_ret_pct"]))
         # 저점 후 되돌림: 88 -> max(88,92,95)=95 -> +7.95%
         check("labels: post_trough_rebound ~ +7.95",
               abs(lab["post_trough_rebound_pct"] - 7.95) < 0.02, str(lab["post_trough_rebound_pct"]))

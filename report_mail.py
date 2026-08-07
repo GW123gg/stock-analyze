@@ -435,6 +435,17 @@ def main():
         return 1
     _mark_sent(key, sha, n_to)
     log.info("발송 완료: %s", msg)
+    # ★전야는 발송 성공 직후 원장에 적재한다(v11.21) — 23시 프롬프트에 별도 명령이 없어도
+    #   '발송된 콜'이 반드시 원장에 남는다. 위치가 발송 **뒤**인 이유(적대 검증):
+    #   미리보기·신선도 차단된 낡은 콜이 운용 콜을 supersede 하면 안 된다.
+    #   비치명 — 적재 실패가 이미 성공한 발송 결과를 바꾸지 않는다. 아침 배선은 보정용으로 유지(멱등).
+    if args.kind == "night":
+        try:
+            import night_track
+            _did, _why = night_track.ingest()
+            log.info("전야 원장 적재: %s", _why)
+        except Exception as _e:
+            log.warning("전야 원장 적재 실패(발송은 완료 — 아침 배선이 보정): %s", _e)
     print("REPORT_MAIL=success:%s:%d" % (args.kind, n_to))
     return 0
 

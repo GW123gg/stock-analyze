@@ -613,6 +613,8 @@ LABEL_COLS = [
     "ret_1", "ret_3", "ret_5", "ret_10", "ret_20",
     "peak_gain_pct", "days_to_peak", "post_peak_drawdown_pct", "max_drawdown_pct",
     "days_to_trough", "post_trough_rebound_pct",   # #R2 숏 경로(익절 설계)
+    # #A42(23회차 요청) 숏 익절 '실행 가능' 반사실 — D+4 커버 / -9% 도달 커버(종가 기준)
+    "short_cover_d4_ret_pct", "short_stop9_day", "short_stop9_ret_pct",
     "kospi_ret_h_pct", "alpha_h_pct",              # #R1 지수차감(베타/선택 분리)
     "ret_if_stop8_pct", "ret_if_stop8_tp12_pct",   # #S2 손절 반사실(규칙을 지켰다면)
     "ret_if_stop8_tp12_cap_pct",                   # #A15 익절 지정가 체결 가정(상방편향 보정판)
@@ -629,6 +631,36 @@ LABEL_COLS = [
     "kosdaq_ret_h_pct", "alpha_vs_own_idx_pct",
 ]
 SNAPSHOT_START_DATE = "2026-07-18"   # signals_snapshot_* 도입일. 그 이전 결측은 '정상'이다.
+
+
+def _partial_asof_index(rows):
+    """#A35: 미만기 행들의 partial_asof_date 별 {KOSPI 당일 등락%, 직전 5일 등락%}.
+
+    미만기 부분수익(ret_partial)은 단일일 종가 스냅샷이라 그날이 국면 극단(급반등/급락)이면
+    정반대로 읽힌다 — 회고가 스냅샷 편향을 즉시 알 수 있게 그날의 시장 맥락을 병기한다.
+    """
+    dates_need = sorted({str(r.get("partial_asof_date"))[:10] for r in rows
+                         if r.get("partial_asof_date") and not r.get("matured")})
+    if not dates_need:
+        return {}
+    ser = _ks11_series()          # [(date, close)] 오름차순
+    if not ser:
+        return {d: {"kospi_ret_1d_pct": None, "kospi_ret_5d_pct": None,
+                    "note": "KOSPI 시계열 조회 실패 — 값 없음(지어내지 않음)"}
+                for d in dates_need}
+    idx = {dt.strftime("%Y-%m-%d"): i for i, (dt, _c) in enumerate(ser)}
+    out = {}
+    for d in dates_need:
+        i = idx.get(d)
+        if i is None:
+            out[d] = {"kospi_ret_1d_pct": None, "kospi_ret_5d_pct": None}
+            continue
+        c = ser[i][1]
+        r1 = ((c / ser[i - 1][1] - 1.0) * 100.0) if i >= 1 else None
+        r5 = ((c / ser[i - 5][1] - 1.0) * 100.0) if i >= 5 else None
+        out[d] = {"kospi_ret_1d_pct": round(r1, 2) if r1 is not None else None,
+                  "kospi_ret_5d_pct": round(r5, 2) if r5 is not None else None}
+    return out
 
 
 def _snapshot_coverage(rows):
@@ -974,6 +1006,23 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
                 return round(r, 2)
         return round(rets[horizon], 2) if horizon < len(rets) else None
 
+    # #A42(원장 23회차): 숏 익절 반사실 2종. 기존 '저점 대비 +8% 반등 커버'는 사후 저점을
+    #   알아야 발동하는 **실전 불가 정의**라 철회됐다(원장 B(11)). 대체 후보 (a) D+4 경과 커버
+    #   (b) 진입 대비 -9% 도달 커버 — 임계 4일/-9% 는 원장 A42 가 지정한 값이다(자작 아님).
+    #   ★라벨일 뿐 규칙이 아니다(24회차 사전등록 검토용). 해석은 숏 전용(픽 행에도 값은
+    #   실리지만 의미 없음). 종가 기준(일봉이라 장중 터치 판정 불가) — _counterfactual 과 같은
+    #   정직성 규약: 이상적 -9% 체결 가정 금지, **도달한 날의 실제 종가 수익률**을 기록한다.
+    #   D+4 는 전방 거래일 행 인덱스(at(4)) — 캘린더 산술 없음(A39 의존 없음).
+    short_cover_d4 = at(4) if matured else None
+    short_stop9_day, short_stop9_ret = None, None
+    if matured:
+        for _k in range(1, horizon + 1):
+            if _k >= len(rets):
+                break
+            if rets[_k] <= -9.0:
+                short_stop9_day, short_stop9_ret = _k, round(rets[_k], 2)
+                break
+
     ret_stop8 = _counterfactual(-8.0)
     ret_stop8_tp12 = _counterfactual(-8.0, 12.0)   # auto stock strategy_config 의 실제 룰(-8/+12)
     ret_stop8_tp12_cap = _counterfactual(-8.0, 12.0, cap_tp=True)  # A15 상방편향 보정판(비교용 병존)
@@ -1004,6 +1053,10 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         # #R2 숏 경로 / #R1 알파(지수 차감) / #S2 손절 반사실
         "days_to_trough": worst_k,
         "post_trough_rebound_pct": round(post_trough_rb, 2) if post_trough_rb is not None else None,
+        # #A42 숏 익절 실행가능 반사실(종가 기준·숏 전용 해석·미만기 None)
+        "short_cover_d4_ret_pct": short_cover_d4,
+        "short_stop9_day": short_stop9_day,
+        "short_stop9_ret_pct": short_stop9_ret,
         "kospi_ret_h_pct": kospi_rh, "alpha_h_pct": alpha_h,
         "kosdaq_ret_h_pct": kosdaq_rh,
         "ret_if_stop8_pct": ret_stop8, "ret_if_stop8_tp12_pct": ret_stop8_tp12,
@@ -1453,6 +1506,9 @@ def main():
             "peak_day_vol_ratio": "고점일 거래량/평소(>1.5면 고점에 매물 집중=차익실현)",
             "trough_day_vol_ratio": "최대낙폭일 거래량/평소(>1.5면 큰손 투매)",
             "days_to_trough": "[라벨·#R2] 저점(최대낙폭)까지 거래일 수 — 숏 익절 타이밍('D+N') 설계용. 픽엔 눌림 깊이 시점",
+            "short_cover_d4_ret_pct": "[라벨·#A42·사후] 진입 후 4번째 거래일 종가 수익률 = 'D+4 경과 시 커버' 반사실. ★숏 전용 해석(숏은 음수가 이익). 규칙화는 24회차 사전등록 경로만 — 임계 4일은 23회차 같은 표본에서 나온 값이라 in-sample 재확인 경계, Δ 신규만기 우선",
+            "short_stop9_day": "[라벨·#A42·사후] 진입 대비 종가 -9% 최초 도달 거래일(없으면 null). 종가 기준 — 장중 터치 아님",
+            "short_stop9_ret_pct": "[라벨·#A42·사후] -9% 도달일의 **실제 종가** 수익률(-9 체결 가정 금지 — 갭 통과 시 더 낮은 실측값). '진입 -9% 도달 시 커버' 반사실",
             "post_trough_rebound_pct": "[라벨·#R2] 저점 이후 만기까지 최대 되돌림(%) — 숏이 익절 없이 버틸 때 반납하는 폭(스퀴즈 강도)",
             "ret_if_stop8_pct": "[라벨·#S2 반사실] -8% 손절을 지켰다면의 만기수익(%). ret_h 와 비교해 '손절이 얼마나 건졌나/승자를 잃었나' 판정(종가 근사 — 장중 터치 미반영)",
             "ret_if_stop8_tp12_pct": "[라벨·#S2 반사실] -8% 손절 + +12% 익절 룰(auto stock 실제 config)을 지켰다면의 수익(%). 익절일 갭상승 종가를 그대로 기록하므로 상방편향 있음(A15) — 룰 성과 평가에는 _cap 판을 쓰라",
@@ -1523,6 +1579,10 @@ def main():
         #   오인하거나(2026-07-24 회차) 반대로 못 알아챈다(07-19 누락은 6일간 미발견).
         #   → pred_date 별 커버리지를 메타로 노출해 회고가 즉시 판정하게 한다.
         "snapshot_coverage": _snapshot_coverage(rows),
+        # #A35(원장 21회차): 미만기 부분수익의 스냅샷 편향 즉시 탐지 — partial_asof_date 그날의
+        #   시장 맥락(실사고: 07-23 이 +4.40% 반등 최고점이라 미만기 숏이 손실로 오독될 뻔).
+        #   메타 전용(행 컬럼 아님 — LABEL_COLS 무관). _ks11_series 는 오늘 봉 기제외(A40).
+        "partial_asof_index": _partial_asof_index(rows),
         # ★A19: 범주형 허용값 — 분석이 접두/부분 매칭으로 추측하지 않도록 명시.
         "categorical_values": {
             "cap_bucket": CAP_BUCKETS,

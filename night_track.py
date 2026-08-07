@@ -115,7 +115,8 @@ def score_market(mcall, base_close, target_close):
 
     d = str(mcall.get("dir") or "").strip().lower()
     if d in ("up", "down", "flat", "neutral"):
-        # neutral 은 flat 과 동치로 본다 — A43(dir↔argmax 규약 미정)이 확정되면 따른다
+        # neutral ≡ flat (A43 확정, v11.21 — 라벨 매핑에 한함. 'flat' 토큰은 아침 콜에서 금지지만
+        #  여기서는 수용해 채점한다: 밤 스키마가 과거에 flat 을 쓴 적 있어도 성적이 빠지지 않게)
         dd = "flat" if d == "neutral" else d
         out["dir_hit"] = (dd == out["outcome"])
 

@@ -1042,6 +1042,19 @@ def test_new_collectors_pure():
                   for h in _al.hash_all(["a@b.com", "한글@테스트.com"], "k")))
         check("allow: SECRET 이 다르면 해시도 다르다",
               _al.hash_all(["a@b.com"], "k1") != _al.hash_all(["a@b.com"], "k2"))
+        # ★수신자를 추가하면 허용목록 지문이 반드시 달라져야 한다.
+        #   안 달라지면 --sync 가 "변경 없음"으로 넘겨 **새 수신자가 영영 막힌다**
+        #   (2026-08-06 실사고: 10번째 수신자가 웹 폼에서 등록 불가였다).
+        import hashlib as _hl
+        def _fp(ems, sec):
+            return _hl.sha256("".join(sorted(_al.hash_all(ems, sec))).encode()).hexdigest()
+        _base = ["a@x.com", "b@x.com"]
+        check("allow: ★수신자 추가 시 지문 변화",
+              _fp(_base, "k") != _fp(_base + ["c@x.com"], "k"))
+        check("allow: 순서만 다르면 지문 동일(불필요한 재전송 방지)",
+              _fp(_base, "k") == _fp(list(reversed(_base)), "k"))
+        check("allow: 지문에 주소 원문이 없다",
+              all(e not in _fp(_base, "k") for e in _base))
         check("allow: 같은 입력은 항상 같은 해시",
               _al.hash_all(["a@b.com"], "k") == _al.hash_all(["a@b.com"], "k"))
 

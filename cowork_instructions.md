@@ -2395,6 +2395,10 @@ A. 호스트 supervisor 가 (꺼져 있거나 새 코드 미반영으로) RUN_NO
 
 ■ 순서 (predictions.json·trade_plan.json 저장 뒤에)
 
+0-a. ★`run_command("python portfolio_allowlist.py --sync", ...)` — 웹앱 **초대제 허용목록**을
+   `mail_config.txt` 수신자와 맞춘다. 바뀐 게 없으면 아무 것도 안 한다(멱등, 조용함).
+   ★이걸 빼면 **수신자를 새로 추가해도 그 사람은 웹 폼에서 등록할 수 없다** —
+   "등록이 허용된 주소가 아닙니다"만 뜬다(2026-08-06 실사고: 10번째 수신자가 이렇게 막혔다).
 0. ★`run_command("python portfolio_sync.py", ...)` — 웹앱(Apps Script)에 등록된 내용을
    `portfolios/*.csv` 로 내려받는다. **설정 파일이 없으면 즉시 실패로 끝난다(정상)** —
    웹앱을 안 쓰면 이 단계를 건너뛰고 1번부터 하면 된다. 파일을 지우지는 않는다.

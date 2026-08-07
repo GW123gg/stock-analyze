@@ -103,9 +103,11 @@ def main():
     ap.add_argument("--check", action="store_true", help="대상만 확인(전송 안 함)")
     ap.add_argument("--push", action="store_true", help="웹앱에 올린다")
     ap.add_argument("--extra", default="", help="추가 허용 주소(쉼표 구분)")
+    ap.add_argument("--sync", action="store_true",
+                    help="달라졌을 때만 올린다(아침 파이프라인용 — 조용하고 멱등)")
     args = ap.parse_args()
 
-    if not args.check and not args.push:
+    if not args.check and not args.push and not args.sync:
         args.check = True       # 안전 기본값: 아무 것도 안 보낸다
 
     emails = recipients_from_mail_config()
@@ -121,8 +123,9 @@ def main():
 
     log.info("허용 대상 %d명 (수신자 %d + 추가 %d)",
              len(emails), len(emails) - len(extra), len(extra))
-    for e in emails:
-        log.info("   %s", mask(e))       # ★원문은 찍지 않는다
+    if not args.sync:
+        for e in emails:
+            log.info("   %s", mask(e))   # ★원문은 찍지 않는다
 
     if args.check:
         log.info("확인만 했다. 올리려면 --push 를 붙여라.")
@@ -140,6 +143,22 @@ def main():
         return 1
 
     hashes = hash_all(emails, secret)
+
+    # ★--sync: 지문이 그대로면 아무 것도 안 한다(멱등). 아침마다 불려도 조용하다.
+    #   지문은 해시들의 해시라 **주소 원문도, 개별 해시도 파일에 남지 않는다.**
+    if args.sync:
+        fp = hashlib.sha256(("".join(sorted(hashes))).encode()).hexdigest()
+        state = os.path.join(HERE, ".allowlist_state")
+        prev = ""
+        try:
+            with open(state, encoding="utf-8") as f:
+                prev = f.read().strip()
+        except Exception:
+            pass
+        if prev == fp:
+            log.info("허용목록 변경 없음 — 올리지 않는다(%d명).", len(emails))
+            return 0
+        log.info("수신자 목록이 바뀌었다 — 허용목록을 갱신한다(%d명).", len(emails))
     try:
         r = push(url, secret, hashes)
     except Exception as e:
@@ -154,8 +173,16 @@ def main():
         return 1
 
     log.info("올림 완료 — 허용 %d건 (주소 원문은 전송하지 않았다. 해시만)", r.get("count"))
-    log.info("이제 이 주소들만 웹 폼에서 등록할 수 있다.")
-    log.info("★SECRET 을 바꾸면 해시가 전부 달라진다 — 그때는 이 명령을 다시 돌려라.")
+    if args.sync:
+        try:
+            fp = hashlib.sha256(("".join(sorted(hashes))).encode()).hexdigest()
+            with open(os.path.join(HERE, ".allowlist_state"), "w", encoding="utf-8") as f:
+                f.write(fp)
+        except Exception as e:
+            log.warning("상태 저장 실패(다음에 또 올린다 — 무해): %s", e)
+    else:
+        log.info("이제 이 주소들만 웹 폼에서 등록할 수 있다.")
+        log.info("★SECRET 을 바꾸면 해시가 전부 달라진다 — 그때는 이 명령을 다시 돌려라.")
     return 0
 
 

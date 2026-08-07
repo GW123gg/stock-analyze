@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 import csv
 import json
 import glob
@@ -98,13 +99,51 @@ def list_people(folder=None):
     return out
 
 
-def normalize_ticker(raw):
-    """엑셀이 망가뜨린 종목코드를 6자리로 복원. 반환 (ticker|None, 복원했나:bool).
+# =====================================================================
+# 국가 (v11.15 — 미국·일본 주식)
+# =====================================================================
+# ★국가는 **종목 식별의 일부**다. 빼면 일본 7203(도요타)이 한국 007203 으로 조회되고,
+#   증권사가 카이로스면 자동매매 대상으로까지 잡힌다(실측 확인).
+COUNTRIES = {
+    "KR": {"name": "한국", "cur": "KRW", "sym": "원", "suffix": "",
+           "bench": "KS11", "bench_name": "코스피", "fx": None, "dp": 0},
+    "US": {"name": "미국", "cur": "USD", "sym": "$", "suffix": "",
+           "bench": "US500", "bench_name": "S&P500", "fx": "USD/KRW", "dp": 2},
+    "JP": {"name": "일본", "cur": "JPY", "sym": "엔", "suffix": ".T",
+           "bench": "N225", "bench_name": "닛케이225", "fx": "JPY/KRW", "dp": 1},
+}
+DEFAULT_COUNTRY = "KR"
 
-    ★엑셀은 CSV 의 `034020` 을 **숫자로 인식해 34020 으로 저장**한다(선행 0 소실).
-      한국 종목코드는 6자리 고정이라 5자리 이하는 무조건 선행 0 누락이므로 복원이 안전하다.
-    받아주는 형태: 034020 / 34020 / ="034020"(엑셀 텍스트 서식) / A034020(HTS 표기) / 공백 포함
+# 환율(원/1단위) 상식 범위 — 벗어나면 단위를 잘못 적은 것이다.
+#   ★엔은 증권사가 흔히 '100엔당'으로 보여준다. 900 을 그대로 적으면 평가액이 100배가 된다.
+FX_SANE = {"USD": (500.0, 3000.0), "JPY": (3.0, 30.0)}
+
+_COUNTRY_ALIAS = {
+    "KR": "KR", "한국": "KR", "국내": "KR", "KOR": "KR", "KOSPI": "KR", "KRX": "KR", "": "KR",
+    "US": "US", "미국": "US", "미주": "US", "USA": "US", "NASDAQ": "US", "NYSE": "US",
+    "JP": "JP", "일본": "JP", "JPN": "JP", "도쿄": "JP", "TSE": "JP",
+}
+
+
+def normalize_country(raw):
+    """'미국'/'US'/'usa' -> 'US'. 모르면 None(호출부가 거절한다). 빈칸은 KR(하위호환)."""
+    s = str(raw or "").strip().upper().replace(" ", "")
+    return _COUNTRY_ALIAS.get(s)
+
+
+def country_meta(code):
+    return COUNTRIES.get(code or DEFAULT_COUNTRY, COUNTRIES[DEFAULT_COUNTRY])
+
+
+def normalize_ticker(raw, country=None):
+    """종목코드 정규화. 반환 (ticker|None, 복원했나:bool).
+
+    ★국가마다 코드 체계가 다르다 — 한 규칙으로 다루면 다른 나라 종목이 조회된다.
+      · KR: 숫자 6자리(엑셀이 지운 선행 0 복원). `034020` / `34020` / `="034020"` / `A034020`
+      · US: 영문 티커. `AAPL` / `aapl` / `BRK.B` / `BRK-B`
+      · JP: 숫자 4자리(도쿄증권거래소). `7203`. **선행 0 을 채우지 않는다** — 채우면 KR 코드가 된다.
     """
+    c = country or DEFAULT_COUNTRY
     s = str(raw or "").strip()
     if not s:
         return None, False
@@ -113,16 +152,35 @@ def normalize_ticker(raw):
         s = s[2:-1].strip()
     elif s.startswith("=") and len(s) > 1:
         s = s[1:].strip().strip('"')
-    s = s.strip('"').strip("'").replace(" ", "").replace("-", "")
-    # A034020 / KR7034020003 같은 접두 표기
-    if len(s) > 6 and s[0].isalpha() and s[1:].isdigit():
+    s = s.strip('"').strip("'").replace(" ", "")
+
+    if c == "US":
+        s = s.upper().replace("-", ".")          # BRK-B -> BRK.B
+        if not re.match(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$", s):
+            return None, False
+        return s, False
+
+    if c == "JP":
+        s = s.replace("-", "")
+        if s.upper().endswith(".T"):
+            s = s[:-2]
+        if not (s.isdigit() and len(s) == 4):    # ★4자리 고정. zfill 금지(KR 코드와 충돌)
+            return None, False
+        return s, False
+
+    # KR
+    s = s.replace("-", "")
+    if len(s) > 6 and s[0].isalpha() and s[1:].isdigit():   # A034020 / KR7034020003
         s = s[1:]
-    if not s.isdigit():
-        return None, False
-    if len(s) > 6:
+    if not s.isdigit() or len(s) > 6:
         return None, False
     fixed = len(s) < 6
     return s.zfill(6), fixed
+
+
+def market_symbol(ticker, country):
+    """시세 조회용 심볼. 일본은 `.T` 를 붙여야 한다(7203 은 404, 7203.T 는 OK — 실측)."""
+    return "%s%s" % (ticker, country_meta(country)["suffix"])
 
 
 def excel_safe_ticker(tk):
@@ -223,12 +281,20 @@ def parse_row(row):
                     return (row[k] or "").strip()
         return ""
 
+    # ★국가 먼저 — 코드 체계·시세 심볼·벤치마크·통화가 전부 여기서 갈린다.
+    ctry_raw = g("국가", "country", "시장", "market")
+    country = normalize_country(ctry_raw)
+    if country is None:
+        return None, ("국가를 알 수 없음: %s (한국/미국/일본 중 하나)" % ctry_raw)
+    meta = country_meta(country)
+
     tk_raw = g("종목코드", "ticker", "코드")
     if not tk_raw:
         return None, "종목코드 없음"
-    tk, fixed = normalize_ticker(tk_raw)
+    tk, fixed = normalize_ticker(tk_raw, country)
     if not tk:
-        return None, "종목코드 형식 오류: %s" % tk_raw
+        hint = {"KR": "숫자 6자리", "US": "영문 티커(AAPL)", "JP": "숫자 4자리(7203)"}[country]
+        return None, "종목코드 형식 오류: %s — %s는 %s" % (tk_raw, meta["name"], hint)
     price_raw = str(g("평단가", "avg_price", "매입가")).replace(",", "")
     qty_raw = str(g("수량", "qty", "주식개수", "개수")).replace(",", "")
     if not price_raw.strip():
@@ -246,10 +312,33 @@ def parse_row(row):
     # ★증권사 열이 없는 옛 파일은 메모에서 찾아본다. 그래도 없을 때만 카이로스로 둔다
     #   (사용자의 자동매매 계좌가 카이로스라 그것이 기존 동작이다).
     broker = g("증권사", "broker", "계좌") or broker_from_memo(memo) or "카이로스"
-    return {"ticker": tk, "name": g("종목명", "name") or tk,
+
+    # 매수 시점 평균 환율(원/1단위). 해외만 필요하다.
+    buy_fx = None
+    if meta["fx"]:
+        fx_raw = str(g("매수환율", "buy_fx", "환율", "fx")).replace(",", "")
+        if not fx_raw.strip():
+            return None, ("%s 종목은 **매수환율**이 필요하다(1%s당 원). "
+                          "비워 두면 원화 손익을 계산할 수 없다." % (meta["name"], meta["sym"]))
+        try:
+            buy_fx = float(fx_raw)
+        except (TypeError, ValueError):
+            return None, "매수환율이 숫자가 아님: %s" % fx_raw
+        ok, why = fx_sane(meta["cur"], buy_fx)
+        if not ok:
+            return None, "매수환율 오류 — %s" % why
+
+    # ★★자동매매는 **국내 주식만** 대상이다. 카이로스 러너는 국내 HTS 만 조작한다.
+    #   국가를 안 보면 도요타(7203)가 국내 007203 으로 주문될 수 있다.
+    auto = is_auto_broker(broker) and country == "KR"
+
+    return {"country": country, "country_name": meta["name"],
+            "currency": meta["cur"], "cur_symbol": meta["sym"],
+            "ticker": tk, "name": g("종목명", "name") or tk,
             "avg_price": price, "qty": qty,
+            "buy_fx": buy_fx,                   # 해외만. KR 은 None
             "buy_date": d,                      # ★선택 — 불타기/물타기면 의미가 없어 비워도 된다
-            "broker": broker, "auto_tradable": is_auto_broker(broker),
+            "broker": broker, "auto_tradable": auto,
             "memo": memo,
             "ticker_fixed": fixed, "ticker_raw": tk_raw}, ""
 
@@ -260,15 +349,23 @@ def merge_lots(rows):
     for r in rows:
         # ★증권사가 다르면 같은 종목이어도 따로 센다 — 카이로스 것만 자동매매 대상이라
         #   합쳐버리면 '얼마를 자동으로 팔 수 있는가'가 틀어진다.
-        t = (r["ticker"], r.get("broker") or "")
+        # ★국가도 키다 — 일본 7203 과 한국 007203 은 다른 회사다.
+        c = r.get("country") or DEFAULT_COUNTRY
+        t = (c, r["ticker"], r.get("broker") or "")
         if t not in by:
-            by[t] = {"ticker": r["ticker"], "name": r["name"], "qty": 0, "cost": 0.0,
+            by[t] = {"country": c, "country_name": r.get("country_name"),
+                     "currency": r.get("currency"), "cur_symbol": r.get("cur_symbol"),
+                     "ticker": r["ticker"], "name": r["name"], "qty": 0, "cost": 0.0,
+                     "fx_cost": 0.0,
                      "buy_date": r["buy_date"], "lots": 0, "memo": r.get("memo", ""),
                      "broker": r.get("broker") or "카이로스",
                      "auto_tradable": r.get("auto_tradable", True)}
         b = by[t]
         b["qty"] += r["qty"]
         b["cost"] += r["avg_price"] * r["qty"]
+        # 매수환율도 **금액 가중평균** — 단순평균이면 큰 매수의 환율이 묻힌다.
+        if r.get("buy_fx"):
+            b["fx_cost"] += r["buy_fx"] * r["avg_price"] * r["qty"]
         b["lots"] += 1
         if r["buy_date"] and (not b["buy_date"] or r["buy_date"] < b["buy_date"]):
             b["buy_date"] = r["buy_date"]
@@ -277,27 +374,60 @@ def merge_lots(rows):
     out = []
     for b in by.values():
         b["avg_price"] = round(b["cost"] / b["qty"], 2) if b["qty"] else 0.0
+        b["buy_fx"] = round(b["fx_cost"] / b["cost"], 4) if b["cost"] and b["fx_cost"] else None
+        b.pop("fx_cost", None)
+        # 원가를 원화로 — 나라가 섞인 포트폴리오는 이게 없으면 합계를 못 낸다.
+        b["cost_krw"] = b["cost"] * (b["buy_fx"] or 1.0)
         out.append(b)
-    return sorted(out, key=lambda x: -x["cost"])
+    return sorted(out, key=lambda x: -x["cost_krw"])
 
 
-def compute_position(pos, last_close, index_ret_pct=None, today=None):
-    """보유 1건 + 현재가 → 손익 지표. 사실만 계산하고 판정하지 않는다."""
+def compute_position(pos, last_close, index_ret_pct=None, today=None, now_fx=None):
+    """보유 1건 + 현재가 → 손익 지표. 사실만 계산하고 판정하지 않는다.
+
+    ★해외 종목은 **현지 수익률과 원화 수익률을 나눈다.**
+      달러로 +10% 올랐어도 원화가 10% 강세면 내 돈은 그대로다. 둘을 뭉뚱그리면
+      '종목이 좋았나 환율이 좋았나'를 알 수 없다 — 알파(종목탓/시장탓)와 같은 축이다.
+      `value`·`cost`·`pnl` 은 **전부 원화**로 통일한다(나라가 섞인 합계를 내야 하므로).
+    """
     out = dict(pos)
     out["last_close"] = last_close
+    ctry = pos.get("country") or DEFAULT_COUNTRY
+    is_fx = country_meta(ctry)["fx"] is not None
+    buy_fx = pos.get("buy_fx") or 1.0
+    cur_fx = (now_fx if is_fx else 1.0)
+
     if not last_close or last_close <= 0:
-        out.update({"value": None, "pnl": None, "pnl_pct": None, "alpha_pct": None})
+        out.update({"value": None, "pnl": None, "pnl_pct": None, "alpha_pct": None,
+                    "local_pnl_pct": None, "fx_pnl_pct": None})
         out["_note"] = "현재가 조회 실패"
         return out
-    value = last_close * pos["qty"]
-    cost = pos["avg_price"] * pos["qty"]
+    if is_fx and not cur_fx:
+        out.update({"value": None, "pnl": None, "pnl_pct": None, "alpha_pct": None,
+                    "local_pnl_pct": round((last_close / pos["avg_price"] - 1.0) * 100.0, 2),
+                    "fx_pnl_pct": None})
+        out["_note"] = "환율 조회 실패 — 원화 환산 불가"
+        return out
+
+    # 현지통화 기준(순수 종목 성과)
+    local_ret = (last_close / pos["avg_price"] - 1.0) * 100.0
+    out["local_pnl_pct"] = round(local_ret, 2)
+    out["now_fx"] = round(cur_fx, 4) if is_fx else None
+    # 환율 기여분
+    out["fx_pnl_pct"] = round((cur_fx / buy_fx - 1.0) * 100.0, 2) if is_fx else None
+
+    # 원화 기준(실제 내 돈)
+    value = last_close * pos["qty"] * cur_fx
+    cost = pos["avg_price"] * pos["qty"] * buy_fx
     out["value"] = round(value)
     out["cost"] = round(cost)
     out["pnl"] = round(value - cost)
-    out["pnl_pct"] = round((last_close / pos["avg_price"] - 1.0) * 100.0, 2)
+    out["pnl_pct"] = round((value / cost - 1.0) * 100.0, 2) if cost else None
     # 지수 대비 — '내 종목이 나빴나, 시장이 나빴나'를 가른다(F8-b 와 같은 축)
-    out["alpha_pct"] = (round(out["pnl_pct"] - index_ret_pct, 2)
-                        if index_ret_pct is not None else None)
+    #   ★해외는 **현지 수익률 vs 현지 지수**로 비교한다(환율은 종목 선택과 무관).
+    base = out["local_pnl_pct"] if is_fx else out["pnl_pct"]
+    out["alpha_pct"] = (round(base - index_ret_pct, 2)
+                        if index_ret_pct is not None and base is not None else None)
     # 보유일수(캘린더)
     try:
         d0 = datetime.strptime(pos["buy_date"], "%Y-%m-%d").date()
@@ -328,8 +458,46 @@ def portfolio_totals(positions):
 # =====================================================================
 # 시세·교차참조
 # =====================================================================
-def _last_close(ticker, today=None):
-    """직전 거래일 종가. ★오늘 봉은 제외한다(A40 원칙 — 미확정 장중값 유입 차단)."""
+_FX_CACHE = {}
+
+
+def fx_rate(country, today=None):
+    """원/1단위 현재 환율. KR 은 1.0. 조회 실패는 None(0 으로 대체하지 않는다).
+
+    ★JPY/KRW 는 **1엔당 원**이다(실측 8.94). 증권사가 흔히 쓰는 '100엔당'과 다르니
+      사용자 입력을 받을 때도 단위를 명시하고 FX_SANE 로 검사한다.
+    """
+    m = country_meta(country)
+    if not m["fx"]:
+        return 1.0
+    key = m["fx"]
+    if key in _FX_CACHE:
+        return _FX_CACHE[key]
+    v = _last_close(key, today=today, raw=True)
+    _FX_CACHE[key] = v
+    return v
+
+
+def fx_sane(currency, rate):
+    """환율이 상식 범위인가. 반환 (ok, 사유|None)."""
+    lo, hi = FX_SANE.get(currency, (0.0, float("inf")))
+    if rate is None or rate <= 0:
+        return False, "환율이 없다"
+    if rate < lo:
+        return False, ("환율 %s 은 너무 작다(%s~%s 범위). 단위를 확인하라." % (rate, lo, hi))
+    if rate > hi:
+        extra = ""
+        if currency == "JPY" and lo <= rate / 100.0 <= hi:
+            extra = " — '100엔당'으로 적으신 것 같다. 1엔당으로 바꾸면 %.2f 다." % (rate / 100.0)
+        return False, ("환율 %s 은 너무 크다(%s~%s 범위).%s" % (rate, lo, hi, extra))
+    return True, None
+
+
+def _last_close(ticker, today=None, raw=False):
+    """직전 거래일 종가. ★오늘 봉은 제외한다(A40 원칙 — 미확정 장중값 유입 차단).
+
+    raw=True 면 ticker 를 그대로 쓴다(환율·지수처럼 국가 접미사가 필요 없는 심볼).
+    """
     if not FDR_OK:
         return None
     try:
@@ -337,22 +505,39 @@ def _last_close(ticker, today=None):
         if df is None or df.empty:
             return None
         t = today or date.today()
+        # ★결측(NaN)을 만나면 **더 뒤로 가야 한다.** 예전 코드는 '오늘 이전 첫 봉'에서
+        #   무조건 반환해, 그 봉이 NaN 이면 None 을 돌려주고 멈췄다(실측: USD/KRW 의
+        #   2026-08-06 이 NaN 이라 해외 손익이 통째로 비었다). 국내 종목도 직전일이
+        #   결측이면 같은 증상이 난다.
+        scanned = 0
         for ix in reversed(df.index):
             d = ix.date() if hasattr(ix, "date") else None
-            if d is not None and d < t:
+            if d is None or d >= t:
+                continue
+            scanned += 1
+            if scanned > 15:            # 너무 오래된 값을 조용히 쓰지 않는다(상폐·거래정지)
+                return None
+            try:
                 v = float(df.loc[ix, "Close"])
-                return v if v > 0 else None
+            except (TypeError, ValueError):
+                continue
+            if v == v and v > 0:        # v == v 는 NaN 판별
+                return v
     except Exception:
         return None
     return None
 
 
-def _index_ret_since(buy_date, today=None):
-    """매수일 이후 KOSPI 수익률(%). 알파 계산용."""
+def _index_ret_since(buy_date, today=None, country=None):
+    """매수일 이후 **그 나라 지수** 수익률(%). 알파 계산용.
+
+    ★미국 주식을 코스피와 비교하면 알파가 무의미하다 — 나라마다 벤치마크를 쓴다
+      (KR=코스피 / US=S&P500 / JP=닛케이225. 전부 실측으로 조회 확인).
+    """
     if not FDR_OK or not buy_date:
         return None
     try:
-        df = fdr.DataReader("KS11", buy_date)
+        df = fdr.DataReader(country_meta(country)["bench"], buy_date)
         if df is None or len(df) < 2:
             return None
         t = today or date.today()
@@ -443,7 +628,10 @@ def load_portfolio(path=CSV_FILE):
                          "`--normalize` 로 파일을 고칠 수 있다)"
                          % (i, p.get("ticker_raw"), p["ticker"]))
         # ★코드가 그 회사가 맞는지 확인 — 틀리면 **다른 회사를 분석하게 된다.**
-        ok, real = verify_ticker_name(p["ticker"], p["name"])
+        # ★KRX 조회는 국내 종목만 가능하다. 해외는 확인 불가로 두고 막지 않는다
+        #   ('확인 불가'와 '불일치'는 다르다 — 확인 못 한다고 버리면 미국주식이 전멸한다).
+        ok, real = ((True, None) if p.get("country", "KR") != "KR"
+                    else verify_ticker_name(p["ticker"], p["name"]))
         if not ok:
             warns.append("%d행 건너뜀 — 종목코드 %s 는 '%s' 입니다('%s' 아님). "
                          "코드를 확인해 주세요."
@@ -486,8 +674,13 @@ def normalize_csv(path=CSV_FILE):
                  in ("종목코드", "ticker", "코드")), None)
     if not tcol:
         return 0, ["'종목코드' 열을 찾지 못했습니다 (열: %s)" % ", ".join(cols)]
+    ccol = next((c for c in cols if c and c.strip().replace(" ", "")
+                 in ("국가", "country", "시장", "market")), None)
     for r in raw:
-        tk, fixed = normalize_ticker(r.get(tcol))
+        # ★국가별로 코드 체계가 다르다 — 국가를 무시하면 미국 AAPL 이 버려지고
+        #   일본 7203 이 한국 007203 으로 바뀐다.
+        rc = normalize_country(r.get(ccol) if ccol else "") or DEFAULT_COUNTRY
+        tk, fixed = normalize_ticker(r.get(tcol), rc)
         if tk:
             if fixed:
                 msgs.append("복원: %s -> %s" % (r.get(tcol), tk))
@@ -519,9 +712,11 @@ def review_one(csv_path, email, sess, today=None):
 
     out = []
     for p in positions:
-        lc = _last_close(p["ticker"], today)
-        idx = _index_ret_since(p["buy_date"], today) if p.get("buy_date") else None
-        row = compute_position(p, lc, idx, today)
+        c = p.get("country") or DEFAULT_COUNTRY
+        lc = _last_close(market_symbol(p["ticker"], c), today, raw=True)
+        idx = (_index_ret_since(p["buy_date"], today, country=c)
+               if p.get("buy_date") else None)
+        row = compute_position(p, lc, idx, today, now_fx=fx_rate(c, today))
         row["our_history"] = _our_history(p["ticker"])
         row["today_pick"] = _today_pick(p["ticker"], sess)
         out.append(row)
@@ -553,19 +748,37 @@ def _print_table(payload):
     print("포트폴리오: %s   (%s 기준 — 직전 거래일 종가)"
           % (payload["email"], datetime.now().strftime("%Y-%m-%d")))
     print("=" * 104)
-    print("%-9s %-8s %-11s %5s %10s %10s %10s %8s %8s"
-          % ("증권사", "티커", "종목", "수량", "평단가", "현재가", "평가손익", "수익률", "지수대비"))
+    print("%-4s %-8s %-8s %-11s %5s %11s %11s %11s %8s %8s %8s"
+          % ("국가", "증권사", "티커", "종목", "수량", "평단가", "현재가",
+             "평가손익(원)", "수익률", "환차익", "지수대비"))
     print("-" * 104)
+
+    def _amt(v, dp):
+        """현지통화 금액 — 달러·엔은 소수점이 의미 있다(250.35 를 250 으로 자르면 안 된다)."""
+        if v is None:
+            return "-"
+        return format(v, ",.%df" % dp) if dp else format(int(v), ",")
+
     for r in out:
         mark = "" if r.get("auto_tradable") else " *"
-        print("%-9s %-8s %-11s %5d %10s %10s %10s %8s %8s%s"
-              % ((r.get("broker") or "")[:8], r["ticker"], (r.get("name") or "")[:10], r["qty"],
-                 format(int(r["avg_price"]), ","),
-                 format(int(r["last_close"]), ",") if r.get("last_close") else "-",
+        dp = country_meta(r.get("country"))["dp"]
+        print("%-4s %-8s %-8s %-11s %5d %11s %11s %11s %8s %8s %8s%s"
+              % (country_meta(r.get("country"))["name"],
+                 (r.get("broker") or "")[:8], r["ticker"], (r.get("name") or "")[:10], r["qty"],
+                 _amt(r.get("avg_price"), dp), _amt(r.get("last_close"), dp),
                  format(r["pnl"], ",") if r.get("pnl") is not None else "-",
                  ("%+.2f%%" % r["pnl_pct"]) if r.get("pnl_pct") is not None else "-",
+                 ("%+.2f%%" % r["fx_pnl_pct"]) if r.get("fx_pnl_pct") is not None else "-",
                  ("%+.2f%%" % r["alpha_pct"]) if r.get("alpha_pct") is not None else "-", mark))
     print("-" * 104)
+    # 해외가 있으면 통화·환율 기준을 명시한다 — 평단가 250 과 70,000 이 같은 열에 섞이므로
+    _fx_used = {r.get("country"): r.get("now_fx") for r in out if r.get("now_fx")}
+    if _fx_used:
+        print("  ※ 평단가·현재가는 **현지 통화**(미국 $, 일본 엔), 평가손익은 **원화**. "
+              + " / ".join("%s %s원" % (country_meta(c)["cur"], format(v, ",.2f"))
+                           for c, v in sorted(_fx_used.items())))
+        print("  ※ 수익률=원화 기준(환율 포함) · 환차익=그중 환율이 만든 몫 · "
+              "지수대비=현지 수익률 - 그 나라 지수")
     if tot.get("total_cost"):
         print("합계: 원금 %s / 평가 %s / 손익 %s (%s)"
               % (format(tot["total_cost"], ","), format(tot["total_value"], ","),

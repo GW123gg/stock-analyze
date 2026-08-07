@@ -152,7 +152,7 @@ def render_html(review, strategy_md, when=None):
         H.append('<tr style="background:#eef2fa;">')
         # ★증권사를 빼면 어느 것이 자동매매 대상인지 받는 사람이 알 수 없다.
         #   '보유'(보유일수)는 매수일시를 안 받기로 해서 늘 비어 있으므로 뺐다.
-        for h in ("종목", "증권사", "수량", "평단가", "현재가", "손익", "수익률", "지수대비"):
+        for h in ("종목", "국가", "증권사", "수량", "평단가", "현재가", "손익(원)", "수익률", "환차익", "지수대비"):
             H.append('<th style="padding:8px 6px;text-align:right;color:#333;'
                      'border-bottom:1px solid #dde3ee;font-weight:600;">%s</th>' % h)
         H.append('</tr>')
@@ -163,6 +163,10 @@ def render_html(review, strategy_md, when=None):
             H.append('<td style="padding:8px 6px;text-align:left;border-bottom:1px solid #f0f2f7;">'
                      '<b>%s</b><div style="color:#999;font-size:11px;">%s</div></td>'
                      % (_esc(p.get("name")), _esc(p.get("ticker"))))
+            # 국가 — 해외는 평단가·현재가가 현지 통화라 반드시 보여야 한다
+            _cn = p.get("country_name") or "한국"
+            H.append('<td style="padding:8px 6px;text-align:left;'
+                     'border-bottom:1px solid #f0f2f7;white-space:nowrap;">%s</td>' % _esc(_cn))
             # 증권사 + 자동매매 대상 여부
             _auto = p.get("auto_tradable", True)
             H.append('<td style="padding:8px 6px;text-align:left;'
@@ -173,20 +177,34 @@ def render_html(review, strategy_md, when=None):
                         "#eef2fa" if _auto else "#fff3e0",
                         "#26437a" if _auto else "#8a5a00",
                         "자동" if _auto else "참고"))
-            for v in (p.get("qty"), _won(p.get("avg_price")), _won(p.get("last_close"))):
+            _dp = 2 if p.get("currency") == "USD" else (1 if p.get("currency") == "JPY" else 0)
+            def _amt(x):
+                if x is None:
+                    return "-"
+                try:
+                    return format(float(x), ",.%df" % _dp) if _dp else format(int(x), ",")
+                except Exception:
+                    return "-"
+            for v in (p.get("qty"), _amt(p.get("avg_price")), _amt(p.get("last_close"))):
                 H.append('<td style="padding:8px 6px;text-align:right;'
                          'border-bottom:1px solid #f0f2f7;">%s</td>' % _esc(v))
             H.append('<td style="padding:8px 6px;text-align:right;color:%s;'
                      'border-bottom:1px solid #f0f2f7;">%s</td>' % (cc, _won(p.get("pnl"))))
             H.append('<td style="padding:8px 6px;text-align:right;color:%s;font-weight:600;'
                      'border-bottom:1px solid #f0f2f7;">%s</td>' % (cc, _pct(p.get("pnl_pct"))))
+            _cf = _color(p.get("fx_pnl_pct"))
+            H.append('<td style="padding:8px 6px;text-align:right;color:%s;'
+                     'border-bottom:1px solid #f0f2f7;">%s</td>' % (_cf, _pct(p.get("fx_pnl_pct"))))
             H.append('<td style="padding:8px 6px;text-align:right;color:%s;'
                      'border-bottom:1px solid #f0f2f7;">%s</td>' % (ca, _pct(p.get("alpha_pct"))))
             H.append('</tr>')
         H.append('</table>')
         H.append('<div style="font-size:11px;color:#999;margin-bottom:16px;">'
-                 '지수대비 = 내 수익률 - 같은 기간 코스피 수익률. '
-                 '음수여도 지수가 더 빠졌으면 종목 선택은 나쁘지 않았던 것이다.<br>'
+                 '지수대비 = 내 수익률 - 같은 기간 <b>그 나라 지수</b>(한국 코스피 / 미국 S&amp;P500 / '
+                 '일본 닛케이225) 수익률. 음수여도 지수가 더 빠졌으면 종목 선택은 나쁘지 않았던 것이다.<br>'
+                 '<b>해외 종목</b>: 평단가·현재가는 <b>현지 통화</b>($, 엔), 손익·수익률은 <b>원화</b>. '
+                 '<b>환차익</b>은 그 수익률 중 환율이 만든 몫이다 — 주가가 올라도 원화가 강세면 '
+                 '내 돈은 안 늘 수 있다.<br>'
                  '<b>자동</b> = 카이로스(미래에셋) 계좌라 자동매매가 다룰 수 있는 물량. '
                  '<b>참고</b> = 다른 증권사라 직접 매매하셔야 합니다.</div>')
     else:

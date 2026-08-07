@@ -74,7 +74,7 @@
   .who b { color: #111; }
 
   .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
   th {
     padding: 8px 6px; text-align: left; color: #555; background: #f5f7fb;
     font-weight: 600; border-bottom: 1px solid #dde3ee; white-space: nowrap;
@@ -84,11 +84,13 @@
   td.num input { text-align: right; }
   tr.dirty td { background: #fffdf3; }
   tr.fresh td { background: #f4f9f4; }
+  .col-ctry   { width: 84px;  }
   .col-broker { width: 120px; }
   .col-code   { width: 110px; }
   .col-name   { width: 150px; }
   .col-price  { width: 110px; }
   .col-qty    { width: 80px;  }
+  .col-fx     { width: 100px; }
   .col-del    { width: 44px;  }
   .del {
     border: 0; background: none; color: #b71c1c; cursor: pointer;
@@ -153,11 +155,13 @@
     <table>
       <thead>
         <tr>
+          <th class="col-ctry">국가</th>
           <th class="col-broker">증권사</th>
           <th class="col-code">종목코드</th>
           <th class="col-name">종목명</th>
           <th class="col-price">평단가</th>
           <th class="col-qty">수량</th>
+          <th class="col-fx">매수환율</th>
           <th>메모</th>
           <th class="col-del"></th>
         </tr>
@@ -185,7 +189,13 @@
       (오타 하나로 전혀 다른 회사가 분석되는 걸 막습니다).<br>
     · 매수일시는 받지 않습니다 — 나눠 사면 의미가 없어서요. <b>평단가만 정확하면</b> 됩니다.
       물타기·불타기로 평단이 바뀌면 <b>그 줄의 평단가와 수량을 고치고 저장</b>하세요.<br>
-    · 이미 등록된 줄의 <b>증권사·종목코드는 고칠 수 없습니다</b>. 잘못 넣었으면 지우고 다시 넣으세요.<br>
+    · <b>국가</b>를 먼저 고르세요. 종목코드 형식이 나라마다 다릅니다 —
+      한국 숫자 6자리(034020) / 미국 영문(AAPL) / 일본 숫자 4자리(7203).<br>
+    · <b>미국·일본은 매수환율</b>을 함께 넣어 주세요. <b>평단가는 현지 통화</b>(달러·엔)로,
+      환율은 <b>1달러당 원 / 1엔당 원</b>입니다(예: 1380 / 9.02).
+      ※ 엔은 증권사가 '100엔당'으로 보여주는 경우가 많습니다 — 900이 아니라 <b>9.00</b>입니다.<br>
+    · 해외 종목은 <b>자동매매 대상이 아닙니다</b> — 증권사를 카이로스로 골라도 참고용입니다.<br>
+    · 이미 등록된 줄의 <b>국가·증권사·종목코드는 고칠 수 없습니다</b>. 잘못 넣었으면 지우고 다시 넣으세요.<br>
     · 고친 줄은 <span style="background:#fffdf3;padding:0 4px;">노란색</span>,
       새 줄은 <span style="background:#f4f9f4;padding:0 4px;">초록색</span>으로 표시됩니다.
       <b>저장</b>을 눌러야 반영됩니다.
@@ -197,6 +207,19 @@
   'use strict';
 
   var BROKERS = ['카이로스', 'KB', '삼성', '키움', 'NH', '한국투자', '토스', '기타'];
+  // ★국가마다 종목코드 체계·통화가 다르다. 해외는 매수 평균환율이 있어야
+  //   원화 손익을 낼 수 있다(주가가 올라도 원화 강세면 내 돈은 안 는다).
+  var COUNTRIES = [
+    { code: 'KR', name: '한국', ph: '034020', fx: false },
+    { code: 'US', name: '미국', ph: 'AAPL',   fx: true, fxPh: '1380',  unit: '1달러당 원' },
+    { code: 'JP', name: '일본', ph: '7203',   fx: true, fxPh: '9.02',  unit: '1엔당 원' }
+  ];
+  function cmeta(code) {
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      if (COUNTRIES[i].code === code) { return COUNTRIES[i]; }
+    }
+    return COUNTRIES[0];
+  }
   var AUTO_BROKERS = ['카이로스', '미래에셋', '미래에셋카이로스'];
 
   var session = { email: '', code: '' };
@@ -326,23 +349,57 @@
     return s;
   }
 
-  /** 한 줄을 만든다. existing=true 면 기존 등록분(증권사·종목코드 잠금). */
+  function makeCountrySelect(value, readonly) {
+    var s = document.createElement('select');
+    COUNTRIES.forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c.code; o.textContent = c.name;
+      if (c.code === value) { o.selected = true; }
+      s.appendChild(o);
+    });
+    if (readonly) { s.disabled = true; }
+    return s;
+  }
+
+  /** 한 줄을 만든다. existing=true 면 기존 등록분(국가·증권사·종목코드 잠금). */
   function buildRow(data, existing) {
     var tr = document.createElement('tr');
     tr.className = existing ? '' : 'fresh';
     var d = data || {};
+    var cc = d.country || 'KR';
+    var cm = cmeta(cc);
 
+    var ctry   = makeCountrySelect(cc, existing);
     var broker = makeBrokerSelect(d.broker || '카이로스', existing);
-    var ticker = makeInput(d.ticker, { numeric: true, maxlength: 8,
-                                       placeholder: '034020', readonly: existing });
+    var ticker = makeInput(d.ticker, { maxlength: 10,
+                                       placeholder: cm.ph, readonly: existing });
     var name   = makeInput(d.name, { placeholder: '두산에너빌리티' });
     var price  = makeInput(d.avg_price, { numeric: true, placeholder: '50000' });
     var qty    = makeInput(d.qty, { numeric: true, placeholder: '3' });
+    var fx     = makeInput(d.buy_fx, { numeric: true, placeholder: cm.fxPh || '' });
     var memo   = makeInput(d.memo, { placeholder: '산 이유 등' });
 
+    // 국가를 바꾸면 종목코드 예시와 환율칸이 따라 움직인다.
+    function applyCountry() {
+      var m = cmeta(ctry.value);
+      ticker.placeholder = m.ph;
+      if (m.fx) {
+        fx.disabled = false;
+        fx.placeholder = m.fxPh;
+        fx.title = '매수 시점 평균환율 (' + m.unit + ')';
+      } else {
+        fx.disabled = true;
+        fx.value = '';
+        fx.placeholder = '-';
+        fx.title = '국내 종목은 환율이 필요 없습니다';
+      }
+    }
+    applyCountry();
+    ctry.addEventListener('change', function () { applyCountry(); markDirty(tr); });
+
     var cells = [
-      [broker, ''], [ticker, ''], [name, ''],
-      [price, 'num'], [qty, 'num'], [memo, '']
+      [ctry, ''], [broker, ''], [ticker, ''], [name, ''],
+      [price, 'num'], [qty, 'num'], [fx, 'num'], [memo, '']
     ];
     cells.forEach(function (pair) {
       var td = document.createElement('td');
@@ -362,15 +419,17 @@
 
     // 원래 값 — 무엇이 바뀌었는지 판단하는 기준
     tr._orig = existing ? {
+      country: cc,
       broker: String(d.broker || ''), ticker: String(d.ticker || ''),
       name: String(d.name || ''), avg_price: String(d.avg_price == null ? '' : d.avg_price),
-      qty: String(d.qty == null ? '' : d.qty), memo: String(d.memo || '')
+      qty: String(d.qty == null ? '' : d.qty),
+      buy_fx: String(d.buy_fx == null ? '' : d.buy_fx), memo: String(d.memo || '')
     } : null;
-    tr._f = { broker: broker, ticker: ticker, name: name,
-              price: price, qty: qty, memo: memo };
+    tr._f = { country: ctry, broker: broker, ticker: ticker, name: name,
+              price: price, qty: qty, fx: fx, memo: memo };
     tr._id = ++rowSeq;
 
-    [name, price, qty, memo, ticker].forEach(function (inp) {
+    [name, price, qty, memo, ticker, fx].forEach(function (inp) {
       inp.addEventListener('input', function () { markDirty(tr); });
     });
     broker.addEventListener('change', function () { markDirty(tr); });
@@ -385,6 +444,7 @@
     var changed = f.name.value.trim() !== o.name
       || f.price.value.trim() !== o.avg_price
       || f.qty.value.trim() !== o.qty
+      || f.fx.value.trim() !== o.buy_fx
       || f.memo.value.trim() !== o.memo;
     tr.className = changed ? 'dirty' : '';
   }
@@ -421,7 +481,7 @@
     setBusy(true, ['btnSave', 'btnAddRow', 'btnReload']);
     rawCall('apiDelete', [{
       email: session.email, code: session.code,
-      ticker: tr._orig.ticker, broker: tr._orig.broker
+      country: tr._orig.country, ticker: tr._orig.ticker, broker: tr._orig.broker
     }], function (r) {
       setBusy(false, ['btnSave', 'btnAddRow', 'btnReload']);
       if (isExpired(r)) { backToLogin(r.error); return; }
@@ -442,6 +502,8 @@
       var tr = trs[i], f = tr._f;
       var isNew = !tr._orig;
       var row = {
+        country: f.country.value,
+        buy_fx: f.fx.value.trim(),
         broker: f.broker.value,
         ticker: f.ticker.value.trim(),
         name: f.name.value.trim(),
@@ -474,6 +536,7 @@
       show('appMsg', '저장 중... (' + (i + 1) + '/' + pending.length + ')', 'info');
       var payload = {
         email: session.email, code: session.code,
+        country: p.row.country, buy_fx: p.row.buy_fx,
         broker: p.row.broker, ticker: p.row.ticker, name: p.row.name,
         avg_price: p.row.avg_price, qty: p.row.qty, memo: p.row.memo
       };

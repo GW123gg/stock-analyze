@@ -44,7 +44,7 @@ for _s in (sys.stdout, sys.stderr):
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(HERE, "portfolio_sync_config.txt")
 PORTFOLIO_DIR = os.path.join(HERE, "portfolios")
-COLS = ["증권사", "종목코드", "종목명", "평단가", "수량", "메모", "매수일시"]
+COLS = ["국가", "증권사", "종목코드", "종목명", "평단가", "수량", "매수환율", "메모", "매수일시"]
 
 logging.basicConfig(level=logging.INFO, format="[pfsync] %(message)s")
 log = logging.getLogger("pfsync")
@@ -134,9 +134,16 @@ def group_by_email(rows):
         if "@" not in em or "." not in em.split("@")[-1]:
             bad.append("%d행: 이메일 형식 아님(%s)" % (i, em[:40]))
             continue
-        tk, _fixed = pr.normalize_ticker(r.get("ticker"))
+        # ★국가 먼저 — 코드 체계가 나라마다 다르다(KR 6자리 / US 영문 / JP 4자리).
+        country = pr.normalize_country(r.get("country"))
+        if country is None:
+            bad.append("%d행(%s): 국가를 알 수 없음(%s)" % (i, em, str(r.get("country"))[:20]))
+            continue
+        meta = pr.country_meta(country)
+        tk, _fixed = pr.normalize_ticker(r.get("ticker"), country)
         if not tk:
-            bad.append("%d행(%s): 종목코드 이상(%s)" % (i, em, str(r.get("ticker"))[:20]))
+            bad.append("%d행(%s): %s 종목코드 이상(%s)"
+                       % (i, em, meta["name"], str(r.get("ticker"))[:20]))
             continue
         try:
             price = float(str(r.get("avg_price")).replace(",", ""))
@@ -147,12 +154,27 @@ def group_by_email(rows):
         if price <= 0 or qty <= 0:
             bad.append("%d행(%s): 평단가·수량이 0 이하" % (i, em))
             continue
+        # 해외는 매수 시점 환율(원/1단위)이 있어야 원화 손익을 낼 수 있다.
+        buy_fx = ""
+        if meta["fx"]:
+            try:
+                buy_fx = float(str(r.get("buy_fx")).replace(",", ""))
+            except (TypeError, ValueError):
+                bad.append("%d행(%s): %s 종목인데 매수환율이 없거나 숫자가 아님"
+                           % (i, em, meta["name"]))
+                continue
+            ok, why = pr.fx_sane(meta["cur"], buy_fx)
+            if not ok:
+                bad.append("%d행(%s): 매수환율 — %s" % (i, em, why))
+                continue
         by.setdefault(em, []).append({
+            "국가": meta["name"],
             "증권사": str(r.get("broker") or "카이로스").strip(),
             "종목코드": pr.excel_safe_ticker(tk),      # ★엑셀이 선행 0 을 안 지우게
             "종목명": str(r.get("name") or "").strip(),
             "평단가": int(price) if price == int(price) else price,
             "수량": qty,
+            "매수환율": buy_fx,
             "메모": str(r.get("memo") or "").strip(),
             "매수일시": "",                            # 웹에서 받지 않는다(불타기/물타기라 무의미)
         })

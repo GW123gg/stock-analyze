@@ -988,6 +988,83 @@ def test_new_collectors_pure():
         check("pf: 빈 증권사는 기본 대상", _pf.is_auto_broker("") is True)
         check("pf: 이메일 파일명 추출",
               _pf.email_from_path("portfolios/a@b.com.csv") == "a@b.com")
+        # ── v11.15 해외 주식(미국·일본) ──
+        # ★국가는 종목 식별의 일부다. 빼면 일본 7203(도요타)이 한국 007203 이 되고,
+        #   증권사가 카이로스면 자동매매 대상으로까지 잡힌다.
+        check("intl: 일본 4자리는 zfill 하지 않는다",
+              _pf.normalize_ticker("7203", "JP")[0] == "7203")
+        check("intl: 같은 문자열이 한국에선 6자리가 된다",
+              _pf.normalize_ticker("7203", "KR")[0] == "007203")
+        check("intl: 미국은 영문 티커", _pf.normalize_ticker("aapl", "US")[0] == "AAPL")
+        check("intl: BRK-B -> BRK.B", _pf.normalize_ticker("BRK-B", "US")[0] == "BRK.B")
+        check("intl: 국가가 틀리면 거절",
+              _pf.normalize_ticker("AAPL", "KR")[0] is None
+              and _pf.normalize_ticker("034020", "JP")[0] is None
+              and _pf.normalize_ticker("7203", "US")[0] is None)
+        check("intl: 국가 별칭", _pf.normalize_country("미국") == "US"
+              and _pf.normalize_country("일본") == "JP"
+              and _pf.normalize_country("") == "KR"
+              and _pf.normalize_country("중국") is None)
+        check("intl: 일본은 .T 접미사(7203 은 404, 7203.T 는 OK — 실측)",
+              _pf.market_symbol("7203", "JP") == "7203.T"
+              and _pf.market_symbol("AAPL", "US") == "AAPL")
+        # ★★해외는 절대 자동매매 대상이 아니다 — 러너는 국내 HTS 만 조작한다
+        _ru, _ = _pf.parse_row({"국가": "미국", "증권사": "카이로스", "종목코드": "AAPL",
+                                "종목명": "애플", "평단가": "250", "수량": "1",
+                                "매수환율": "1380"})
+        check("intl: ★카이로스라도 해외면 자동매매 대상 아님",
+              _ru and _ru["auto_tradable"] is False, str(_ru))
+        _rk2, _ = _pf.parse_row({"국가": "한국", "증권사": "카이로스", "종목코드": "034020",
+                                 "종목명": "두산", "평단가": "1", "수량": "1"})
+        check("intl: 국내 카이로스는 자동매매 대상", _rk2 and _rk2["auto_tradable"] is True)
+        # 환율 필수 + 단위 검사
+        _rn2, _why2 = _pf.parse_row({"국가": "미국", "증권사": "KB", "종목코드": "AAPL",
+                                     "종목명": "애플", "평단가": "250", "수량": "1"})
+        check("intl: 해외인데 환율 없으면 거절",
+              _rn2 is None and "매수환율" in _why2, str(_why2))
+        _r100, _w100 = _pf.parse_row({"국가": "일본", "증권사": "KB", "종목코드": "7203",
+                                      "종목명": "도요타", "평단가": "2800", "수량": "1",
+                                      "매수환율": "910"})
+        check("intl: ★'100엔당' 오기를 잡고 되돌릴 값을 알려준다",
+              _r100 is None and "100엔당" in _w100 and "9.10" in _w100, str(_w100))
+        check("intl: 환율 상식 범위",
+              _pf.fx_sane("USD", 1380)[0] is True and _pf.fx_sane("JPY", 9.02)[0] is True
+              and _pf.fx_sane("USD", 5)[0] is False and _pf.fx_sane("JPY", 900)[0] is False)
+        # 국가가 다르면 합치지 않는다
+        _mi = _pf.merge_lots([
+            {"country": "JP", "ticker": "7203", "name": "도요타", "avg_price": 2800,
+             "qty": 1, "buy_date": "", "memo": "", "broker": "KB",
+             "auto_tradable": False, "buy_fx": 9.0},
+            {"country": "KR", "ticker": "7203", "name": "다른회사", "avg_price": 100,
+             "qty": 1, "buy_date": "", "memo": "", "broker": "KB",
+             "auto_tradable": False, "buy_fx": None}])
+        check("intl: ★국가가 다르면 같은 코드여도 분리", len(_mi) == 2, str(_mi))
+        # 환율 가중평균 + 원화 원가
+        _mf = _pf.merge_lots([
+            {"country": "US", "ticker": "AAPL", "name": "애플", "avg_price": 100, "qty": 1,
+             "buy_date": "", "memo": "", "broker": "KB", "auto_tradable": False, "buy_fx": 1000.0},
+            {"country": "US", "ticker": "AAPL", "name": "애플", "avg_price": 100, "qty": 3,
+             "buy_date": "", "memo": "", "broker": "KB", "auto_tradable": False, "buy_fx": 1400.0}])
+        check("intl: 매수환율은 금액 가중평균(1000x1 + 1400x3 -> 1300)",
+              len(_mf) == 1 and abs(_mf[0]["buy_fx"] - 1300.0) < 0.01, str(_mf))
+        check("intl: 원화 원가 = 현지원가 x 매수환율",
+              abs(_mf[0]["cost_krw"] - 400 * 1300.0) < 1, str(_mf[0].get("cost_krw")))
+        # 현지 수익률 / 환차익 / 원화 수익률 분리
+        _cp = _pf.compute_position(
+            {"country": "US", "ticker": "AAPL", "name": "애플", "avg_price": 100.0,
+             "qty": 1, "buy_date": "", "buy_fx": 1000.0},
+            last_close=110.0, index_ret_pct=5.0, now_fx=1100.0)
+        check("intl: 현지 수익률 +10%", abs(_cp["local_pnl_pct"] - 10.0) < 0.01)
+        check("intl: 환차익 +10%", abs(_cp["fx_pnl_pct"] - 10.0) < 0.01)
+        check("intl: 원화 수익률 +21%(복리)", abs(_cp["pnl_pct"] - 21.0) < 0.01, str(_cp["pnl_pct"]))
+        check("intl: ★알파는 **현지** 수익률 - 현지 지수(환율은 종목선택과 무관)",
+              abs(_cp["alpha_pct"] - 5.0) < 0.01, str(_cp["alpha_pct"]))
+        _cp2 = _pf.compute_position(
+            {"country": "US", "ticker": "AAPL", "name": "애플", "avg_price": 100.0,
+             "qty": 1, "buy_date": "", "buy_fx": 1000.0}, last_close=110.0, now_fx=None)
+        check("intl: 환율 조회 실패면 원화값을 지어내지 않는다",
+              _cp2["pnl"] is None and _cp2["local_pnl_pct"] == 10.0)
+
         # ── v11.14 리포트 린트 ([7.0] 계약 기계 검사) ──
         import report_lint as _rl
         _NL = chr(10)

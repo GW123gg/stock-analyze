@@ -112,6 +112,20 @@ UNAVAILABLE = {
 
 DEFAULT_SCREENS = ["short_lend", "foreign_inst", "investor_daily", "night_fut_quote"]
 
+# ★리포트 시각별 화면 묶음 (v11.19)
+#   장중·장후·전야 리포트는 **그 시각에 살아 있는 값**이 있어야 한다. 아침 06:20 자료만
+#   재탕하면 "새벽에 본 것"을 되풀이하는 셈이고, 그건 이미 아침 메일로 나갔다.
+#   ★특히 야간에는 KRX 정규장이 닫혀 공개 API 가 거의 죽는다 — 야간선물(9308)은
+#     카이로스 HTS 캡처가 **유일한 국내 실시간 창구**다.
+PHASE_SCREENS = {
+    # 장중: 지금 누가 사고 있나 + 선물이 현물을 끌고 있나
+    "intraday":    ["foreign_inst", "program_daily", "basis", "investor_daily"],
+    # 장후: 확정 수급 + 공매도/대차 + 시간외 흐름
+    "after_close": ["investor_daily", "short_lend", "short_top", "lend_top", "afterhours"],
+    # 전야: 야간선물이 핵심(밤엔 이것 말고 국내 실시간 지표가 없다)
+    "night":       ["night_fut_quote", "basis"],
+}
+
 # 0254(투자자 일별)의 변형 15종 — 생략하면 전부 순회하므로(15장·수 분) 필요한 것만 지정하라.
 VARIANTS = {
     "investor_daily": ["kospi", "kosdaq", "kospi200", "futures", "fut_spread",
@@ -125,6 +139,28 @@ VARIANTS = {
 # 노트북 무인 사이클(인계문서 §6): 02:35 안전종료 → 02:45 재부팅 → 05:00 자동로그인.
 # 이 창에서는 hts=false 가 **정상**이다 — 장애로 오인해 사람을 부르지 않게 한다.
 MAINT_START, MAINT_END = "02:30", "05:10"
+
+
+def resolve_session_for_phase(output_dir, today=None):
+    """phase 캡처가 쓸 **오늘 세션**. 분석 완료 여부를 따지지 않는다.
+
+    ★`common.resolve_session` 은 `03_final_report.md` 가 있는 세션을 일부러 제외한다 —
+      신호 수집기가 아침 스냅샷을 덮어써 회고를 오염시킨 사고(07-18·07-20) 때문이다.
+      그 가드는 **그대로 둔다.**
+
+      하지만 장중·장후·전야 캡처는 성격이 다르다:
+        · 목적이 "아침 이후에 새로 생긴 값"이라 분석이 끝난 뒤에 도는 게 정상이다.
+        · 파일명이 `hts_capture_<phase>.json` 이라 아침 `hts_capture.json` 을 **건드리지 않는다**.
+      그래서 여기서만 오늘 세션을 직접 찾되, 아래 write 경로에서 파일명을 강제 검사한다.
+    """
+    import glob as _glob
+    from datetime import datetime as _dt
+    if not os.path.isdir(output_dir):
+        return None
+    day = (today or _dt.now()).strftime("%Y-%m-%d")
+    cands = sorted(p for p in _glob.glob(os.path.join(output_dir, day + "_*"))
+                   if os.path.isdir(p) and not os.path.basename(p).startswith("_"))
+    return cands[-1] if cands else None
 
 
 def in_maintenance(now_hhmm: str) -> bool:
@@ -158,7 +194,7 @@ def front_futures_month(today=None):
     return None
 
 
-def collect(session_dir, screen_keys, tickers=None, save_images=True):
+def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None):
     """화면 목록 수집 → payload. 부분 실패해도 계속한다(전부 실패해도 exit 0)."""
     h = kc.health()
     if not h.get("hts") or h.get("hts_login_screen"):
@@ -172,6 +208,7 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True):
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "tz": "KST",
             "source": "kairos_hts_capture", "agent_reachable": True,
             "blocked": "login_screen" if h.get("hts_login_screen") else "hts_not_found",
+            "phase": phase,
             "health": h, "n_requested": len(screen_keys), "n_ok": 0, "captures": [],
             "note": ("HTS 미로그인/미실행으로 수집 불가 — 값 없음이 아니라 '확인 불가'다. "
                      + ("노트북 점검창(02:30~05:10 재부팅·자동로그인) 안이라 **정상**이며 "
@@ -277,6 +314,7 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True):
         "n_masking_failed": _mask_fail,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "tz": "KST", "source": "kairos_hts_capture", "agent_reachable": True,
+        "phase": phase,          # ★어느 시각용 캡처인가(report_mail 이 신선도 판정에 쓴다)
         "health": {k: h.get(k) for k in ("hts", "hts_login_screen", "current_screen", "now_kst")},
         "watchlist_used": list(tickers or []) if did_set else None,
         "n_requested": len(results), "n_ok": ok_n,
@@ -324,6 +362,9 @@ def main():
     ap = argparse.ArgumentParser(description="카이로스 HTS 캡처 → 세션 hts_capture.json")
     ap.add_argument("--session", default=None)
     ap.add_argument("--screens", default=None, help="쉼표구분 화면 키(기본 4종)")
+    ap.add_argument("--phase", choices=sorted(PHASE_SCREENS),
+                    help="리포트 시각별 화면 묶음(intraday/after_close/night). "
+                         "--screens 보다 우선한다.")
     ap.add_argument("--tickers", default=None, help="쉼표구분(미지정 시 세션 predictions 에서)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--check", action="store_true", help="상태·화면목록만 점검(저장 안 함)")
@@ -343,7 +384,12 @@ def main():
         log.info("kairos_api.txt 에 토큰 없음 → 무동작 종료(노트북 연동 전 정상)")
         return 0
 
-    keys = [s.strip() for s in (args.screens or ",".join(DEFAULT_SCREENS)).split(",") if s.strip()]
+    if args.phase:
+        keys = list(PHASE_SCREENS[args.phase])
+        log.info("phase=%s → 화면 %d종: %s", args.phase, len(keys), ", ".join(keys))
+    else:
+        keys = [s.strip() for s in (args.screens or ",".join(DEFAULT_SCREENS)).split(",")
+                if s.strip()]
 
     if args.check:
         h = kc.health()
@@ -358,15 +404,28 @@ def main():
             log.warning("screens 조회 실패: %s", type(e).__name__)
         return 0
 
-    session = args.session or resolve_session(OUTPUT_DIR)
+    if args.phase:
+        # phase 캡처는 분석 완료 세션에도 쓴다(새 파일명이라 아침 스냅샷과 충돌 없음)
+        session = args.session or resolve_session_for_phase(OUTPUT_DIR)
+    else:
+        session = args.session or resolve_session(OUTPUT_DIR)
     if not session or not os.path.isdir(session):
         log.warning("세션 폴더를 찾을 수 없음 → 종료")
         return 0
 
     tickers = ([t.strip() for t in args.tickers.split(",") if t.strip()]
                if args.tickers else _tickers_from_session(session))
-    payload = collect(session, keys, tickers=tickers)
-    out = args.out or os.path.join(session, "hts_capture.json")
+    payload = collect(session, keys, tickers=tickers, phase=args.phase)
+    # ★phase 캡처는 **파일을 따로** 쓴다. 아침 hts_capture.json 을 장중 캡처가 덮으면
+    #   회고가 "그날 아침 분석가가 본 화면"을 영영 잃는다(세션 스냅샷 오염 — CLAUDE.md 경고).
+    _name = ("hts_capture_%s.json" % args.phase) if args.phase else "hts_capture.json"
+    out = args.out or os.path.join(session, _name)
+    # ★★phase 캡처가 아침 스냅샷을 덮는 것을 코드로 막는다. 파일명이 어긋나면 즉시 중단 —
+    #   이게 뚫리면 회고가 '그날 아침 분석가가 본 화면'을 영영 잃는다.
+    if args.phase and os.path.basename(out) == "hts_capture.json":
+        log.error("phase 캡처가 아침 파일(hts_capture.json)을 덮으려 한다 — 중단.")
+        log.error("  --out 을 지정했다면 파일명을 hts_capture_%s.json 으로 바꿔라.", args.phase)
+        return 1
     try:
         save_json_atomic(out, payload)
         log.info("저장: %s (ok %d/%d · 폐기 %d장)", out, payload.get("n_ok", 0),

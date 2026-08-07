@@ -1025,6 +1025,29 @@ def test_new_collectors_pure():
         finally:
             shutil.rmtree(_tdr, ignore_errors=True)
         check("rmail: 종류 3종 정의", sorted(_rm.KINDS) == ["after_close", "intraday", "night"])
+        # ── v11.19 카이로스 캡처 필수 ──
+        import hts_capture_collect as _hc
+        check("phase: 시각별 화면 묶음 3종",
+              sorted(_hc.PHASE_SCREENS) == ["after_close", "intraday", "night"])
+        check("phase: ★전야는 야간선물이 들어간다(밤엔 유일한 국내 실시간 창구)",
+              "night_fut_quote" in _hc.PHASE_SCREENS["night"])
+        check("phase: 장중은 실시간 수급·베이시스",
+              set(["foreign_inst", "program_daily", "basis"])
+              <= set(_hc.PHASE_SCREENS["intraday"]))
+        check("phase: 모든 화면 키가 카탈로그에 존재",
+              all(k in _hc.SCREENS for v in _hc.PHASE_SCREENS.values() for k in v))
+        # 캡처 상태 블록 — 실패를 숨기지 않는다
+        _b0 = _rm.render_capture_block({"present": False}, "night")
+        check("rmail: ★캡처 없으면 경고 배너", "캡처 없음" in _b0 and "아침 06:20" in _b0)
+        _b1 = _rm.render_capture_block(
+            {"present": True, "n_ok": 1, "n_req": 3, "age_min": 5,
+             "screens": ["basis(0313)"], "failed": ["short_lend(0231) — agent_error"]}, "night")
+        check("rmail: ★부분 실패를 메일에 드러낸다",
+              "1/3" in _b1 and "확인 불가" in _b1 and "agent_error" in _b1)
+        _b2 = _rm.render_capture_block(
+            {"present": True, "n_ok": 2, "n_req": 2, "age_min": 3,
+             "screens": ["night_fut_quote(9308)"], "failed": []}, "night")
+        check("rmail: 전부 성공이면 조용한 표시", "2/2" in _b2 and "확인 불가" not in _b2)
 
         # ── v11.15 해외 주식(미국·일본) ──
         # ★국가는 종목 식별의 일부다. 빼면 일본 7203(도요타)이 한국 007203 이 되고,

@@ -189,7 +189,7 @@ def inline_styles(html):
     return html
 
 
-def render(kind, md_text, asof=None):
+def render(kind, md_text, asof=None, capture_html=""):
     """Gmail 안전 HTML. 아침 렌더(render_report_html)를 쓰지 않는다 — 무겁고 아침 전용."""
     try:
         import research_agent as ra
@@ -209,12 +209,84 @@ def render(kind, md_text, asof=None):
              'padding-bottom:12px;border-bottom:1px solid #e8ebf2;">%s%s</div>'
              % (datetime.now().strftime("%Y-%m-%d %H:%M"),
                 (" · 기준 %s" % asof) if asof else ""))
+    if capture_html:
+        H.append(capture_html)
     H.append(body)
     H.append('<div style="margin-top:20px;padding-top:12px;border-top:1px solid #e8ebf2;'
              'font-size:11px;color:#999;line-height:1.6;">'
              '아침 리포트의 후속 보고입니다. 투자 판단과 책임은 본인에게 있습니다.</div>')
     H.append('</div></div>')
     return "\n".join(H)
+
+
+def capture_status(kind, session=None):
+    """이 시각의 카이로스 캡처 상태. 반환 dict.
+
+    ★장중·장후·전야 리포트는 **그 시각에 살아 있는 값**이 있어야 한다(v11.19 사용자 요구).
+      아침 06:20 자료만 재탕하면 이미 아침 메일로 나간 내용을 되풀이하는 것이다.
+      특히 밤에는 KRX 정규장이 닫혀 공개 API 가 거의 죽어, 야간선물은 HTS 캡처가
+      **유일한 국내 실시간 창구**다.
+    """
+    base = session or latest_session()
+    out = {"required": True, "present": False, "n_ok": 0, "n_req": 0,
+           "age_min": None, "screens": [], "failed": [], "path": None}
+    if not base:
+        return out
+    p = os.path.join(base, "hts_capture_%s.json" % kind)
+    if not os.path.isfile(p):
+        return out
+    d = _load_json(p)
+    out["present"] = True
+    out["path"] = p
+    out["n_ok"] = int(d.get("n_ok") or 0)
+    out["n_req"] = int(d.get("n_requested") or 0)
+    out["blocked"] = d.get("blocked")
+    try:
+        gen = datetime.strptime(str(d.get("generated_at"))[:19], "%Y-%m-%d %H:%M:%S")
+        out["age_min"] = int((datetime.now() - gen).total_seconds() // 60)
+    except Exception:
+        pass
+    for c in (d.get("captures") or []):
+        nm = "%s(%s)" % (c.get("screen"), c.get("screen_no") or "")
+        if str(c.get("status")) == "ok":
+            out["screens"].append(nm)
+        else:
+            out["failed"].append("%s — %s" % (nm, c.get("status")))
+    return out
+
+
+def render_capture_block(cs, kind):
+    """메일 상단에 붙는 카이로스 캡처 상태 블록. 실패를 **숨기지 않는다**."""
+    label = KINDS[kind]["label"]
+    if not cs["present"]:
+        return ('<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+                'style="background:#ffebee;border:1px solid #ffcdd2;border-radius:8px;'
+                'margin-bottom:16px;"><tr><td style="padding:12px 14px;">'
+                '<div style="font-size:13px;font-weight:600;color:#b71c1c;">'
+                '실시간 화면 캡처 없음</div>'
+                '<div style="font-size:12px;color:#8a3a3a;margin-top:4px;line-height:1.6;">'
+                '이 %s 보고는 <b>아침 06:20 자료만</b> 사용했습니다. 장중에 바뀐 수급·'
+                '베이시스·야간선물은 반영되지 않았습니다 — 그만큼 할인해서 읽으세요.</div>'
+                '</td></tr></table>' % label)
+    ok, req = cs["n_ok"], cs["n_req"]
+    bad = ok < req
+    bg, bd, fg = (("#fff8e1", "#ffe0a3", "#8a5a00") if bad
+                  else ("#f7f9fc", "#e2e8f4", "#26437a"))
+    H = ['<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+         'style="background:%s;border:1px solid %s;border-radius:8px;margin-bottom:16px;">'
+         '<tr><td style="padding:12px 14px;">' % (bg, bd)]
+    H.append('<div style="font-size:13px;font-weight:600;color:%s;">'
+             '실시간 화면 캡처 %d/%d%s</div>'
+             % (fg, ok, req, ("  · %d분 전" % cs["age_min"]) if cs["age_min"] is not None else ""))
+    if cs["screens"]:
+        H.append('<div style="font-size:12px;color:#555;margin-top:4px;">%s</div>'
+                 % ", ".join(cs["screens"][:8]))
+    if cs["failed"]:
+        H.append('<div style="font-size:12px;color:#8a5a00;margin-top:4px;line-height:1.6;">'
+                 '실패: %s<br>실패한 화면의 값은 <b>확인 불가</b>입니다 — 0 으로 읽지 마세요.</div>'
+                 % ", ".join(cs["failed"][:6]))
+    H.append('</td></tr></table>')
+    return "".join(H)
 
 
 def _sent_index():
@@ -253,19 +325,23 @@ def main():
     ap.add_argument("--session", default=None, help="세션 폴더(장중·마감용)")
     ap.add_argument("--send", action="store_true", help="실제 발송(없으면 미리보기)")
     ap.add_argument("--force", action="store_true", help="중복·신선도 가드를 넘어 강행")
+    ap.add_argument("--no-capture-check", action="store_true",
+                    help="카이로스 캡처가 아예 없어도 보낸다(권장하지 않음)")
     ap.add_argument("--check", action="store_true", help="무엇을 보낼 수 있는지만 본다")
     args = ap.parse_args()
 
     if args.check or not args.kind:
-        log.info("%-12s %-10s %s", "종류", "상태", "파일")
+        log.info("%-12s %-10s %-10s %s", "종류", "상태", "캡처", "파일")
         log.info("-" * 72)
         for kind in sorted(KINDS):
             md, meta = find_report(kind, args.session)
             if not md:
-                log.info("%-12s %-10s -", kind, "없음")
+                log.info("%-12s %-10s %-10s -", kind, "없음", "-")
                 continue
             ok, why, asof = freshness(kind, md, meta)
-            log.info("%-12s %-10s %s%s", kind, "보낼수있음" if ok else "낡음",
+            _cs = capture_status(kind, args.session)
+            _cap = ("캡처 %d/%d" % (_cs["n_ok"], _cs["n_req"])) if _cs["present"] else "★캡처없음"
+            log.info("%-12s %-10s %-10s %s%s", kind, "보낼수있음" if ok else "낡음", _cap,
                      os.path.relpath(md, HERE), ("  (%s)" % why) if why else "")
         log.info("")
         log.info(quota_note(0))
@@ -297,8 +373,30 @@ def main():
         print("REPORT_MAIL=skipped:already_sent")
         return 0
 
+    # ★★카이로스 실시간 캡처 확인 — 이 리포트들의 존재 이유가 "아침 이후의 값"이다.
+    #   캡처를 **아예 안 돌린 것**은 운영 실수라 막는다(사람이 고칠 수 있다).
+    #   캡처는 돌았는데 일부 실패한 것은 현실이므로, 막지 않고 메일에 크게 표시한다.
+    sess_for_cap = args.session or (os.path.dirname(md_path)
+                                    if KINDS[args.kind]["scope"] == "session" else None)
+    cs = capture_status(args.kind, sess_for_cap)
+    if not cs["present"]:
+        if not (args.no_capture_check or args.force):
+            log.error("[%s] 카이로스 캡처가 없다 — 아침 자료만으로는 보내지 않는다.", args.kind)
+            log.error("  먼저: python hts_capture_collect.py --phase %s", args.kind)
+            log.error("  (캡처가 정말 불가능하면 --no-capture-check 로 보낼 수 있지만,")
+            log.error("   그 메일에는 '실시간 캡처 없음' 경고가 크게 붙는다.)")
+            print("REPORT_MAIL=blocked:no_capture")
+            return 1
+        log.warning("[%s] 캡처 없이 보낸다 — 메일에 경고 배너가 붙는다.", args.kind)
+    elif cs["n_ok"] < cs["n_req"]:
+        log.warning("[%s] 캡처 %d/%d — 실패분은 '확인 불가'로 메일에 표시된다: %s",
+                    args.kind, cs["n_ok"], cs["n_req"], ", ".join(cs["failed"][:4]))
+    else:
+        log.info("[%s] 캡처 %d/%d ok (%s분 전): %s", args.kind, cs["n_ok"], cs["n_req"],
+                 cs["age_min"], ", ".join(cs["screens"][:6]))
+
     subject = KINDS[args.kind]["subject"] % (asof or date.today().strftime("%Y-%m-%d"))
-    html = render(args.kind, md, asof)
+    html = render(args.kind, md, asof, capture_html=render_capture_block(cs, args.kind))
 
     # 미리보기는 항상 남긴다(발송 전 눈으로 확인할 수 있게)
     prev_path = os.path.join(os.path.dirname(md_path),

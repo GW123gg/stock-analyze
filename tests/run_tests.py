@@ -19,7 +19,7 @@ import sys
 import json
 import shutil
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -988,6 +988,44 @@ def test_new_collectors_pure():
         check("pf: 빈 증권사는 기본 대상", _pf.is_auto_broker("") is True)
         check("pf: 이메일 파일명 추출",
               _pf.email_from_path("portfolios/a@b.com.csv") == "a@b.com")
+        # ── v11.17 2차 리포트 발송(장중·마감·전야) ──
+        import report_mail as _rm
+        # ★Gmail 은 <style> 블록을 지운다 — 태그마다 인라인이어야 표가 산다
+        _ih = _rm.inline_styles("<table><tr><th>a</th><td>b</td></tr></table><hr><h2>t</h2>")
+        check("rmail: 표·제목·구분선에 인라인 스타일",
+              'border-collapse' in _ih and '<th style=' in _ih
+              and '<td style=' in _ih and '<hr style=' in _ih and '<h2 style=' in _ih, _ih[:90])
+        check("rmail: 이미 style 이 있으면 덮지 않는다",
+              _rm.inline_styles('<td style="x">v</td>') == '<td style="x">v</td>')
+        # 신선도 — '파일이 있다'는 신선함이 아니다
+        _tdr = tempfile.mkdtemp(prefix="rmail_")
+        try:
+            _nmd = os.path.join(_tdr, "night_preview.md")
+            _njs = os.path.join(_tdr, "night_preview.json")
+            io.open(_nmd, "w", encoding="utf-8").write("## 전야")
+            _mk = lambda d: json.dump({"for_date": d}, io.open(_njs, "w", encoding="utf-8"))
+            _today = datetime.now().date()
+            _mk((_today + timedelta(days=1)).strftime("%Y-%m-%d"))
+            check("rmail: 전야가 내일 대상이면 통과",
+                  _rm.freshness("night", _nmd, _njs)[0] is True)
+            _mk((_today - timedelta(days=1)).strftime("%Y-%m-%d"))
+            _ok, _why, _ = _rm.freshness("night", _nmd, _njs)
+            check("rmail: ★지난밤 전야 파일은 막는다(23시 작업 실패 잔재)",
+                  _ok is False and "지난 밤" in _why, _why)
+            _imd = os.path.join(_tdr, "intraday_1100.md")
+            _ijs = os.path.join(_tdr, "intraday_review.json")
+            io.open(_imd, "w", encoding="utf-8").write("# 장중")
+            json.dump({"trade_date": (_today - timedelta(days=1)).strftime("%Y-%m-%d")},
+                      io.open(_ijs, "w", encoding="utf-8"))
+            _ok2, _why2, _ = _rm.freshness("intraday", _imd, _ijs)
+            check("rmail: ★어제 세션 장중 리포트는 막는다", _ok2 is False, _why2)
+            json.dump({"trade_date": _today.strftime("%Y-%m-%d")},
+                      io.open(_ijs, "w", encoding="utf-8"))
+            check("rmail: 오늘 것이면 통과", _rm.freshness("intraday", _imd, _ijs)[0] is True)
+        finally:
+            shutil.rmtree(_tdr, ignore_errors=True)
+        check("rmail: 종류 3종 정의", sorted(_rm.KINDS) == ["after_close", "intraday", "night"])
+
         # ── v11.15 해외 주식(미국·일본) ──
         # ★국가는 종목 식별의 일부다. 빼면 일본 7203(도요타)이 한국 007203 이 되고,
         #   증권사가 카이로스면 자동매매 대상으로까지 잡힌다.

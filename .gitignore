@@ -56,3 +56,7 @@ night_preview.md
 
 # 허용목록 지문(로컬 상태 — 주소는 없지만 저장소에 둘 이유도 없다)
 .allowlist_state
+
+# 2차 리포트 발송 기록·미리보기(로컬 산출물)
+report_mail_sent.json
+report_mail_*.html

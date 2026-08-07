@@ -92,6 +92,12 @@ def lint_report(md, html_bytes=None):
         issues.append("본문에 '오늘의 픽'(또는 '픽 없음' 명시)이 없다.")
     if "체크포인트" not in body:
         issues.append("본문에 '내일 체크포인트'가 없다.")
+    # ★파생·ETF 는 **추천이 없어도** 본문에 한 줄이 있어야 한다([7.0] 4.5, v11.18).
+    #   실측: 분석가가 매일 검토해 "변동성 과열이라 안 한다"는 결론까지 냈는데 그게
+    #   부록에만 적혀, 독자에겐 "파생 얘기가 아예 없다"로 보였다.
+    if not re.search(r"파생|선물|옵션|ETF", body):
+        issues.append("본문에 파생·ETF 언급이 없다 — 추천이 없어도 "
+                      "'오늘 파생·ETF 추천 없음 — <이유>' 한 줄을 넣어라([7.0] 4.5).")
 
     # 3) 본문 금지 토큰
     for pat, label in _FORBIDDEN_BODY:

@@ -74,7 +74,7 @@
   .who b { color: #111; }
 
   .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 780px; }
   th {
     padding: 8px 6px; text-align: left; color: #555; background: #f5f7fb;
     font-weight: 600; border-bottom: 1px solid #dde3ee; white-space: nowrap;
@@ -92,6 +92,11 @@
   .col-qty    { width: 80px;  }
   .col-fx     { width: 100px; }
   .col-del    { width: 44px;  }
+  /* ★메모는 오른쪽 좁은 칸에 두면 글자를 몇 자 못 본다 — 종목 아래 전폭으로 내렸다 */
+  tr.memo td { padding: 0 4px 8px; border-bottom: 1px solid #f0f2f7; }
+  tr.memo .wrap { display: flex; align-items: center; gap: 8px; }
+  tr.memo .lbl { font-size: 11px; color: #999; white-space: nowrap; }
+  tr.memo input { font-size: 13px; padding: 6px 8px; }
   .del {
     border: 0; background: none; color: #b71c1c; cursor: pointer;
     font-size: 16px; line-height: 1; padding: 6px 8px; margin: 0; width: auto;
@@ -162,7 +167,6 @@
           <th class="col-price">평단가</th>
           <th class="col-qty">수량</th>
           <th class="col-fx">매수환율</th>
-          <th>메모</th>
           <th class="col-del"></th>
         </tr>
       </thead>
@@ -193,6 +197,7 @@
       환율은 <b>1달러당 원 / 1엔당 원</b>입니다(예: 1380 / 9.02).
       ※ 엔은 증권사가 '100엔당'으로 보여주는 경우가 많습니다 — 900이 아니라 <b>9.00</b>입니다.<br>
     · <b>증권사</b>는 그 종목을 보유한 계좌를 골라 주세요.<br>
+    · <b>메모</b>는 각 종목 <b>아래 줄</b>에 있습니다 — 산 이유를 길게 적어도 됩니다.<br>
     · 이미 등록된 줄의 <b>국가·증권사·종목코드는 고칠 수 없습니다</b>. 잘못 넣었으면 지우고 다시 넣으세요.<br>
     · 고친 줄은 <span style="background:#fffdf3;padding:0 4px;">노란색</span>,
       새 줄은 <span style="background:#f4f9f4;padding:0 4px;">초록색</span>으로 표시됩니다.
@@ -396,7 +401,7 @@
 
     var cells = [
       [ctry, ''], [broker, ''], [ticker, ''], [name, ''],
-      [price, 'num'], [qty, 'num'], [fx, 'num'], [memo, '']
+      [price, 'num'], [qty, 'num'], [fx, 'num']
     ];
     cells.forEach(function (pair) {
       var td = document.createElement('td');
@@ -432,7 +437,39 @@
     broker.addEventListener('change', function () { markDirty(tr); });
 
     del.addEventListener('click', function () { removeRow(tr, existing); });
+
+    // ★메모는 바로 아래 줄에 전폭으로. 표 오른쪽 좁은 칸이면 입력이 어렵다.
+    var mtr = document.createElement('tr');
+    mtr.className = 'memo' + (existing ? '' : ' fresh');
+    var mtd = document.createElement('td');
+    mtd.colSpan = 8;
+    var wrap = document.createElement('div');
+    wrap.className = 'wrap';
+    var lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = '메모';
+    wrap.appendChild(lbl);
+    wrap.appendChild(memo);
+    mtd.appendChild(wrap);
+    mtr.appendChild(mtd);
+    tr._memoRow = mtr;          // 같이 움직여야 한다(추가·삭제·다시그리기)
+
     return tr;
+  }
+
+  /** 한 종목 = 본 줄 + 메모 줄. 둘을 함께 붙인다. */
+  function appendLot(tb, tr) {
+    tb.appendChild(tr);
+    tb.appendChild(tr._memoRow);
+  }
+
+  /** 상태를 가진 '본 줄'만. 메모 줄은 걸러진다 — 안 그러면 저장·집계가 어긋난다. */
+  function lotRows() {
+    var out = [], ch = el('rows').children;
+    for (var i = 0; i < ch.length; i++) {
+      if (ch[i]._f) { out.push(ch[i]); }
+    }
+    return out;
   }
 
   function markDirty(tr) {
@@ -444,30 +481,32 @@
       || f.fx.value.trim() !== o.buy_fx
       || f.memo.value.trim() !== o.memo;
     tr.className = changed ? 'dirty' : '';
+    if (tr._memoRow) { tr._memoRow.className = 'memo' + (changed ? ' dirty' : ''); }
   }
 
   function render(rows) {
     var tb = el('rows');
     tb.textContent = '';
-    rows.forEach(function (r) { tb.appendChild(buildRow(r, true)); });
+    rows.forEach(function (r) { appendLot(tb, buildRow(r, true)); });
     updateEmpty();
     clearMsg('appMsg');
   }
 
   function updateEmpty() {
-    var n = el('rows').children.length;
+    var n = lotRows().length;
     el('emptyBox').className = n ? 'empty hide' : 'empty';
   }
 
   el('btnAddRow').addEventListener('click', function () {
-    el('rows').appendChild(buildRow(null, false));
+    var tr = buildRow(null, false);
+    appendLot(el('rows'), tr);
     updateEmpty();
-    var last = el('rows').lastChild;
-    if (last && last._f) { last._f.ticker.focus(); }
+    tr._f.ticker.focus();
   });
 
   function removeRow(tr, existing) {
     if (!existing) {                        // 아직 저장 안 된 줄 — 그냥 지운다
+      if (tr._memoRow) { tr._memoRow.parentNode.removeChild(tr._memoRow); }
       tr.parentNode.removeChild(tr);
       updateEmpty();
       return;
@@ -494,7 +533,7 @@
   // ───────────────────────────── 저장
   function collectPending() {
     var out = [];
-    var trs = el('rows').children;
+    var trs = lotRows();
     for (var i = 0; i < trs.length; i++) {
       var tr = trs[i], f = tr._f;
       var isNew = !tr._orig;

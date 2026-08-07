@@ -119,7 +119,41 @@ def main():
     ap = argparse.ArgumentParser(description="아침 리포트 [7.0] 계약 검사(자문)")
     ap.add_argument("--session", default=None, help="세션 폴더(없으면 오늘 최신)")
     ap.add_argument("--file", default=None, help="md 파일 직접 지정")
+    ap.add_argument("--history", action="store_true",
+                    help="과거 리포트 전수 측정(읽기 전용 — _archive 포함, 추세 표)")
     args = ap.parse_args()
+
+    if args.history:
+        # ★읽기 전용이다. _archive 는 원래 분석·수정 금지 구역이지만(절대규칙 4),
+        #   이 모드는 사용자가 명시 요청한 '과거 리포트 전수 검토' 용도로 md 를 읽기만 한다.
+        #   어떤 세션 파일도 쓰지 않는다.
+        import glob as _g
+        paths = sorted(_g.glob(os.path.join(OUTPUT_DIR, "20??-??-??_*", "03_final_report.md"))
+                       + _g.glob(os.path.join(OUTPUT_DIR, "_archive", "20??-??-??_*",
+                                              "03_final_report.md")))
+        print("%-20s %8s %7s %7s %5s %5s %5s %5s" %
+              ("세션", "md_B", "본문_B", "부록%", "위반", "파생", "이모지", "경고"))
+        print("-" * 72)
+        tot_warn = 0
+        for mp in paths:
+            sess = os.path.basename(os.path.dirname(mp))
+            with open(mp, encoding="utf-8-sig", errors="replace") as f:
+                md_h = f.read()
+            iss_h, m_h = lint_report(md_h)
+            body_h, _app = split_report(md_h)
+            forb = sum(len(re.findall(pat, body_h)) for pat, _lab in _FORBIDDEN_BODY)
+            deriv = len(re.findall(r"파생|선물|옵션|ETF", body_h))
+            appp = 100 * m_h["app_b"] // max(1, m_h["md_b"])
+            tot_warn += len(iss_h)
+            print("%-20s %8s %7s %6d%% %5d %5d %5d %5d" %
+                  (sess, format(m_h["md_b"], ","), format(m_h["body_b"], ","),
+                   appp, forb, deriv, m_h["emoji"], len(iss_h)))
+        print("-" * 72)
+        print("%d개 리포트 · 경고 총 %d건 (현행 계약 기준 소급 측정 — 과거 리포트는"
+              % (len(paths), tot_warn))
+        print("당시 계약이 달랐으므로 위반 수는 '지금 기준이면'의 참고치다)")
+        print("REPORT_LINT=history:%d" % len(paths))
+        return 0
 
     if args.file:
         path, html_path = args.file, None

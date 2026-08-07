@@ -57,7 +57,11 @@ GUIDE_FILE  = os.path.join(BASE_DIR, "회고분석_지시사항.md")
 # 호스트가 inbox 로 밀어 넣을 데이터셋(없으면 그 파일만 건너뜀)
 # ※ 실제 드롭 파일명은 회차마다 날짜가 붙는다(#P0-1 불변 드롭): retro_dataset_2026-07-17.json
 #   회고는 inbox/latest.json 의 roles/files 로 실제 파일명을 찾는다.
-PUSH_FILES  = ["retro_dataset.json", "retro_dataset.csv", "scorecard.md", "market_calls.json"]
+PUSH_FILES  = ["retro_dataset.json", "retro_dataset.csv", "scorecard.md", "market_calls.json",
+               # v11.20: 전야(23시) 콜 원장·성적 — ★market_calls(아침 콜)와 **합산 금지**.
+               #   같은 거래일을 밤·아침 두 콜이 겨냥하므로 합치면 이중계상 + 유사복제
+               #   표본으로 CI 가 거짓으로 좁아진다. 비교 전용(회고지시 §3.16).
+               "night_calls.jsonl", "night_scorecard.md"]
 # ★v11.6(호스트 감사 loop-gaps-4): 세션 산출 장중 실측 — '살 수 있었나 M/N' 성적표가
 #   세션에서만 계산되고 증발하던 경로를 회고로 연결. 라벨·사후검증 전용(파일 안에
 #   retro_use=forbidden_as_pre_feature 마커 — pre_* 피처 사용 금지는 회고분석_지시사항 참조).

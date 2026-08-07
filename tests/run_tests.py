@@ -1025,6 +1025,60 @@ def test_new_collectors_pure():
         finally:
             shutil.rmtree(_tdr, ignore_errors=True)
         check("rmail: 종류 3종 정의", sorted(_rm.KINDS) == ["after_close", "intraday", "night"])
+        # ── v11.20 전야 콜 채점(night_track) — 적대 검증 3렌즈가 강제한 계약 ──
+        import night_track as _nt
+        from common import wilson_ci as _wci, brier3 as _br3, ret_to_label as _rtl
+        check("night: 밴드 상수는 accuracy_tracker T+1 과 동일(0.5)", _nt.NEUTRAL_BAND == 0.5)
+        check("night: 라벨 밴딩", _rtl(0.6) == "up" and _rtl(-0.6) == "down"
+              and _rtl(0.5) == "flat" and _rtl(-0.5) == "flat")
+        check("night: Brier 무정보=0.6667", _br3(1/3, 1/3, 1/3, "up") == 0.6667)
+        _today = date(2026, 8, 8)
+        _closes = {"kospi": {"2026-08-05": 6000.0, "2026-08-06": 6100.0,
+                             "2026-08-07": 6200.0},
+                   "kosdaq": {"2026-08-05": 800.0, "2026-08-06": 810.0,
+                              "2026-08-07": 820.0}}
+        _call = {"for_date": "2026-08-07", "generated_at": "2026-08-06T23:20:00",
+                 "kospi": {"dir": "up", "prob_up": 0.5, "prob_flat": 0.2,
+                           "prob_down": 0.3, "expected_pct": 1.0,
+                           "range_low": 6150, "range_high": 6300},
+                 "kosdaq": {"dir": "down", "prob_up": 0.3, "prob_flat": 0.3,
+                            "prob_down": 0.4, "expected_pct": -0.5,
+                            "range_low": 790, "range_high": 805}}
+        _r = _nt.score_call(_call, _closes, _today)
+        _ks = _r["markets"]["kospi"]
+        check("night: 기준가=생성일 종가, 실현 +1.64%", _r["status"] == "scored"
+              and abs(_ks["ret_pct"] - 1.64) < 0.01, str(_ks))
+        check("night: up 콜 적중 + 레인지 적중",
+              _ks["dir_hit"] is True and _ks["range_hit"] is True)
+        check("night: 예상오차 = 실현-예상(+0.64)", abs(_ks["exp_err"] - 0.64) < 0.01)
+        _kq = _r["markets"]["kosdaq"]
+        check("night: down 콜인데 +1.23% -> 오답·레인지 밖",
+              _kq["dir_hit"] is False and _kq["range_hit"] is False, str(_kq))
+        # ★A40 엄격: for_date 봉이 '오늘'이면 채점 금지(pending)
+        _r2 = _nt.score_call(_call, _closes, date(2026, 8, 7))
+        check("night: ★A40 — for_date 가 오늘이면 pending", _r2["status"] == "pending")
+        # ★backward 매칭 금지: for_date 가 휴장(봉 없음) + 이후 봉 존재 -> void
+        _call_sat = dict(_call, for_date="2026-08-08")
+        _closes_v = {"kospi": {"2026-08-07": 6200.0, "2026-08-10": 6300.0},
+                     "kosdaq": {"2026-08-07": 820.0, "2026-08-10": 830.0}}
+        _r3 = _nt.score_call(_call_sat, _closes_v, date(2026, 8, 12))
+        check("night: ★휴장 for_date 는 void(직전 봉으로 채점하지 않는다)",
+              _r3["status"] == "void_for_date", str(_r3["status"]))
+        # ★for_date <= 생성일 = 예측이 아니다
+        _r4 = _nt.score_call(dict(_call, for_date="2026-08-06"), _closes, _today)
+        check("night: for_date 가 생성일 이전이면 invalid", _r4["status"] == "invalid")
+        # ★운용 콜 선정: 같은 for_date 재실행 -> 최신만
+        _ents = [{"sha": "a", "call": dict(_call, generated_at="2026-08-06T23:05:00")},
+                 {"sha": "b", "call": dict(_call, generated_at="2026-08-06T23:40:00")}]
+        _ops = _nt.pick_operative(_ents)
+        check("night: ★for_date 당 운용 콜 1건(최신 generated_at)",
+              len(_ops) == 1
+              and _ops["2026-08-07"]["call"]["generated_at"] == "2026-08-06T23:40:00")
+        # 배너 계약 — 소비 금지 문구가 항상 붙는다
+        check("night: ★배너 — 자기보정 입력 금지·합산 금지·사전등록",
+              "입력이 아니다" in _nt.BANNER and "합산 금지" in _nt.BANNER
+              and "사전등록" in _nt.BANNER)
+
         # ── v11.19 카이로스 캡처 필수 ──
         import hts_capture_collect as _hc
         check("phase: 시각별 화면 묶음 3종",

@@ -60,3 +60,7 @@ night_preview.md
 # 2차 리포트 발송 기록·미리보기(로컬 산출물)
 report_mail_sent.json
 report_mail_*.html
+
+# 전야 콜 원장·성적(로컬 데이터 — scorecard.md 와 같은 급)
+night_calls.jsonl
+night_scorecard.md

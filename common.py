@@ -449,3 +449,53 @@ def validate_predictions(payload):
                 except (TypeError, ValueError):
                     errs.append(f"{kind}[{i}] {tag}: horizon_days '{h}' 이 정수가 아님")
     return errs
+
+
+# =====================================================================
+# 통계 순수함수 (v11.20 — night_track 전용)
+# =====================================================================
+# ★accuracy_tracker._wilson_ci 와 의도적으로 별도다(CLAUDE.md 헬퍼 변형 지뢰 관례).
+#   accuracy_tracker 는 import 시 FDR 등 무거운 의존이 있어 밤 채점기가 끌어다 쓰면 안 되고,
+#   기존 채점기의 함수를 옮기면 영구 scorecard 재현성이 깨진다. 수식은 동일(Wilson 95%).
+def wilson_ci(hit, n, z=1.96):
+    """Wilson score 신뢰구간 (하한%, 상한%). n=0 이면 (None, None).
+
+    출처 규약: accuracy_tracker.py:1026 _wilson_ci 와 같은 수식 — 두 채점기의
+    CI 가 사과-배 비교가 되지 않게 유지하라(바꿀 거면 둘 다).
+    """
+    if not n:
+        return None, None
+    p = hit / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = (z / denom) * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+    return round((center - half) * 100, 1), round((center + half) * 100, 1)
+
+
+def brier3(prob_up, prob_flat, prob_down, outcome):
+    """3분류 Brier(낮을수록 좋음). outcome 은 'up|flat|down'. 무정보(1/3씩)=0.6667.
+
+    출처 규약: 회고 T6 채점(RETRO_ISSUES C표 '시장콜 확률 예보')과 동일 —
+    각 클래스 (p - 1{실현})^2 의 합.
+    """
+    try:
+        probs = {"up": float(prob_up or 0), "flat": float(prob_flat or 0),
+                 "down": float(prob_down or 0)}
+    except (TypeError, ValueError):
+        return None
+    if outcome not in probs:
+        return None
+    return round(sum((probs[k] - (1.0 if k == outcome else 0.0)) ** 2
+                     for k in probs), 4)
+
+
+def ret_to_label(ret_pct, band=0.5):
+    """수익률% -> 'up|flat|down'. 밴드는 T+1 ±0.5%(v9.6, accuracy_tracker
+    NEUTRAL_BAND_BY_H[1] 과 동일 — 바꿀 거면 둘 다)."""
+    if ret_pct is None:
+        return None
+    if ret_pct > band:
+        return "up"
+    if ret_pct < -band:
+        return "down"
+    return "flat"

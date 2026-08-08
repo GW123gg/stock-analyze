@@ -22,6 +22,8 @@
 | 하고 싶은 것 | ✅ 올바른 명령 | ❌ 함정 |
 |---|---|---|
 | **아침 신호 전체(19단계)** | ★`python run_signals.py` **한 줄** (순서가 코드에 고정 + 단계별 산출물 갱신·기준일 검증 → 요약표). 계획만 보려면 `--check` | **지시문 표를 한 줄씩 베껴 개별 실행 금지**. 2026-07-29 에 예정작업 SKILL.md 가 마스터보다 낡아 hts_capture·earnings·holding_review·night_futures·taildrop·snapshot 이 통째로 누락되고 **삭제된 `kis_collect.py`** 를 돌렸다(수급은 `mirae_collect.py`) |
+| **주말·휴장일** | `python weekend_collect.py` (이슈 수집 + 포트폴리오만. 산출은 `output\_weekend_<날짜>\`) | ★`run_signals.py` 는 **비거래일에 거부**한다(v11.22, 강행 `--allow-nontrading`) — 주말 수집기는 실패하지 않고 **금요일 값을 새 파일로 다시 구워** 신선도 게이트를 통과하기 때문이다. 그 상태로 분석하면 주말 predictions 가 발행돼 다음 거래일분과 **같은 정산 창**을 본다(accuracy_log 는 append-only — 못 뺀다) |
+| 보유 종목별 심층 자료 | `python portfolio_enrich.py` (review 뒤에. 세력강도·과열·공매도·컨센서스·뉴스·공시·개별주식옵션·가격구조) | 빼면 분석가에게 **손익 숫자와 사용자 메모밖에 없다** — 보유 종목 대부분이 `watch_tickers.txt` 밖이라 세션 신호 파일이 그 종목을 아예 안 담는다. `ok:false` 는 '확인 불가'지 '0' 이 아니다 |
 | 공매도·대차잔고(KRX 403 대체) | `python hts_capture_collect.py` (카이로스 노트북 캡처. 상태확인 `--check`, 목록 `--list`) | 토큰 없으면 무동작 exit 0. `status != ok` 는 '데이터 없음'이 아니라 **'확인 불가'** — 0으로 채우지 마라. 마커 검증은 화면번호만 보므로 **라디오 토글(관심그룹/통합)이 틀려도 ok 로 통과**할 수 있다(2026-07-29 실측: 0261 이 '업종' 토글로 찍힘) |
 | force_scores.json 생성(세력강도) | `python watch_and_analyze.py --once` (collect 세션 자동탐지→저장, ~75s) | `python force_analysis.py`는 인자 필요+**stdout 출력만, 저장 안 함** |
 | 메일 발송 | `python research_agent.py mail --session <세션> --method appscript` | `--method auto/api/smtp`는 자격증명 필요(현재 없음→실패). **작동하는 건 Apps Script뿐**. 발송 전 2중 게이트: `skipped:already_sent`(중복 — 재발송은 `--force-resend`)·`blocked_schema`(predictions 계약 위반 — 데이터 고친 후 재실행, 강행은 `--skip-pred-check`) |

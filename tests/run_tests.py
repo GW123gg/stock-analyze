@@ -881,9 +881,14 @@ def test_new_collectors_pure():
     # ── v11.3 장중 재분석 — '아침에 말한 자리에서 실제로 살 수 있었나'를 재는가 ──
     try:
         import intraday_review as _ir
+        import common as _common
+        # ★거래일을 명시해 고정한다 — 안 주면 '오늘'을 보므로 주말에 돌리면 전부 closed 다.
+        #   (그게 v11.22 의 의도다. 아래 주말 가드 테스트가 그 동작을 따로 검증한다.)
+        _TD = date(2026, 8, 7)   # 금요일 — 실측 거래일
         for _t, _want in (("08:30", "pre_open"), ("09:00", "intraday"), ("13:00", "intraday"),
                           ("15:30", "intraday"), ("15:31", "after_close"), ("20:00", "after_close")):
-            check("intraday: 장구간 %s → %s" % (_t, _want), _ir.session_phase(_t) == _want)
+            check("intraday: 장구간 %s → %s" % (_t, _want),
+                  _ir.session_phase(_t, day=_TD) == _want)
 
         _base = {"ticker": "005930", "entry_ref": 100, "target_pct": 8, "stop_pct": -5}
         # ★핵심: 갭상승하면 '당일시가' 추천은 실제로 못 산다
@@ -924,7 +929,7 @@ def test_new_collectors_pure():
 
         # ── v11.5 거래 가능 시장 판정 — 예정작업 ±5분 오차 + 분석 소요로 세션이 바뀔 수 있다 ──
         def _vn(t):
-            return [x["venue"] for x in _ir.tradable_venues(t)["open_venues"]]
+            return [x["venue"] for x in _ir.tradable_venues(t, day=_TD)["open_venues"]]
         check("venue: 08:30 은 NXT 프리마켓만", _vn("08:30") == ["NXT 프리마켓"], str(_vn("08:30")))
         check("venue: 10:00 은 KRX 정규장 + NXT 메인",
               _vn("10:00") == ["KRX 정규장", "NXT 메인마켓"], str(_vn("10:00")))
@@ -939,15 +944,38 @@ def test_new_collectors_pure():
         check("venue: 18:30 은 NXT 애프터만", _vn("18:30") == ["NXT 애프터마켓"], str(_vn("18:30")))
         check("venue: 20:10 은 전부 마감", _vn("20:10") == [], str(_vn("20:10")))
         check("venue: 마감이면 tradable_now=False",
-              _ir.tradable_venues("20:10")["tradable_now"] is False)
+              _ir.tradable_venues("20:10", day=_TD)["tradable_now"] is False)
         # ★NXT 종목은 KRX 시간외단일가 불가 — 한 종목에 두 시장을 제안하면 안 된다
-        _v16 = _ir.tradable_venues("16:10")
+        _v16 = _ir.tradable_venues("16:10", day=_TD)
         check("venue: 시간외단일가에 NXT 배타 경고",
               any("NXT" in x["note"] and "불가" in x["note"]
                   for x in _v16["open_venues"] if "단일가" in x["venue"]), str(_v16))
         check("venue: 안내문에 '한 시장만' 규율", "한 시장만" in _v16["guidance"])
+        # ── v11.22 거래일 가드 — 2026-08-08(토) 11:01 에 "정규장 개장·주문 가능"을
+        #    출력하던 실측 결함. 시각만 보고 요일을 안 봤다. ──
+        _SAT = date(2026, 8, 8)      # 토요일
+        _SUN = date(2026, 8, 9)      # 일요일
+        _HOL = date(2026, 5, 5)      # 어린이날 — 지수 봉 실측상 휴장
+        for _d, _nm in ((_SAT, "토"), (_SUN, "일"), (_HOL, "공휴일")):
+            _v = _ir.tradable_venues("11:01", day=_d)
+            check("거래일가드: %s 장중시각도 주문 불가" % _nm,
+                  _v["tradable_now"] is False and _v["n_open"] == 0, str(_v)[:120])
+            check("거래일가드: %s 은 phase=closed" % _nm,
+                  _ir.session_phase("11:01", day=_d) == "closed")
+        check("거래일가드: 사유가 사람 말로 남는다",
+              "주말" in _ir.tradable_venues("11:01", day=_SAT)["trading_day_reason"])
+        check("거래일가드: 거래일엔 종전 동작 그대로",
+              _ir.tradable_venues("11:01", day=_TD)["tradable_now"] is True)
+        # 휴장일 목록을 모를 때 '열렸다'고 단정하지 않는다 — 확인 못 했음을 남긴다
+        _st = _common.trading_day_status(date(2026, 8, 7), holidays=set())
+        check("거래일가드: 휴장목록 없으면 미확인 명시",
+              _st["is_trading_day"] is True and _st["holiday_checked"] is False
+              and "확인하지 못했" in _st["reason"], str(_st))
+        check("거래일가드: 주말은 목록 없이도 확정",
+              _common.trading_day_status(_SAT, holidays=set())["holiday_checked"] is True)
+
         # 15:40 시간외 종가는 가격 지정이 안 된다(종가 고정) — 호가 제안 시 중요
-        _v1545 = _ir.tradable_venues("15:45")
+        _v1545 = _ir.tradable_venues("15:45", day=_TD)
         # ── v11.12 포트폴리오 — 돈 계산이라 하네스로 고정 ──
         import portfolio_review as _pf
         _r, _w = _pf.parse_row({"매수일시": "2026-07-15", "종목코드": "5930",
@@ -1025,12 +1053,15 @@ def test_new_collectors_pure():
             _njs = os.path.join(_tdr, "night_preview.json")
             io.open(_nmd, "w", encoding="utf-8").write("## 전야")
             _mk = lambda d: json.dump({"for_date": d}, io.open(_njs, "w", encoding="utf-8"))
-            _today = datetime.now().date()
-            _mk((_today + timedelta(days=1)).strftime("%Y-%m-%d"))
+            # ★거래일로 고정한다 — datetime.now() 를 쓰면 주말에 돌릴 때 v11.22 거래일
+            #   게이트에 걸려 실패한다. 여기서 재는 건 '날짜·나이' 규칙이지 요일이 아니다.
+            #   (요일 규칙은 바로 아래 '거래일' 항목이 따로 검증한다.)
+            _today = date(2026, 8, 6)                  # 목요일 — 거래일
+            _mk("2026-08-07")                          # 금요일 — 거래일
             check("rmail: 전야가 내일 대상이면 통과",
-                  _rm.freshness("night", _nmd, _njs)[0] is True)
+                  _rm.freshness("night", _nmd, _njs, today=_today)[0] is True)
             _mk((_today - timedelta(days=1)).strftime("%Y-%m-%d"))
-            _ok, _why, _ = _rm.freshness("night", _nmd, _njs)
+            _ok, _why, _ = _rm.freshness("night", _nmd, _njs, today=_today)
             check("rmail: ★지난밤 전야 파일은 막는다(23시 작업 실패 잔재)",
                   _ok is False and "지난 밤" in _why, _why)
             _imd = os.path.join(_tdr, "intraday_1100.md")
@@ -1038,11 +1069,23 @@ def test_new_collectors_pure():
             io.open(_imd, "w", encoding="utf-8").write("# 장중")
             json.dump({"trade_date": (_today - timedelta(days=1)).strftime("%Y-%m-%d")},
                       io.open(_ijs, "w", encoding="utf-8"))
-            _ok2, _why2, _ = _rm.freshness("intraday", _imd, _ijs)
+            _ok2, _why2, _ = _rm.freshness("intraday", _imd, _ijs, today=_today)
             check("rmail: ★어제 세션 장중 리포트는 막는다", _ok2 is False, _why2)
             json.dump({"trade_date": _today.strftime("%Y-%m-%d")},
                       io.open(_ijs, "w", encoding="utf-8"))
-            check("rmail: 오늘 것이면 통과", _rm.freshness("intraday", _imd, _ijs)[0] is True)
+            check("rmail: 오늘 것이면 통과",
+                  _rm.freshness("intraday", _imd, _ijs, today=_today)[0] is True)
+            # ── v11.22 거래일 게이트 — 주말·휴장일 리포트는 보내지 않는다 ──
+            _okw, _whyw, _ = _rm.freshness("intraday", _imd, _ijs, today=date(2026, 8, 8))
+            check("rmail: ★주말 장중 리포트는 막는다",
+                  _okw is False and "주말" in _whyw, _whyw)
+            _mk("2026-08-09")      # 일요일 — 대상일이 휴장
+            _oks, _whys, _ = _rm.freshness("night", _nmd, _njs, today=date(2026, 8, 8))
+            check("rmail: ★전야 대상일이 휴장이면 막는다",
+                  _oks is False and "대상" in _whys, _whys)
+            _mk("2026-08-10")      # 월요일 — 거래일이므로 일요일 밤 작업은 정당하다
+            check("rmail: 일요일 밤 → 월요일 대상은 통과",
+                  _rm.freshness("night", _nmd, _njs, today=date(2026, 8, 9))[0] is True)
         finally:
             shutil.rmtree(_tdr, ignore_errors=True)
         check("rmail: 종류 3종 정의", sorted(_rm.KINDS) == ["after_close", "intraday", "night"])

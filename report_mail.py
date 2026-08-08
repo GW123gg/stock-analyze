@@ -41,6 +41,8 @@ import argparse
 import logging
 from datetime import datetime, date
 
+from common import trading_day_status   # 순수 모듈(import 부작용 없음)
+
 for _s in (sys.stdout, sys.stderr):
     try:
         _s.reconfigure(encoding="utf-8", errors="replace")
@@ -132,6 +134,15 @@ def freshness(kind, md_path, meta_path, today=None):
     k = KINDS[kind]
     age_h = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(md_path))).total_seconds() / 3600.0
 
+    # ★[v11.22] 거래일이 아니면 장중·장후·전야 리포트는 존재 이유가 없다.
+    #   장중/장후는 다룰 장이 없고, 전야는 '내일 장'을 다루는데 내일이 휴장이면 대상이 없다.
+    #   예전 게이트는 날짜와 mtime 만 봐서 **토요일 산출물도 그냥 통과**시켰다
+    #   (2026-08-08 토 11:01 intraday_review 가 "정규장 개장"으로 생성됨 — 실측).
+    _st = trading_day_status(today)
+    if kind in ("intraday", "after_close") and not _st["is_trading_day"]:
+        return False, ("%s — 장이 열리지 않은 날의 장중·마감 리포트는 보내지 않는다."
+                       % _st["reason"]), None
+
     asof = None
     if meta_path:
         d = _load_json(meta_path)
@@ -147,6 +158,12 @@ def freshness(kind, md_path, meta_path, today=None):
             if (fd - today).days < 0:
                 return False, ("지난 밤 것이다(%s 대상) — 23시 작업이 실패했을 수 있다. "
                                "보내지 않는다." % asof), asof
+            # 전야는 **대상일**이 거래일이어야 한다(오늘이 아니라 for_date 로 판정).
+            #   금요일 밤 for_date=토 는 거짓 대상이고, 일요일 밤 for_date=월 은 정당하다.
+            _fs = trading_day_status(fd)
+            if not _fs["is_trading_day"]:
+                return False, ("%s — 대상일에 장이 열리지 않는다. 전야 리포트의 대상이 없다."
+                               % _fs["reason"]), asof
         if age_h > 20:
             return False, "파일이 %.0f시간 전 것이다 — 오늘 밤 작업 산출물이 아니다." % age_h, asof
         return True, "", asof

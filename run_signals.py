@@ -35,6 +35,8 @@ import argparse
 import subprocess
 from datetime import datetime, timedelta
 
+from common import trading_day_status   # 순수 모듈(import 부작용 없음)
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(BASE, "output")
 PY = sys.executable  # PowerShell 에는 python 이 PATH 에 없다 — 절대 경로로 고정
@@ -194,7 +196,24 @@ def main():
     ap.add_argument("--skip", default=None, help="쉼표구분 key 제외")
     ap.add_argument("--allow-analyzed", action="store_true",
                     help="03_final_report.md 가 있는 세션에도 강행")
+    ap.add_argument("--allow-nontrading", action="store_true",
+                    help="주말·휴장일에도 강행(기본은 중단 — 아래 이유)")
     args = ap.parse_args()
+
+    # ★[v11.22] 비거래일 차단. 수집기는 주말에 '실패'하지 않는다 — 금요일 값을 새 파일로
+    #   다시 구워 신선도 게이트를 그냥 통과한다(verdict 가 mtime 기준이라 내용이 같아도 OK).
+    #   그 상태로 분석이 돌면 주말 predictions 가 발행되고, 그건 다음 거래일 발행분과
+    #   **같은 정산 창**을 봐서 채점 표본을 중복 계상한다(accuracy_log 는 영구 append-only).
+    #   주말 작업은 별도 주말 코워크(weekend_collect.py)로 하라 — 루트 신호를 안 건드린다.
+    _st = trading_day_status(datetime.now().date())
+    if not _st["is_trading_day"] and not args.check and not args.allow_nontrading:
+        print("[run_signals] %s" % _st["reason"])
+        print("[run_signals] 아침 신호 수집은 거래일에만 한다 — 중단.")
+        print("[run_signals]   · 주말 이슈 수집·포트폴리오는:  python weekend_collect.py")
+        print("[run_signals]   · 그래도 강행하려면:            --allow-nontrading")
+        return 1
+    if not _st["is_trading_day"]:
+        print("[run_signals] ※ %s (강행 중)" % _st["reason"])
 
     session = find_session(args.session)
     if not session:

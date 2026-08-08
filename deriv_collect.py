@@ -5,14 +5,16 @@ deriv_collect.py — 파생(옵션) 기반 헤지/위험회피 신호 수집 (KR
 [목적] "세력·외인이 주식을 사면서도 불안하면 풋옵션으로 보호풋(헤지)한다"는 신호를 잡는다.
   현물 수급만 보면 놓치는 '사면서도 헤지하는' 스마트머니 경계 신호.
   1) 시장 전체: KOSPI200 옵션 풋콜비율(PCR, 거래량·미결제) → 시장 헤지/위험회피(F1).
-  2) 개별주식: 옵션 상장 종목(~40 대형주)의 풋/콜 → 그 종목 보호풋(헤지) 강도.
+  2) 개별주식: 옵션 상장 종목의 풋/콜 → 그 종목 보호풋(헤지) 강도.
 
 [데이터] pykrx 의 전종목시세(KrxWebIo, bld MDCSTAT12501) + prodId.
   KRDRVOPK2I=KOSPI200 옵션 / KRDRVOPEQU=개별주식 옵션. ISU_NM 의 ' C '/' P ' 로 콜·풋 구분.
   ※ KRX getJsonData 는 '인증 세션'이 필요 → flow_collect import 로 KRX 로그인(세션 워밍업) 후 호출.
 
 [설계] 행별 try/except, 원자적 저장, ASCII 태그([deriv]), 한글 OK·이모지 금지, UTF-8 ensure_ascii=False.
-  개별주식옵션은 ~40 대형주만 상장(대부분 중소형 추천엔 옵션 없음 → 그 종목은 신호 없음).
+  개별주식옵션은 일부 대형주만 상장(대부분 중소형 추천엔 옵션 없음 → 그 종목은 신호 없음).
+  ★상장 종목 수를 코드 주석의 숫자로 인용하지 마라 — 예전 주석은 '~40' 이었으나
+    2026-08-07 실측은 **64종**이었다. 세는 곳은 산출물의 by_underlying 하나뿐이다.
 
 [사용법]
   python deriv_collect.py                 # 최근 거래일 → deriv_sentiment.json
@@ -206,7 +208,8 @@ def collect(date, out_path):
         "market": mkt,
         "by_underlying": by_under,
         "_note": ("market.pcr_oi(풋미결제/콜미결제)>1.2 = 시장 헤지/위험회피 강화(F1 경계). "
-                  "by_underlying 은 옵션 상장 ~40 대형주만. 추천 종목이 그 안에 있고 풋이 급증/우위면 "
+                  "by_underlying 은 옵션 상장 종목만(수는 이 dict 의 키 수를 세라 — "
+                  "고정값이 아니다). 추천 종목이 그 안에 있고 풋이 급증/우위면 "
                   "'세력·외인이 그 종목을 사면서도 보호풋으로 헤지' = 추격 경계."),
     }
     _save_json(out_path, payload)

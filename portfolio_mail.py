@@ -92,6 +92,123 @@ def _color(v):
     return "#c62828" if v > 0 else ("#1565c0" if v < 0 else "#666666")
 
 
+def _num(v, dp=0):
+    """가격 표기. ★format(x, ',g') 는 큰 수를 '1.097e+06' 으로 뭉갠다 — 실제로 그렇게 나갔다."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "-"
+    return format(f, ",.%df" % dp) if dp else format(int(round(f)), ",")
+
+
+def _unesc(s):
+    """소스가 이미 넣어둔 HTML 엔티티를 풀어둔다.
+
+    ★네이버 기사 제목에 `&quot;` 가 들어 있어, 그대로 _esc 하면 `&amp;quot;` 로 이중
+      이스케이프돼 독자에게 그 글자가 보인다(실측). 풀고 나서 _esc 가 다시 한 번만 건다.
+    """
+    try:
+        import html as _html
+        return _html.unescape(s or "")
+    except Exception:
+        return s or ""
+
+
+def _chip(label, value, tone="#555"):
+    return ('<span style="display:inline-block;padding:2px 7px;margin:2px 4px 2px 0;'
+            'background:#f3f5fa;border-radius:10px;font-size:11.5px;color:%s;">'
+            '%s <b>%s</b></span>' % (tone, _esc(label), _esc(value)))
+
+
+def render_enrich_block(poss):
+    """종목별 심층 — portfolio_enrich 가 모은 **사실**만 [v11.22].
+
+    [왜] 예전엔 메일에 손익 숫자와 사용자 메모밖에 없었다. 보유 종목 대부분이
+    watch_tickers 밖이라 세션 신호 파일이 그 종목을 아예 안 담았기 때문이다.
+    ★확인 실패는 '0'이 아니라 '확인 불가'로 적는다 — 없는 값을 안전한 값으로 읽으면
+      "공매도 없음"처럼 정반대 결론이 난다.
+    """
+    rows = [p for p in (poss or []) if p.get("enrich")]
+    if not rows:
+        return ""
+    H = ['<h3 style="font-size:15px;color:#111;margin:20px 0 8px;padding-top:14px;'
+         'border-top:1px solid #e8ebf2;">종목별 심층</h3>',
+         '<div style="font-size:11px;color:#999;margin-bottom:10px;">'
+         '아래는 <b>측정된 사실</b>입니다. 판단은 다음 \'오늘의 판단\'에 있습니다.</div>']
+    for p in rows:
+        e = p["enrich"]
+        pr = e.get("price") or {}
+        H.append('<div style="border:1px solid #e8ebf2;border-radius:8px;padding:10px 12px;'
+                 'margin-bottom:8px;">')
+        H.append('<div style="font-size:13.5px;font-weight:700;color:#111;margin-bottom:5px;">'
+                 '%s <span style="color:#aaa;font-weight:400;font-size:11.5px;">%s</span></div>'
+                 % (_esc(p.get("name")), _esc(p.get("ticker"))))
+
+        c = []
+        if pr.get("rsi14") is not None:
+            c.append(_chip("RSI", pr["rsi14"]))
+        if pr.get("ma20_disparity_pct") is not None:
+            c.append(_chip("20일선 대비", "%+.1f%%" % pr["ma20_disparity_pct"]))
+        if pr.get("dist_from_high_pct") is not None:
+            c.append(_chip("52주고 대비", "%+.1f%%" % pr["dist_from_high_pct"]))
+        if pr.get("range20_low") is not None:
+            _dpx = 2 if (p.get("currency") or "KRW") != "KRW" else 0
+            c.append(_chip("최근20봉 범위", "%s ~ %s" % (_num(pr["range20_low"], _dpx),
+                                                    _num(pr["range20_high"], _dpx))))
+        fo, ov = e.get("force") or {}, e.get("overheat") or {}
+        if fo.get("ok"):
+            c.append(_chip("세력강도", "%s (%s)" % (fo.get("score"), fo.get("label"))))
+        if ov.get("ok"):
+            c.append(_chip("과열", "%s (%s)" % (ov.get("score"), ov.get("label"))))
+        co = e.get("consensus") or {}
+        if co.get("ok") and co.get("opinion_label"):
+            _t = co.get("target_price")
+            c.append(_chip("컨센서스", "%s%s" % (co["opinion_label"],
+                                             (" · 목표 %s" % _num(_t)) if _t else "")))
+        if c:
+            H.append('<div style="margin-bottom:4px;">%s</div>' % "".join(c))
+
+        # 공매도 — 확인 불가와 값 없음을 구분해서 적는다
+        sh = e.get("short") or {}
+        if sh.get("ok"):
+            H.append('<div style="font-size:12px;color:#444;margin-top:4px;">'
+                     '<b>공매도</b> 잔고비중 %s%% · 10일 %s · 추세 %s (압력 %s, %s 기준)</div>'
+                     % (_esc(sh.get("balance_ratio")), _pct(sh.get("change_10d")),
+                        _esc(sh.get("trend")), _esc(sh.get("pressure_label")),
+                        _esc(sh.get("asof"))))
+        elif sh.get("reason") and (p.get("country") or "KR") == "KR":
+            # 해외는 애초에 국내 공매도 잔고가 있을 수 없다 — 아래 각주가 설명하므로 생략한다.
+            # (안 그러면 "미국 종목 — 국내 전용 소스…" 라는 긴 사유가 잘려 나간다.)
+            H.append('<div style="font-size:11.5px;color:#a08000;margin-top:4px;">'
+                     '<b>공매도</b> 확인 불가 — %s. '
+                     '<i>공매도가 없다는 뜻이 아닙니다.</i></div>'
+                     % _esc(sh["reason"][:80]))
+
+        # 개별주식옵션 — 남의 포지션을 읽는 지표. 매매 권유가 아니다
+        op = e.get("options") or {}
+        if op.get("listed"):
+            H.append('<div style="font-size:12px;color:#444;margin-top:4px;">'
+                     '<b>개별주식옵션</b> 콜 %s · 풋 %s 계약, 풋콜비율 %s → %s '
+                     '<span style="color:#999;">(%s 기준, 기초자산 합산)</span></div>'
+                     % (format(op.get("call_vol") or 0, ","), format(op.get("put_vol") or 0, ","),
+                        _esc(op.get("pcr_volume")), _esc(op.get("hedging_hint")),
+                        _esc(op.get("trade_date"))))
+
+        nw = e.get("news") or {}
+        if nw.get("ok") and nw.get("items"):
+            H.append('<div style="font-size:11.5px;color:#666;margin-top:5px;">최근 뉴스</div>')
+            H.append('<ul style="margin:2px 0 0;padding-left:16px;font-size:11.5px;color:#555;">')
+            for a in nw["items"][:3]:
+                H.append('<li style="margin:1px 0;">%s <span style="color:#aaa;">%s</span></li>'
+                         % (_esc(_unesc(a.get("title"))[:60]), _esc(a.get("source") or "")))
+            H.append('</ul>')
+        H.append('</div>')
+    H.append('<div style="font-size:11px;color:#999;margin-bottom:6px;">'
+             '해외 종목은 국내 전용 자료(수급·공매도잔고·국내 컨센서스·DART 공시)를 '
+             '구조적으로 쓸 수 없어 가격 지표만 표시됩니다.</div>')
+    return "\n".join(H)
+
+
 def render_html(review, strategy_md, when=None):
     """Gmail 안전 HTML — table + inline CSS 만(script·svg·canvas·외부이미지 금지)."""
     when = when or datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -152,13 +269,22 @@ def render_html(review, strategy_md, when=None):
         H.append('<tr style="background:#eef2fa;">')
         # 증권사 = 어느 계좌 물량인지. '보유'(보유일수)는 매수일시를 안 받기로 해서
         # 늘 비어 있으므로 뺐다.
-        for h in ("종목", "국가", "증권사", "수량", "평단가", "현재가", "손익(원)", "수익률", "환차익", "지수대비"):
+        # ★'지수대비'는 원래 보유기간 알파였는데, 매수일시를 안 받기로 하면서 **항상 비었다**
+        #   (실측: 보유 8종 전부 null). 그래서 매수일 없이도 답할 수 있는 20거래일 초과수익을
+        #   쓴다 — 보유기간 알파가 아니므로 열 이름에 기간을 박아 오해를 막는다.
+        for h in ("종목", "국가", "증권사", "수량", "평단가", "현재가", "손익(원)", "수익률",
+                  "환차익", "지수대비 20일"):
             H.append('<th style="padding:8px 6px;text-align:right;color:#333;'
                      'border-bottom:1px solid #dde3ee;font-weight:600;">%s</th>' % h)
         H.append('</tr>')
         for p in poss:
             cc = _color(p.get("pnl_pct"))
-            ca = _color(p.get("alpha_pct"))
+            # 보유기간 알파가 있으면 그것, 없으면 20거래일 초과수익(portfolio_enrich 산출)
+            _rel = ((p.get("enrich") or {}).get("relative") or {})
+            _ex = p.get("alpha_pct")
+            if _ex is None:
+                _ex = _rel.get("excess_20d_pct")
+            ca = _color(_ex)
             H.append('<tr>')
             H.append('<td style="padding:8px 6px;text-align:left;border-bottom:1px solid #f0f2f7;">'
                      '<b>%s</b><div style="color:#999;font-size:11px;">%s</div></td>'
@@ -190,12 +316,14 @@ def render_html(review, strategy_md, when=None):
             H.append('<td style="padding:8px 6px;text-align:right;color:%s;'
                      'border-bottom:1px solid #f0f2f7;">%s</td>' % (_cf, _pct(p.get("fx_pnl_pct"))))
             H.append('<td style="padding:8px 6px;text-align:right;color:%s;'
-                     'border-bottom:1px solid #f0f2f7;">%s</td>' % (ca, _pct(p.get("alpha_pct"))))
+                     'border-bottom:1px solid #f0f2f7;">%s</td>' % (ca, _pct(_ex)))
             H.append('</tr>')
         H.append('</table>')
         H.append('<div style="font-size:11px;color:#999;margin-bottom:16px;">'
-                 '지수대비 = 내 수익률 - 같은 기간 <b>그 나라 지수</b>(한국 코스피 / 미국 S&amp;P500 / '
-                 '일본 닛케이225) 수익률. 음수여도 지수가 더 빠졌으면 종목 선택은 나쁘지 않았던 것이다.<br>'
+                 '<b>지수대비 20일</b> = 최근 20거래일 종목 수익률 - 같은 기간 <b>그 나라 지수</b>'
+                 '(한국 코스피 / 미국 S&amp;P500 / 일본 닛케이225) 수익률. 물타기·불타기로 매수일시를 '
+                 '받지 않으므로 <b>보유기간이 아니라 고정 20거래일</b> 기준이다. 내 수익률이 마이너스여도 '
+                 '이 값이 플러스면 시장이 더 빠진 것이고, 종목 선택 자체가 틀린 건 아니다.<br>'
                  '<b>해외 종목</b>: 평단가·현재가는 <b>현지 통화</b>($, 엔), 손익·수익률은 <b>원화</b>. '
                  '<b>환차익</b>은 그 수익률 중 환율이 만든 몫이다 — 주가가 올라도 원화가 강세면 '
                  '내 돈은 안 늘 수 있다.<br>'
@@ -205,6 +333,10 @@ def render_html(review, strategy_md, when=None):
                  'font-size:13px;color:#7a5c00;margin-bottom:16px;">'
                  '아직 등록된 보유 종목이 없습니다. 등록 화면에서 증권사·종목코드·'
                  '종목명·평단가·수량을 넣으면 다음 메일부터 표시됩니다.</div>')
+
+    # ── 종목별 심층(수집된 사실) [v11.22] ──
+    #   ★여기 있는 건 전부 **측정값**이다. "사라/팔아라"는 아래 '오늘의 판단'에만 있다.
+    H.append(render_enrich_block(poss))
 
     # ── 전략(분석가가 쓴 부분) ──
     if strategy_md.strip():

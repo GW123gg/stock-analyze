@@ -48,14 +48,22 @@ OUTPUT_DIR = os.path.join(HERE, "output")
 logging.basicConfig(level=logging.INFO, format="[intraday] %(message)s")
 log = logging.getLogger("intraday")
 
-from common import save_json_atomic, resolve_session
+from common import save_json_atomic, resolve_session, trading_day_status
 
 # 장 구간(KST). 이 밖에서 실행하면 '장중'이 아님을 명시한다.
 MARKET_OPEN, MARKET_CLOSE = "09:00", "15:30"
 
 
-def session_phase(now_hhmm=None):
-    """지금이 장중인가 → pre_open | intraday | after_close (순수함수)."""
+def session_phase(now_hhmm=None, day=None, day_status=None):
+    """지금이 장중인가 → closed | pre_open | intraday | after_close.
+
+    ★거래일이 아니면 시각과 무관하게 'closed' 다 [v11.22]. 예전엔 시각만 봐서
+    **토요일 11:01 을 'intraday' 로 판정**했다(2026-08-08 실측).
+    day/day_status 를 주면 순수함수로 쓸 수 있다(테스트용).
+    """
+    st = day_status or trading_day_status(day or datetime.now().date())
+    if not st["is_trading_day"]:
+        return "closed"
     t = now_hhmm or datetime.now().strftime("%H:%M")
     if t < MARKET_OPEN:
         return "pre_open"
@@ -64,8 +72,12 @@ def session_phase(now_hhmm=None):
     return "after_close"
 
 
-def tradable_venues(now_hhmm=None):
+def tradable_venues(now_hhmm=None, day=None, day_status=None):
     """지금 **실제로 주문을 낼 수 있는 시장**을 판정한다(순수함수).
+
+    ★[v11.22] 거래일이 아니면 시각 무관하게 **열린 시장 없음**이다. 이 함수는 원래
+    HH:MM 만 보았고, 그래서 2026-08-08(토) 11:01 에 "KRX 정규장·NXT 메인마켓 개장,
+    tradable_now: true" 를 출력했다 — 리포트로 나갔으면 '지금 살 수 있다'는 거짓이 된다.
 
     [왜] 코워크 예정작업은 ±5분 오차가 있고 분석에도 시간이 걸린다. 15:45 에 시작한 결산이
     16:10 에 끝날 수 있고, 그러면 이미 다른 세션이다. **분석이 끝난 시점 기준**으로 어디가
@@ -83,7 +95,13 @@ def tradable_venues(now_hhmm=None):
       15:40~16:00 KRX 시간외종가+NXT 애프터 · 16:00~18:00 KRX 시간외단일가(NXT불가종목)+NXT 애프터
       18:00~20:00 NXT 애프터만
     """
+    st = day_status or trading_day_status(day or datetime.now().date())
     t = now_hhmm or datetime.now().strftime("%H:%M")
+    if not st["is_trading_day"]:
+        return {"now_kst": t, "open_venues": [], "n_open": 0, "tradable_now": False,
+                "trading_day": False, "trading_day_reason": st["reason"],
+                "guidance": "%s — 열린 시장이 없다. 다음 거래일 개장 전까지 "
+                            "주문을 낼 수 없다(예약주문만 가능)." % st["reason"]}
     v = []
     if "08:00" <= t < "08:50":
         v.append({"venue": "NXT 프리마켓", "method": "접속매매(지정가)",
@@ -110,6 +128,7 @@ def tradable_venues(now_hhmm=None):
                   "note": "유일한 거래처 — 유동성 가장 얇음"})
     return {"now_kst": t, "open_venues": v, "n_open": len(v),
             "tradable_now": bool(v),
+            "trading_day": True, "trading_day_reason": st["reason"],
             "guidance": ("지금 열린 시장이 없다 — 다음 개장까지 대기하거나 예약주문만 가능하다"
                          if not v else
                          "★종목별로 NXT 가능 여부를 확인해 **한 시장만** 제안하라"

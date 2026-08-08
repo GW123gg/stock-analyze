@@ -499,3 +499,78 @@ def ret_to_label(ret_pct, band=0.5):
     if ret_pct < -band:
         return "down"
     return "flat"
+
+
+# =====================================================================
+# 거래일 판정 [v11.22]
+# =====================================================================
+#   [왜] 파이프라인 전체에서 '요일'을 아는 실행 로직이 run_signals.py 의 asof 허용치
+#   한 줄뿐이었다. 그 결과 실측된 오류들:
+#     · intraday_review.tradable_venues() 가 **토요일 11:01 에 "KRX 정규장·NXT 메인마켓
+#       개장, tradable_now: true"** 를 출력했다(2026-08-08 실측). 시각만 보고 요일을 안 봤다.
+#     · 주말에 predictions.json 이 발행돼 다음 거래일 발행분과 **같은 정산 창**을 본다
+#       (accuracy_tracker 주석: 중복 그룹 14개·초과 엔트리 18건, entry_ref 최대 -8.5% 괴리).
+#     · 수집기는 주말에 '실패'하지 않는다 — 금요일 값을 새 파일로 다시 구워 OK 로 통과한다.
+#   그래서 판정을 한 곳에 둔다. **주말은 네트워크 없이 확정**이고, 공휴일은 파일이 있을 때만
+#   안다 — 모르면 '모른다'고 말한다(holiday_checked=False). 추측으로 열려 있다고 하지 않는다.
+#   krx_holidays.json 은 `.gitignore` 의 `*.json` 에 걸려 추적되지 않는다. 없어도 주말 판정은
+#   그대로 동작하고(확정), 공휴일만 holiday_checked=False 로 '확인 못 했다'고 표시된다.
+#   재생성(지수 일봉에서 역산 — 평일인데 봉이 없는 날 = 휴장):
+#     python -c "import warnings;warnings.filterwarnings('ignore');import FinanceDataReader as
+#     fdr,datetime as dt;from common import save_json_atomic;
+#     b={i.date() for i in fdr.DataReader('KS11','2023-01-01').index};lo,hi=min(b),max(b);
+#     h=[(lo+dt.timedelta(days=n)).strftime('%Y-%m-%d') for n in range((hi-lo).days+1)
+#        if (lo+dt.timedelta(days=n)).weekday()<5 and (lo+dt.timedelta(days=n)) not in b];
+#     save_json_atomic('krx_holidays.json',{'holidays':h,'derived_range':[str(lo),str(hi)]})"
+#   ★과거만 안다 — 미래 공휴일은 들어 있지 않다.
+HOLIDAYS_FILE = "krx_holidays.json"
+
+
+def is_weekend(d):
+    """토·일인가. 순수함수 — 네트워크·파일 없이 확정된다."""
+    return d.weekday() >= 5
+
+
+def load_holidays(path=None):
+    """휴장일 집합. {'YYYY-MM-DD', ...}. 파일이 없으면 **빈 집합**(= 모른다).
+
+    ★빈 집합을 '휴장일 없음'으로 읽지 마라 — trading_day_status 가
+    holiday_checked=False 로 구분해 돌려준다.
+    """
+    p = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), HOLIDAYS_FILE)
+    try:
+        with _io.open(p, encoding="utf-8") as f:
+            raw = json.load(f)
+        days = raw.get("holidays") if isinstance(raw, dict) else raw
+        return set(str(x)[:10] for x in (days or []))
+    except Exception:
+        return set()
+
+
+def trading_day_status(d, holidays=None):
+    """거래일 판정 → dict. 순수함수(holidays 를 주면 파일도 안 읽는다).
+
+    반환:
+      is_trading_day  True|False   — 주말·알려진 휴장일이면 False
+      reason          사람이 읽는 사유
+      holiday_checked bool         — 휴장일 목록을 실제로 대조했는가.
+                                     False 면 '평일이라 열렸다고 **추정**'일 뿐이다.
+    """
+    ds = d.strftime("%Y-%m-%d")
+    if is_weekend(d):
+        return {"date": ds, "is_trading_day": False, "holiday_checked": True,
+                "reason": "%s — 주말(%s)이라 증시가 열리지 않는다"
+                          % (ds, "토요일" if d.weekday() == 5 else "일요일")}
+    hs = load_holidays() if holidays is None else holidays
+    if ds in hs:
+        return {"date": ds, "is_trading_day": False, "holiday_checked": True,
+                "reason": "%s — 휴장일(공휴일 목록에 등재)" % ds}
+    return {"date": ds, "is_trading_day": True, "holiday_checked": bool(hs),
+            "reason": ("%s — 평일이며 휴장일 목록에 없다" % ds) if hs else
+                      ("%s — 평일이다. 다만 휴장일 목록(%s)이 없어 **공휴일 여부는 확인하지 "
+                       "못했다**" % (ds, HOLIDAYS_FILE))}
+
+
+def is_trading_day(d, holidays=None):
+    """편의 래퍼 — bool 만 필요할 때. 판단 근거가 필요하면 trading_day_status 를 써라."""
+    return trading_day_status(d, holidays)["is_trading_day"]

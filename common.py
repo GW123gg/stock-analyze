@@ -144,6 +144,13 @@ PRED_REQUIRED_PICK = ("ticker", "tag", "timing", "conviction", "preprice", "entr
                       "horizon_days", "path_view", "expected_peak_days", "entry_window")
 PRED_REQUIRED_SHORT = ("ticker", "timing", "conviction", "entry_ref", "horizon_days")
 PRED_TIMINGS = ("임박", "단기", "중기", "장기")     # v10.1: 장기(2개월·T+40) 추가
+
+# ★v11.23 국가별 벤치마크 — 알파(초과수익)를 어느 지수 대비로 잴 것인가.
+#   미국 픽을 코스피 대비로 재면 그 알파는 두 나라 시장의 차이를 종목 실력으로 잘못 읽는다.
+#   회고가 규칙을 도출하는 표본이 알파이므로, 여기가 틀리면 **규칙 자체가 오염된다.**
+#   country 미지정 = KR (기존 예측 전부가 여기에 해당 — 동작 무변경).
+PRED_COUNTRIES = {"KR", "US", "JP"}
+COUNTRY_BENCH = {"KR": "KS11", "US": "US500", "JP": "N225"}   # 전부 FDR 실측 조회 확인
 PRED_PREPRICES = ("강함", "부분", "미반영")
 PRED_HORIZONS = (1, 5, 20, 40)                      # v10.1: 40거래일(약 2개월) 추가
 
@@ -355,6 +362,14 @@ def validate_predictions(payload):
             if ew is not None and str(ew).strip() and str(ew).strip() not in PRED_ENTRY_WINDOWS:
                 errs.append(f"{kind}[{i}] {tag}: entry_window '{ew}' 은 "
                             f"{'/'.join(PRED_ENTRY_WINDOWS)} 중 하나여야 함")
+            # ★v11.23 국가 — 없으면 KR(기존 동작 그대로). ★오타를 조용히 KR 로 떨구면
+            #   미국 픽이 코스피 대비 알파로 채점돼 한국 규칙 도출 표본을 오염시킨다.
+            ctry = it.get("country")
+            if ctry is not None and str(ctry).strip():
+                if str(ctry).strip().upper() not in PRED_COUNTRIES:
+                    errs.append(f"{kind}[{i}] {tag}: country '{ctry}' 는 "
+                                f"{'/'.join(sorted(PRED_COUNTRIES))} 중 하나여야 함"
+                                f"(벤치마크가 여기서 갈린다)")
             pnd = it.get("next_day")
             if isinstance(pnd, dict):
                 _ps = [pnd.get("prob_up"), pnd.get("prob_flat"), pnd.get("prob_down")]

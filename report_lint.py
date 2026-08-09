@@ -115,13 +115,64 @@ def lint_report(md, html_bytes=None):
                     "est_render_b": est, "emoji": emoji}
 
 
+def _rules_growth(n=12):
+    """★지시서 비대화 계측 [v11.23] — 가지치기 의무가 집행되고 있는지 숫자로 본다.
+
+    [왜] 회고 v11.6 이 "규칙은 추가만 되고 제거되지 않으면 그 자체가 과적합"이라며 가지치기를
+    의무화했는데, 그 의무가 지켜지는지 **아무도 세지 않았다.** 2026-08-08 실측: 51커밋 동안
+    증가 50회·감소 0회, 1,204→2,611줄(+117%/33일). 의무가 있어도 계측이 없으면 안 지켜진다.
+    """
+    import subprocess
+    f = "cowork_instructions.md"
+    try:
+        log = subprocess.run(["git", "log", "--format=%H|%ad|%s", "--date=short", "--", f],
+                             cwd=HERE, capture_output=True, text=True,
+                             encoding="utf-8").stdout.strip().split("\n")
+    except Exception as e:
+        print("git 조회 실패: %s" % e)
+        print("RULES_GROWTH=error")
+        return 1
+    rows = []
+    for line in [x for x in log if x.strip()]:
+        h, d, s = line.split("|", 2)
+        body = subprocess.run(["git", "show", "%s:%s" % (h, f)], cwd=HERE,
+                              capture_output=True, text=True, encoding="utf-8").stdout
+        rows.append((d, body.count("\n"), s[:44]))
+    rows.reverse()
+    inc = sum(1 for i in range(1, len(rows)) if rows[i][1] > rows[i - 1][1])
+    dec = sum(1 for i in range(1, len(rows)) if rows[i][1] < rows[i - 1][1])
+    print("%s 줄 수 추이 (최근 %d커밋)" % (f, min(n, len(rows))))
+    print("%-12s %7s %8s  %s" % ("날짜", "줄수", "증감", "커밋"))
+    for i, (d, ln, s) in enumerate(rows[-n:]):
+        j = len(rows) - min(n, len(rows)) + i
+        delta = "" if j == 0 else "%+d" % (ln - rows[j - 1][1])
+        print("%-12s %7d %8s  %s" % (d, ln, delta, s))
+    print()
+    print("전체 %d커밋: 증가 %d회 / 감소 %d회 | %d → %d줄 (%+.0f%%)"
+          % (len(rows), inc, dec, rows[0][1], rows[-1][1],
+             (rows[-1][1] / rows[0][1] - 1) * 100 if rows[0][1] else 0))
+    # 감소가 한 번도 없으면 가지치기 의무가 미집행이다 — 자문이므로 막지는 않는다
+    if dec == 0 and len(rows) > 5:
+        print("★가지치기 미집행: 감소 0회다. 회고 v11.6 의무(청소 후보 지목→물리 삭제)를")
+        print("  이번 회차에 집행하거나, 왜 지울 것이 없는지 근거를 남겨라.")
+        print("RULES_GROWTH=warn:no_pruning")
+        return 0
+    print("RULES_GROWTH=ok:inc%d_dec%d" % (inc, dec))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="아침 리포트 [7.0] 계약 검사(자문)")
     ap.add_argument("--session", default=None, help="세션 폴더(없으면 오늘 최신)")
     ap.add_argument("--file", default=None, help="md 파일 직접 지정")
     ap.add_argument("--history", action="store_true",
                     help="과거 리포트 전수 측정(읽기 전용 — _archive 포함, 추세 표)")
+    ap.add_argument("--rules", action="store_true",
+                    help="★지시서 비대화 계측(과적합 가지치기 의무 추적)")
     args = ap.parse_args()
+
+    if args.rules:
+        return _rules_growth()
 
     if args.history:
         # ★읽기 전용이다. _archive 는 원래 분석·수정 금지 구역이지만(절대규칙 4),

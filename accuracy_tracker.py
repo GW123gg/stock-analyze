@@ -61,6 +61,9 @@ SCORECARD_PATH = os.path.join(BASE_DIR, "scorecard.md")
 KOSPI_SYMBOL = "KS11"
 KOSDAQ_SYMBOL = "KQ11"
 
+# ★v11.23 해외 픽 알파용 벤치마크(common 단일 출처 — 지시서·수집기와 같은 표를 쓴다)
+from common import COUNTRY_BENCH   # noqa: E402  (순수 모듈 — import 부작용 없음)
+
 # market_call neutral 판정 임계 — v9.6: 지평별 스케일(변동성 ~sqrt(t) 근사).
 #   구 밴드(전 지평 0.5%)는 T+5 에서 기저율이 0%에 수렴해 neutral 을 '이길 수 없는 콜'로 만들었다
 #   (23일 실측: neutral T+5 적중 0/15). 이미 채점된 과거 엔트리는 멱등이라 재채점되지 않는다 —
@@ -477,8 +480,12 @@ def grade_pick(pred_date, item, kind):
 
     ret_pct = (close_h / entry_ref - 1.0) * 100.0
 
-    # 같은 구간 코스피 수익률 → alpha (★anchor_before: 종목 다리 entry_ref=D-1 종가와 같은 빈티지)
-    kospi_ret, _ = _index_return(KOSPI_SYMBOL, base_date, horizon, anchor_before=True)
+    # 같은 구간 지수 수익률 → alpha (★anchor_before: 종목 다리 entry_ref=D-1 종가와 같은 빈티지)
+    #   ★v11.23 국가별 벤치마크. 예전엔 무조건 코스피였다 — 해외 픽을 넣는 순간
+    #   "미국 종목이 코스피를 이겼나"라는 무의미한 알파가 회고 표본에 섞여 **한국 규칙 도출을
+    #   오염**시킨다. country 가 없으면 KR → KS11 이므로 기존 예측의 채점은 완전히 동일하다.
+    _bench = COUNTRY_BENCH.get(str(item.get("country") or "KR").strip().upper(), KOSPI_SYMBOL)
+    kospi_ret, _ = _index_return(_bench, base_date, horizon, anchor_before=True)
     alpha = (ret_pct - kospi_ret) if kospi_ret is not None else None
 
     tag = _norm_tag(item.get("tag"))
@@ -501,8 +508,12 @@ def grade_pick(pred_date, item, kind):
         "settle_date": settle_date,
         "close_h": round(close_h, 2),
         "return_pct": round(ret_pct, 2),
+        # ★키 이름은 유지한다(append-only 원장의 과거 행·소비자와 호환). 해외 픽이면 값은
+        #   코스피가 아니라 그 나라 지수다 — 아래 alpha_bench 로 어느 지수인지 남긴다.
         "kospi_return_pct": round(kospi_ret, 2) if kospi_ret is not None else None,
         "alpha_pct": round(alpha, 2) if alpha is not None else None,
+        "country": str(item.get("country") or "KR").strip().upper(),
+        "alpha_bench": _bench,
         "conviction": conv,
         "hit": bool(hit),
         "entry_ref_gap_pct": round(ref_gap_pct, 2) if ref_gap_pct is not None else None,

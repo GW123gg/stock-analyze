@@ -115,8 +115,14 @@ def _shot(tag: str, region=None) -> str | None:
 def _print_popups(state: dict) -> None:
     for p in state.get("popups") or []:
         r = p["rect"]
-        print("  - [%s] %s  (%d,%d %dx%d)"
-              % (p["kind"], p["title"], r["x"], r["y"], r["w"], r["h"]))
+        print("  - [%s/%s] %s  사각형 x %d~%d, y %d~%d"
+              % (p["kind"], p.get("source", "?"), p["title"] or "(제목 없음)",
+                 r["x"], r["x"] + r["w"], r["y"], r["y"] + r["h"]))
+        for b in p.get("buttons") or []:
+            print("      버튼 '%s' @ %d,%d" % (b["text"], b["x"], b["y"]))
+        if not (p.get("buttons") or []):
+            print("      버튼 없음 — 카이로스가 직접 그린 대화상자다."
+                  " 화면을 읽고 --click 으로 좌표를 지정해야 한다.")
 
 
 def main() -> int:
@@ -150,8 +156,9 @@ def main() -> int:
                   " agent 폴더를 push 하고 에이전트를 재시작하라.")
         return 3
 
-    print("[popup] 팝업 %d개 (주문계열=%s)"
-          % (st.get("count", 0), st.get("has_order_popup")))
+    blocked = bool(st.get("modal_blocked"))
+    print("[popup] 막는 창 %d개 (주문계열=%s · 모달차단=%s)"
+          % (st.get("count", 0), st.get("has_order_popup"), blocked))
     _print_popups(st)
 
     if a.shot:
@@ -159,12 +166,18 @@ def main() -> int:
         return 0
 
     if st.get("has_order_popup"):
-        print("[popup] ★주문·인증 계열 팝업이 있다 — 자동으로 손대지 않는다. 사람이 확인하라.")
+        print("[popup] ★주문·인증 계열 대화상자가 있다 — 자동으로 손대지 않는다. 사람이 확인하라.")
         _shot("order_popup")
         return 3
 
     if not st.get("count"):
-        print("[popup] 팝업 없음 — 캡처를 그대로 진행하면 된다.")
+        if blocked:
+            # ★메인 창이 비활성인데 창을 못 찾은 경우. '없음'으로 넘기면 캡처가 전멸한다.
+            print("[popup] ★막는 창을 못 찾았는데 메인 창이 비활성이다(모달 차단 상태).")
+            print("        캡처는 modal_blocked 로 실패한다 — 화면을 저장하니 사람이 확인하라.")
+            _shot("blocked_unknown")
+            return 3
+        print("[popup] 막는 창 없음 — 캡처를 그대로 진행하면 된다.")
         return 0
 
     if a.check:

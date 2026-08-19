@@ -943,7 +943,8 @@ def aggregate(entries):
             h = e.get("horizon")
             m = agg["market"].setdefault(h, {"total": 0, "hit": 0,
                                              "brier_sum": 0.0, "brier_n": 0,
-                                             "by_dir": {}, "bench_down_hit": 0})
+                                             "by_dir": {}, "by_src": {},
+                                             "bench_down_hit": 0})
             m["total"] += 1
             if hit:
                 m["hit"] += 1
@@ -951,6 +952,14 @@ def aggregate(entries):
             d["total"] += 1
             if hit:
                 d["hit"] += 1
+            # #A44(24회차): T+1 을 '무엇으로 채점했나' 분해 — next_day(v11.1 전용 예측) vs
+            #   main_call(본 콜 이중사용) vs 미기록(v11.6 마커 이전 구건). 이게 없으면
+            #   v11.1 의 'T+1 분리 개선'을 3회차째 아무도 측정하지 못한다.
+            s = m["by_src"].setdefault(str(e.get("scored_from") or "미기록(구건)"),
+                                       {"total": 0, "hit": 0})
+            s["total"] += 1
+            if hit:
+                s["hit"] += 1
             ir = _safe_float(e.get("index_return_pct"))   # #A14 always-down 벤치마크
             if ir is not None and ir < 0:
                 m["bench_down_hit"] = m.get("bench_down_hit", 0) + 1
@@ -1120,6 +1129,40 @@ def _pct_avg(s, n):
     return s / n
 
 
+def missing_pred_days(entries):
+    """#A45(24회차): 마지막 예측일 이후 '예측이 발행되지 않은 거래일' 목록.
+
+    2026-08-13·14·18 3거래일 미발행을 아무도 몰랐다(계정 전환으로 예정작업 소실) — 회고가
+    2026-08-19 에야 발견했다. 다음 실행이 과거 공백을 소급 감지해 사람에게 보인다.
+
+    거래일 판정은 달력·휴일표가 아니라 **실제 KS11 봉 존재**로 한다 — krx_holidays.json 은
+    과거(2026-08-07까지)만 알아서 광복절 대체휴일 같은 날을 거래일로 오판해 오경보를 낸다.
+    범위는 어제까지(오늘은 발행 진행 중일 수 있음). FDR 실패 시 None(경고 생략 — fail-open).
+    ★입력은 predictions(발행분 전체)이어야 한다 — accuracy_log entries 는 '만기 채점분'만
+      담아서, 오늘 발행이 있어도 최근 3~20일 미만기 구간이 통째로 '미발행'으로 오경보난다
+      (구현 직후 실측: 08-19 발행이 있는데 last_pred=08-12 로 나옴).
+    """
+    try:
+        dates = sorted({str(e.get("pred_date") or e.get("date") or "")[:10]
+                        for e in entries if e.get("pred_date") or e.get("date")})
+        if not dates:
+            return None
+        last = datetime.strptime(dates[-1], "%Y-%m-%d").date()
+        yday = datetime.now().date() - timedelta(days=1)
+        if last >= yday or not FDR_AVAILABLE:
+            return None
+        df = fdr.DataReader(KOSPI_SYMBOL,
+                            (last + timedelta(days=1)).isoformat(), yday.isoformat())
+        if df is None or df.empty:
+            return None
+        traded = [d.strftime("%Y-%m-%d") for d in df.index]
+        have = set(dates)
+        gap = [d for d in traded if d not in have]
+        return {"last_pred": dates[-1], "missing": gap} if gap else None
+    except Exception:
+        return None
+
+
 def build_scorecard(agg, total_entries, n_added):
     """집계 → scorecard.md 본문(한국어, 이모지 금지)."""
     L = []
@@ -1134,6 +1177,12 @@ def build_scorecard(agg, total_entries, n_added):
     L.append("- ★모집단 주의(회고 06-29 요청): 이 카드는 '최근 창(predictions.json 구조화 예측)' 기준이다."
              " 회고 retro_dataset(전 기간·archive 파싱 포함 완전표본)과 모집단이 달라 수치가 어긋날 수"
              " 있다 — 결론이 다르면 완전표본(회고) 쪽을 우선하라.")
+    gap = agg.get("missing_pred_days")
+    if gap:
+        L.append(f"- ★★운영 경고(#A45): 마지막 예측일 {gap['last_pred']} 이후 **거래일 "
+                 f"{len(gap['missing'])}일 미발행** — {', '.join(gap['missing'][:6])}"
+                 + (" 외" if len(gap['missing']) > 6 else "")
+                 + ". 회고 표본이 그만큼 늙는다. ※소급 발행 금지(사후 정보 오염) — 원인만 확인하라.")
     L.append("")
 
     # 권고(맨 위 강조)
@@ -1163,6 +1212,13 @@ def build_scorecard(agg, total_entries, n_added):
             if bd:
                 parts = [f"{k} {v['hit']}/{v['total']}" for k, v in sorted(bd.items())]
                 L.append(f"  · dir별: {' / '.join(parts)}  (주말·휴장 중복 콜은 같은 창 1건으로 접음)")
+            # #A44: T+1 채점 출처 분해 — 회고가 scored_from 별 성적을 독립 검증할 수 있게 병기.
+            bs = m.get("by_src") or {}
+            if h == 1 and bs:
+                parts = [f"{k} {v['hit']}/{v['total']} ({_fmt_rate(_pct(v['hit'], v['total']))})"
+                         for k, v in sorted(bs.items())]
+                L.append(f"  · 채점출처별(#A44): {' / '.join(parts)}"
+                         "  — next_day=익일 전용 예측(v11.1) / main_call=본 콜 이중사용")
         L.append("  (neutral 밴드 v9.6: T+1 ±0.5% / T+5 ±1.2% — 2026-07-19 이후 채점분부터. "
                  "Brier 는 prob_up/flat/down 제출 콜만 집계)")
     L.append("")
@@ -1407,6 +1463,7 @@ def main():
             agg["n_stalled"] = count_stalled(preds, logdata)
         except Exception:
             agg["n_deriv_unscored"] = agg["n_stalled"] = None
+        agg["missing_pred_days"] = missing_pred_days(preds)   # #A45 — 발행분 전체 기준(만기 무관)
         text = build_scorecard(agg, total, n_added)
         _atomic_write(SCORECARD_PATH, text)
         log.info(f"[acc] scorecard 작성: {SCORECARD_PATH} "

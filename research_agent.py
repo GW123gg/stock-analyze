@@ -739,6 +739,8 @@ def send_email_appscript(subject: str, html_body: str, cfg=None) -> tuple:
     to = (cfg.get("to") or "").strip()
     if not to:
         return False, "수신자(mail_config.txt 의 to) 미설정"
+    # 웹사이트 마이페이지에서 수신을 끈 사람 제외(fail-open — 파일이 없으면 원래대로 전원)
+    to = _wsend.apply_opt_out(to)
     payload = {
         "secret": secret,
         "to": to,

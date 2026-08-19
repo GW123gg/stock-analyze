@@ -110,10 +110,42 @@ def load_appscript_config() -> tuple:
     return url, secret
 
 
+def apply_opt_out(to: str) -> str:
+    """웹사이트 마이페이지에서 '메일 그만 받기'를 고른 사람을 수신자에서 뺀다.
+
+    출처: ..\\stock_website\\data\\mail_opt_out.json (사이트가 갱신한다)
+
+    ★fail-open 설계 — 파일이 없거나 깨졌거나, 걸러낸 결과가 비면 **원래 목록 그대로**
+      돌려준다. 수신거부 기능의 고장이 '전원 미발송'이라는 더 큰 사고로 번지면 안 된다.
+      (이 시스템에서 조용한 미발송은 아무도 못 알아챈다)
+    """
+    base = (to or "").strip()
+    if not base:
+        return base
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "stock_website", "data", "mail_opt_out.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            block = {str(e).strip().lower() for e in (json.load(f).get("opt_out") or [])}
+    except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+        return base
+    if not block:
+        return base
+    kept = [a.strip() for a in base.split(",")
+            if a.strip() and a.strip().lower() not in block]
+    if not kept:
+        log(f"[optout] 전원이 수신거부로 걸러졌다 — 무시하고 원래 목록으로 보낸다({len(block)}건)")
+        return base
+    removed = len(base.split(",")) - len(kept)
+    if removed > 0:
+        log(f"[optout] 수신거부 {removed}명 제외 → {len(kept)}명에게 발송")
+    return ",".join(kept)
+
+
 def load_recipients() -> str:
-    """mail_config.txt 의 to 값(콤마구분 그대로) 반환."""
+    """mail_config.txt 의 to 값(콤마구분). 웹 수신거부를 반영해 돌려준다."""
     cfg = _parse_kv_file(MAIL_CONFIG)
-    return cfg.get("to", "").strip()
+    return apply_opt_out(cfg.get("to", "").strip())
 
 
 # =====================================================================

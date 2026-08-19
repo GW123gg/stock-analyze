@@ -46,7 +46,10 @@ CONFIG_FILE = os.path.join(HERE, "kairos_config.txt")
 
 # 테일넷 IP 는 바뀔 수 있다 → 이름 우선, IP 폴백(가이드 1절 경고 반영)
 DEFAULT_BASES = ("http://desktop-psk2gpr:8788", "http://100.84.184.80:8788")
-DEFAULT_TIMEOUT = 180          # 캡처 1장 5~15초, 15변형이면 1~2분 → 120s 이상 필수
+# 캡처 1장 5~15초. ★0254(투자자 일별, 변형 15종)는 실측 **298초**(2026-08-19 배치 로그:
+# 10:01:36 -> 10:06:34). 옛 값 180초는 "15변형이면 1~2분"이라는 잘못된 추정이라 그 화면만
+# 매번 TimeoutError 로 죽었다(노드는 정상 완료 중인데 pc21 이 먼저 끊는다). 여유를 둔다.
+DEFAULT_TIMEOUT = 420
 
 logging.basicConfig(level=logging.INFO, format="[kairos] %(message)s")
 log = logging.getLogger("kairos")

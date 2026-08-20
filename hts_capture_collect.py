@@ -70,6 +70,10 @@ SCREENS = {
     "investor_daily": {
         "no": "0254", "name": "투자자 일별 매매현황", "needs_watchlist": False,
         "why": "시장 전체 개인/외국인/기관 일별 순매수. flow_collect 공백 대체(변형 15종)",
+        # ★이 화면만 유독 오래 걸린다 — 변형 15종을 순서대로 찍고, 변형마다 '통합' 라디오와
+        #   조회를 다시 누른다(2026-08-20 추가). 실측 324.6초. 공용 기본값(420초)으로는
+        #   settled 재요청이 한 번만 끼어도 타임아웃으로 죽는다(2026-08-19 아침 실패가 그것).
+        "timeout": 700,
     },
     "program_daily": {
         "no": "0273", "name": "프로그램매매 일별현황", "needs_watchlist": False,
@@ -194,7 +198,8 @@ def front_futures_month(today=None):
     return None
 
 
-def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None):
+def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None,
+            keep_watchlist=False):
     """화면 목록 수집 → payload. 부분 실패해도 계속한다(전부 실패해도 exit 0)."""
     h = kc.health()
     if not h.get("hts") or h.get("hts_login_screen"):
@@ -226,12 +231,26 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None
 
     need_wl = any((SCREENS.get(k) or {}).get("needs_watchlist") for k in screen_keys)
     did_set = False
+    wl_used = None            # 실제로 화면에 올라가 있던 목록(생략했어도 기록한다)
     results = []
     try:
         if need_wl and tickers:
-            r = kc.set_watchlist(tickers)
-            did_set = True
-            log.info("관심종목 설정: removed=%s added=%s", r.get("removed"), r.get("added"))
+            # ★이미 같은 목록이 올라가 있으면 손대지 않는다(2026-08-20 신설).
+            #   삭제가 종목당 8초다(그룹초기화 미설정 — 한 개씩 우클릭·삭제). 20종이면
+            #   지우는 데만 3분 가까이 쓰고, 같은 목록을 다시 넣느라 또 1분을 쓴다.
+            #   아침 배치는 매일 같은 폴백 목록을 쓰므로 이 왕복이 통째로 낭비였다.
+            try:
+                cur = [str(t) for t in ((kc.get_watchlist() or {}).get("tickers") or [])]
+            except Exception:      # 조회 실패는 '모른다' — 안전하게 그냥 설정한다
+                cur = None
+            if cur is not None and cur == [str(t) for t in tickers]:
+                wl_used = list(tickers)
+                log.info("관심종목이 요청과 동일(%d종) — 재설정 생략", len(tickers))
+            else:
+                r = kc.set_watchlist(tickers)
+                did_set = True
+                wl_used = list(tickers)
+                log.info("관심종목 설정: removed=%s added=%s", r.get("removed"), r.get("added"))
         elif need_wl:
             log.warning("관심종목 화면이 포함됐는데 --tickers 가 없다 — 빈 화면이 찍힐 수 있다")
 
@@ -245,7 +264,9 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None
                 log.warning("%-18s disabled — %s", key, (why[1] if why else "미등록"))
                 continue
             try:
-                shots, meta = kc.capture(key, expect_no=spec["no"])
+                shots, meta = kc.capture(key, expect_no=spec["no"],
+                                         timeout=int(spec.get("timeout")
+                                                     or kc.DEFAULT_TIMEOUT))
             except kc.KairosError as e:
                 results.append({"screen": key, "screen_no": spec["no"],
                                 "screen_name": spec["name"], "status": "agent_error",
@@ -296,7 +317,10 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None
             log.info("%-18s %-16s %d/%d장 %s", key, status, len(files), len(shots),
                      (bad[0]["reason"][:40] if bad else ""))
     finally:
-        if did_set:
+        if did_set and keep_watchlist:
+            # 아침 배치처럼 '매일 같은 목록'이면 그대로 둔다 — 다음 실행이 생략으로 끝난다.
+            log.info("관심종목 유지(keep) — 복구하지 않는다(%d종)", len(tickers or []))
+        elif did_set:
             try:
                 r = kc.reset_watchlist()
                 log.info("관심종목 복구: removed=%s", r.get("removed"))
@@ -316,7 +340,8 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None
         "tz": "KST", "source": "kairos_hts_capture", "agent_reachable": True,
         "phase": phase,          # ★어느 시각용 캡처인가(report_mail 이 신선도 판정에 쓴다)
         "health": {k: h.get(k) for k in ("hts", "hts_login_screen", "current_screen", "now_kst")},
-        "watchlist_used": list(tickers or []) if did_set else None,
+        "watchlist_used": wl_used,
+        "watchlist_reused": bool(wl_used and not did_set),
         "n_requested": len(results), "n_ok": ok_n,
         "n_rejected_shots": sum(len(r.get("rejected") or []) for r in results),
         "coverage": round(ok_n / len(results), 3) if results else 0.0,
@@ -329,8 +354,23 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None
     }
 
 
-def _tickers_from_session(session_dir, limit=30):
-    """세션 predictions.json 의 픽/숏 티커(없으면 watch_tickers 파일)."""
+def _has_session_picks(session_dir) -> bool:
+    """그날 예측(픽/숏)에서 온 목록인가 — 그렇다면 일회성이라 캡처 뒤 복구한다."""
+    try:
+        with open(os.path.join(session_dir, "predictions.json"), encoding="utf-8") as f:
+            j = json.load(f)
+        return bool((j.get("picks") or []) or (j.get("shorts") or []))
+    except Exception:
+        return False
+
+
+def _tickers_from_session(session_dir, limit=18):
+    """세션 predictions.json 의 픽/숏 티커(없으면 watch_tickers 파일).
+
+    ★limit 이 18인 이유(2026-08-20 실측): 0231·0261 은 스크롤 없이 보이는 만큼만
+      캡처된다. 20종을 넣으면 마지막 줄이 표 하단에 걸쳐 잘리기 직전이었다.
+      여유를 두고 18 로 잡는다. 더 많이 넣어도 화면에 안 나오면 캡처에는 없다.
+    """
     out = []
     try:
         with open(os.path.join(session_dir, "predictions.json"), encoding="utf-8") as f:
@@ -425,9 +465,17 @@ def main():
         log.warning("세션 폴더를 찾을 수 없음 → 종료")
         return 0
 
-    tickers = ([t.strip() for t in args.tickers.split(",") if t.strip()]
-               if args.tickers else _tickers_from_session(session))
-    payload = collect(session, keys, tickers=tickers, phase=args.phase)
+    # ★출처를 구분한다. 폴백(watch_tickers)에서 온 목록은 '매일 같은 목록'이므로
+    #   캡처 뒤 지우지 않고 그대로 둔다 — 다음 실행이 '동일 → 생략'으로 끝나 배치가 빨라진다.
+    #   반대로 --tickers 로 특정 종목을 지정했거나 그날 픽에서 온 목록은 일회성이므로
+    #   캡처가 끝나면 원래대로 복구한다(사용자 관심그룹을 계속 점유하지 않기 위해).
+    if args.tickers:
+        tickers, from_fallback = [t.strip() for t in args.tickers.split(",") if t.strip()], False
+    else:
+        tickers = _tickers_from_session(session)
+        from_fallback = not _has_session_picks(session)
+    payload = collect(session, keys, tickers=tickers, phase=args.phase,
+                      keep_watchlist=from_fallback)
     # ★phase 캡처는 **파일을 따로** 쓴다. 아침 hts_capture.json 을 장중 캡처가 덮으면
     #   회고가 "그날 아침 분석가가 본 화면"을 영영 잃는다(세션 스냅샷 오염 — CLAUDE.md 경고).
     _name = ("hts_capture_%s.json" % args.phase) if args.phase else "hts_capture.json"

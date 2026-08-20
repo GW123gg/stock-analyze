@@ -354,6 +354,43 @@ def collect(session_dir, screen_keys, tickers=None, save_images=True, phase=None
     }
 
 
+def _portfolio_tickers():
+    """등록된 모든 사람의 **국내** 보유 종목코드(중복 제거, 등장 순서 유지).
+
+    [왜] 0231(공매도·대차)·0261(외국인/기관)은 관심종목에 올라간 종목만 찍힌다.
+    보유 종목이 거기 없으면 그날 리포트도, 웹 채팅도 "그 종목 수급은 확인 못 했다"밖에
+    말할 수 없다. 보유 종목이야말로 가장 알고 싶은 종목이므로 관심종목 맨 앞에 둔다.
+    ★해외(미국·일본)는 제외한다 — 카이로스는 국내 HTS 라 조회 자체가 안 된다.
+    ★남의 보유 종목이 섞이지만, 이 목록은 '무엇을 캡처할까'에만 쓰이고
+      리포트·메일에는 사람별로 분리된 자료만 나간다(개인 보유가 노출되지 않는다).
+    """
+    out = []
+    try:
+        import portfolio_review as pr
+    except Exception as e:                       # noqa: BLE001
+        log.warning("포트폴리오 모듈 로드 실패 — 보유 종목을 관심종목에 못 넣는다: %s",
+                    type(e).__name__)
+        return out
+    try:
+        people = pr.list_people()
+    except Exception:                            # noqa: BLE001
+        return out
+    for _email, path in people:
+        try:
+            positions, _warns = pr.load_portfolio(path)
+        except Exception as e:                   # noqa: BLE001
+            log.warning("포트폴리오 읽기 실패(%s) — 건너뜀: %s",
+                        os.path.basename(path), type(e).__name__)
+            continue
+        for pos in positions:
+            if (pos.get("country") or "KR") != "KR":
+                continue                          # 해외는 카이로스로 조회 불가
+            t = str(pos.get("ticker") or "").strip().zfill(6)
+            if len(t) == 6 and t.isdigit() and t != "000000" and t not in out:
+                out.append(t)
+    return out
+
+
 def _has_session_picks(session_dir) -> bool:
     """그날 예측(픽/숏)에서 온 목록인가 — 그렇다면 일회성이라 캡처 뒤 복구한다."""
     try:
@@ -407,6 +444,15 @@ def _tickers_from_session(session_dir, limit=18):
                 break
     # 예측 경로에서도 빈 티커가 '000000' 으로 둔갑할 수 있다 — 마지막에 한 번 더 막는다.
     out = [t for t in out if t != "000000"]
+
+    # ★보유 종목을 맨 앞에 둔다(2026-08-20). 화면에 보이는 자리가 18칸뿐이라
+    #   뒤에 붙이면 잘려 나간다 — 가장 알고 싶은 종목이 가장 먼저 잘리는 셈이었다.
+    held = _portfolio_tickers()
+    if held:
+        rest = [t for t in out if t not in held]
+        out = held + rest
+        log.info("관심종목에 보유 %d종을 앞세운다(총 후보 %d종 → 상한 %d)",
+                 len(held), len(out), limit)
     return out[:limit]
 
 

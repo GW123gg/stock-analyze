@@ -349,12 +349,24 @@ def _tickers_from_session(session_dir, limit=30):
                 try:
                     with open(p, encoding="utf-8", errors="replace") as f:
                         for line in f:
-                            t = line.strip().split(",")[0].strip().zfill(6)
-                            if len(t) == 6 and t.isdigit() and t not in out:
+                            # ★인라인 주석을 먼저 벗긴다(2026-08-20 실사고 수정).
+                            #   watch_tickers.txt 는 '005930   # 삼성전자' 형식인데
+                            #   '#' 를 안 벗기면 통째로 6자리가 아니라 전부 버려졌다.
+                            #   그 결과 빈 줄만 ''.zfill(6)='000000' 으로 살아남아
+                            #   관심종목이 '000000' 한 개로 세팅됐고, 0231(신용/공매도/대차)이
+                            #   빈 표로 찍혔다. 캡처는 화면번호만 보므로 ok 로 통과했다.
+                            t = line.split("#", 1)[0].split(",")[0].strip()
+                            if not t:
+                                continue
+                            t = t.zfill(6)
+                            if (len(t) == 6 and t.isdigit()
+                                    and t != "000000" and t not in out):
                                 out.append(t)
                 except Exception:
                     pass
                 break
+    # 예측 경로에서도 빈 티커가 '000000' 으로 둔갑할 수 있다 — 마지막에 한 번 더 막는다.
+    out = [t for t in out if t != "000000"]
     return out[:limit]
 
 

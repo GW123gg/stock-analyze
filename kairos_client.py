@@ -241,6 +241,29 @@ def capture(screen, variant=None, expect_no=None, timeout=DEFAULT_TIMEOUT, retry
     return [], {}
 
 
+def walk(keys=None, batch=None, dwell=3.0, variants=False, timeout=None,
+         variant_names=None):
+    """★클릭만 하는 순회 — 캡처·저장·전송을 하지 않는다(2026-08-20 신설).
+
+    [왜] 캡처 검증은 창 제목의 화면번호만 본다. 라디오·그룹 토글이 틀려도 ok 로
+    통과한다(실측: 0231 빈 표, 0261 업종, 0254 KRX 기준). 사람이 카이로스 화면을
+    직접 보면서 확인하려면 그림을 남기지 않고 화면만 바꿔주는 경로가 필요하다.
+    dwell 은 사람이 볼 시간(초)이다.
+    """
+    body = {"dwell": float(dwell), "variants": bool(variants)}
+    if variant_names:
+        # 0254 는 변형 15개(실측 약 300초) — 눈으로 볼 때는 보통 하나면 된다.
+        body["variant_names"] = list(variant_names)
+    if keys:
+        body["screens"] = list(keys)
+    if batch:
+        body["batch"] = batch
+    # 화면수 x (전환 + dwell) 이라 기본 타임아웃으로는 모자랄 수 있다.
+    n = len(keys) if keys else 10
+    tmo = timeout or max(DEFAULT_TIMEOUT, int(n * (dwell + 12)) + 60)
+    return call("/walk", body=body, timeout=tmo)
+
+
 # =====================================================================
 def main():
     ap = argparse.ArgumentParser(description="카이로스 캡처 에이전트 클라이언트")
@@ -252,6 +275,16 @@ def main():
     ap.add_argument("--tickers", default=None, help="쉼표구분 — 캡처 전 관심종목 교체(후 자동 복구)")
     ap.add_argument("--out-dir", default=None, help="PNG 저장 폴더")
     ap.add_argument("--reset", action="store_true", help="관심종목 원상복구만 실행")
+    ap.add_argument("--walk", action="store_true",
+                    help="★클릭만 하는 순회(캡처 안 함) — 화면을 눈으로 확인할 때")
+    ap.add_argument("--walk-screens", default=None, metavar="KEYS",
+                    help="--walk 대상 화면 key 쉼표구분(생략하면 전부)")
+    ap.add_argument("--walk-batch", default=None, help="--walk 대상 배치(morning 등)")
+    ap.add_argument("--dwell", type=float, default=3.0, help="--walk 화면마다 멈추는 초(기본 3)")
+    ap.add_argument("--walk-variants", action="store_true",
+                    help="--walk 에서 변형(코스피/코스닥 등)까지 순회 — 0254 는 15변형이라 오래 걸린다")
+    ap.add_argument("--walk-variant", default=None, metavar="NAMES",
+                    help="--walk 에서 이 변형만(쉼표구분). 예: kospi")
     args = ap.parse_args()
 
     if not load_token():
@@ -276,6 +309,34 @@ def main():
     if args.reset:
         log.info("reset: %s", json.dumps(reset_watchlist(), ensure_ascii=False))
         return 0
+    if args.walk:
+        h = health()
+        if not h.get("hts") or h.get("hts_login_screen"):
+            log.warning("HTS 상태 불가(hts=%s login=%s) — 중단",
+                        h.get("hts"), h.get("hts_login_screen"))
+            return 1
+        keys = [k.strip() for k in (args.walk_screens or "").split(",") if k.strip()]
+        log.info("순회 시작 — 클릭만 하고 캡처하지 않는다 (dwell=%.1fs, variants=%s)",
+                 args.dwell, args.walk_variants)
+        vnames = [v.strip() for v in (args.walk_variant or "").split(",") if v.strip()]
+        r = walk(keys=keys, batch=args.walk_batch, dwell=args.dwell,
+                 variants=args.walk_variants, variant_names=vnames)
+        if not r.get("ok") and r.get("error"):
+            log.warning("순회 실패: %s %s", r.get("error"), r.get("detail") or "")
+            return 1
+        for x in (r.get("results") or []):
+            mark = "OK  " if x.get("ok") else "FAIL"
+            log.info("  [%s] %s %-24s %s", mark, x.get("no"),
+                     (x.get("name") or "")[:24],
+                     x.get("marker_text") if x.get("ok") else x.get("error"))
+            for v in (x.get("views") or []):
+                if v.get("label") or v.get("variant"):
+                    log.info("          - %s: %s", v.get("label") or v.get("variant"),
+                             v.get("title"))
+        log.info("순회 %s/%s 성공 — ★캡처하지 않았습니다(PNG 0장)",
+                 r.get("ok_count"), r.get("walked"))
+        return 0 if r.get("ok") else 1
+
     if args.capture:
         h = health()
         if not h.get("hts") or h.get("hts_login_screen"):

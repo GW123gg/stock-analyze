@@ -96,3 +96,49 @@ Remove-Item Env:\NIGHT_PROMPT
 
 `bypassPermissions` 를 **쓰지 않는다.** 무인 실행이라 승인 프롬프트가 뜨면 그대로 멈추므로
 필요한 도구만 미리 여는 방식이 맞고, `Bash(python *)` 로 파이썬 실행만 허용해 임의 셸 명령을 막는다.
+
+---
+
+# 회고도 CLI 로 (2026-08-20 추가)
+
+## 왜 옮겼나 — 실사고
+
+2026-08-20, **회고 코워크가 03:15~07:20(4시간) 돌면서 06:20 아침 슬롯을 삼켰다.**
+그날 아침 리서치는 세션조차 만들어지지 않았고(메일·사이트 모두 공백), 사람이 오전에 발견했다.
+회고가 오래 걸린 이유는 **KRX 차단(A46 재발)으로 pykrx 재시도가 폭주**한 것이다(에러 로그 71,428줄).
+
+코워크 대기열에서 회고를 빼면 두 작업이 자원을 다투지 않는다 — **구조적 해결**이다.
+
+## 구성 (전야와 같은 구조)
+
+| 파일 | 역할 |
+|---|---|
+| `prompts/retro_review.md` | 회고 지시문(git 추적) |
+| `run_retro_review.cmd` | 러너(ASCII 전용) |
+| `retro_cli_status.py` | `retro_cli_status.json` 기록 |
+
+프롬프트에 **시간 예산**을 넣었다 — 05:30 을 넘기면 그 시점 결론까지만 정리하고 마치라고 지시한다.
+아침을 다시 삼키지 않게 하는 안전장치다.
+
+## 등록
+
+```powershell
+$act = New-ScheduledTaskAction -Execute "C:\Users\USER\Desktop\stock_research\run_retro_review.cmd" -WorkingDirectory "C:\Users\USER\Desktop\stock_research"
+$trg = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday,Wednesday,Thursday,Friday,Saturday -At "03:30"
+$set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName "StockRetroReview" -Action $act -Trigger $trg -Settings $set -RunLevel Limited -Force
+```
+
+- 요일 **화~토**: 회고는 직전 거래일까지의 결과를 본다. 월요일 새벽은 주말이라 새 만기가 없다.
+- `ExecutionTimeLimit 3시간`: KRX 차단 시 retro_label 만으로 1시간을 넘긴다(실측). 다만 프롬프트가
+  05:30 에 스스로 정리하므로 3시간에 닿을 일은 드물다.
+- 아침 코워크(06:20)를 그대로 둬도, 회고를 CLI 로 옮기는 것만으로 슬롯 경합이 사라진다.
+
+## 시각 선택
+
+| 안 | 장점 | 단점 |
+|---|---|---|
+| **03:30 (현행 유지)** | 아침이 최신 피드백을 받는다 | FSC 가 직전 거래일 종가를 아직 안 실어 라벨이 D-2 에 머문다 |
+| 17:30 (장 마감 후) | 라벨이 하루 앞당겨진다(A21 해소) | 그날 아침 분석은 전날 피드백을 쓴다 |
+
+CLI 로 옮기면 둘 다 안전하다 — 아침 슬롯과 겹치지 않으므로.

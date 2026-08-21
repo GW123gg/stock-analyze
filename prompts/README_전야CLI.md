@@ -142,3 +142,56 @@ Register-ScheduledTask -TaskName "StockRetroReview" -Action $act -Trigger $trg -
 | 17:30 (장 마감 후) | 라벨이 하루 앞당겨진다(A21 해소) | 그날 아침 분석은 전날 피드백을 쓴다 |
 
 CLI 로 옮기면 둘 다 안전하다 — 아침 슬롯과 겹치지 않으므로.
+
+---
+
+# 아침 리서치도 CLI 로 (2026-08-21 추가)
+
+## 왜 옮겼나 — 미발행이 반복됐다
+
+| 날짜 | 상태 |
+|---|---|
+| 2026-08-13~18 | **3거래일 미발행** — 24회차 회고(08-19)가 되어서야 발견(#A45) |
+| 2026-08-19 | 정상(06:40 세션, 07:23 발송) |
+| 2026-08-20 | 미발행 — 회고 코워크가 03:15~07:20 슬롯 점유 |
+| 2026-08-21 | 미발행 — **회고·전야는 정상인데 아침만 안 돎** |
+
+08-21 이 결정적이다. 회고를 CLI 로 빼서 슬롯 경합을 없앴는데도 아침이 안 돌았다.
+즉 원인은 경합 하나가 아니라 **코워크 예정작업 경로 자체의 불안정**이다.
+전야(23:00)·회고(03:30)는 스케줄러로 옮긴 뒤 계속 정상이므로, 아침도 같은 경로로 옮긴다.
+
+## 구성 (전야·회고와 같은 구조)
+
+| 파일 | 역할 |
+|---|---|
+| `prompts/morning_research.md` | 아침 지시문(git 추적). 절차 원본은 `.claude/skills/morning-research/SKILL.md` 이고 이 프롬프트가 그것을 읽으라고 지시한다 |
+| `run_morning_research.cmd` | 러너(ASCII 전용). `--add-dir` 로 `stock_website` 를 열어 8단계 게시까지 한다 |
+| `morning_cli_status.py` | `morning_cli_status.json` 기록. `mail_sent` 를 따로 남긴다 |
+
+프롬프트에 **시간 예산**을 넣었다 — 07:40 을 넘기면 남은 단계를 접고 발송·보고까지 마친다.
+08:00 자동매매가 `trade_plan.json` 을 읽기 때문이다.
+
+## 등록
+
+```powershell
+$act = New-ScheduledTaskAction -Execute "C:\Users\USER\Desktop\stock_research\run_morning_research.cmd" -WorkingDirectory "C:\Users\USER\Desktop\stock_research"
+$trg = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "06:20"
+$set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName "StockMorningResearch" -Action $act -Trigger $trg -Settings $set -RunLevel Limited -Force
+```
+
+- 요일 **월~금**: 휴장일에는 `run_signals.py --check` 가 거부하고 프롬프트가 `skipped` 로 끝낸다.
+- `ExecutionTimeLimit 2시간`: 신호 19단계만 10~20분, 분석·발송·포트폴리오까지 40~80분이 보통이다.
+- `MultipleInstances IgnoreNew`: 앞 실행이 남아 있으면 새로 띄우지 않는다(중복 세션 방지).
+
+★**등록했으면 코워크의 아침 예정작업을 꺼라.** 안 끄면 같은 날 세션이 두 개 생기고
+메일이 두 번 나갈 수 있다(중복 게이트가 있지만 세션이 갈리면 통과한다).
+
+## 실패했는지 어떻게 아나
+
+```powershell
+python -c "import json,io;d=json.load(io.open('morning_cli_status.json',encoding='utf-8'));print(d['run_at'], 'ok=',d['ok'], 'mail=',d['mail_sent'], d['summary'].get('NOTES'))"
+```
+
+`ok` 는 rc 와 자기신고를 **둘 다** 본다(모델이 "완료했다"면서 실제로는 못 한 경우를 거른다).
+`mail_sent` 는 별도로 남긴다 — 이 작업의 목적 자체가 아침 메일이기 때문이다.

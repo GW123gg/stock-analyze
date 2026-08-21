@@ -62,8 +62,12 @@ STEPS = [
      "session:fundamentals.json",        True,  900),
     ("disclosure", "공시 오버행",                 ["disclosure_collect.py"],
      "session:disclosures.json",         True,  900),
+    # ★산출 위치는 세션이다(mirae_collect._resolve_out: 오늘 세션이 있으면 거기, 없으면 루트).
+    #   판정만 root 를 보고 있어서 **매일 STALE 로 오판**했다(2026-08-21 발견).
+    #   루트 파일이 2026-07-12 에 멈춰 있어 "asof 지연 40일"이 리포트에 실렸고,
+    #   분석가는 그날 09:27 에 갓 받은 교차검증 수급을 매일 버리고 있었다.
     ("mirae",      "미래에셋 수급(교차검증)",     ["mirae_collect.py"],
-     "root:mirae_data.json",             False, 600),
+     "session:mirae_data.json",          False, 600),
     ("short",      "공매도 잔고",                 ["short_collect.py"],
      "session:short.json",               True,  900),
     ("hts",        "카이로스 HTS 캡처",           ["hts_capture_collect.py"],

@@ -99,6 +99,30 @@ def lint_report(md, html_bytes=None):
         issues.append("본문에 파생·ETF 언급이 없다 — 추천이 없어도 "
                       "'오늘 파생·ETF 추천 없음 — <이유>' 한 줄을 넣어라([7.0] 4.5).")
 
+    # ★2-b) 결론이 맨 위에 있는가 (v11.30 — 사용자 요구: "결론 먼저, 설명은 그 다음")
+    #   [7.0] 은 원래 1블록(대시보드)을 요구하는데 실제 발행본이 산문으로 시작한 날이 있었다
+    #   (2026-08-20·21). 규약만으로는 안 지켜져서 lint 가 직접 본다.
+    # 판정은 '첫 표가 얼마나 위에 있나'로 한다. 인용구·머리말은 허용하되,
+    # 표가 나오기 전에 **산문이 길게 이어지면** 결론이 묻힌 것이다.
+    lines = body.split("\n")
+    first_tbl = next((i for i, l in enumerate(lines) if l.count("|") >= 2), None)
+    if first_tbl is None:
+        issues.append("본문에 표가 하나도 없다 — 지수 방향·오를 종목·내릴 종목·파생을 "
+                      "**표로 먼저** 싣고 설명은 그 아래로 내려라([7.0] 1블록).")
+    else:
+        before = "\n".join(lines[:first_tbl])
+        # 표 앞의 '산문 글자수' — 제목·인용구·표머리는 빼고 실제 문단만 센다.
+        prose = "\n".join(l for l in lines[:first_tbl]
+                          if l.strip() and not l.lstrip().startswith(("#", ">", "-", "*", "|")))
+        if len(prose) > 500:
+            issues.append("첫 표가 너무 아래에 있다(앞선 산문 %dB) — 독자는 첫 화면에서 "
+                          "결론을 봐야 한다. **지수 표를 맨 앞으로** 올리고 설명은 그 뒤로 "
+                          "내려라([7.0] 1블록)." % len(prose))
+        head = body[:max(1400, first_tbl and len(before) + 800)]
+        if "코스피" not in head or "코스닥" not in head:
+            issues.append("맨 위 표에 코스피·코스닥이 함께 있어야 한다 — "
+                          "지수 방향을 가장 먼저 실어라([7.0] 1블록 1).")
+
     # 3) 본문 금지 토큰
     for pat, label in _FORBIDDEN_BODY:
         hits = re.findall(pat, body)

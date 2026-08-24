@@ -157,6 +157,26 @@ def newest(spec, session):
     return path, os.path.getmtime(path), peek_asof(path)
 
 
+def _content_hts(d):
+    """카이로스 캡처: 몇 종이 실제로 찍혔나. 문제면 사람이 읽을 사유를 돌려준다."""
+    n_ok, n_req = d.get("n_ok"), d.get("n_requested")
+    if not isinstance(n_ok, int) or not isinstance(n_req, int) or n_req <= 0:
+        return None                      # 옛 스키마 — 판단하지 않는다
+    if n_ok == 0:
+        why = sorted({(c.get("status") or "") for c in (d.get("captures") or [])
+                      if c.get("status") != "ok"} - {""})
+        return "캡처 %d종 전부 실패(%s)" % (n_req, ", ".join(why) or "사유 미상")
+    if n_ok < n_req:
+        return "캡처 %d/%d 만 성공 — 나머지는 확인 불가" % (n_ok, n_req)
+    return None
+
+
+# ★내용 점검표. mtime 이 올라갔어도 알맹이가 비었으면 EMPTY 로 내린다.
+#   ★여기 넣는 함수는 **문제일 때만** 문자열을 돌려줘라(정상이면 None).
+#   ★과잉 판정 금지 — 스키마가 다르면 None 을 돌려 판단을 미뤄라.
+CONTENT_CHECKS = {"hts": _content_hts}
+
+
 def run_one(step, session, log_dir):
     key, desc, argv, spec, required, timeout = step
     _, before_mt, _ = newest(spec, session)
@@ -188,6 +208,18 @@ def run_one(step, session, log_dir):
     else:
         verdict = "OK"
         note = err
+
+    # ★새 파일이라고 성공이 아니다 — 알맹이를 들여다본다(2026-08-24 실사고).
+    if verdict == "OK" and key in CONTENT_CHECKS and path:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                problem = CONTENT_CHECKS[key](json.load(fh))
+        except Exception:                # noqa: BLE001  판정 때문에 러너가 죽으면 안 된다
+            problem = None
+        if problem:
+            verdict = "EMPTY"
+            note = problem
+
     return dict(key=key, desc=desc, rc=rc, took=took, verdict=verdict,
                 note=note, path=path, asof=asof, required=required, log=logf)
 
@@ -288,8 +320,10 @@ def main():
     for r in results:
         print("%-11s %-8s %-7s %-19s %s" % (r["key"], r["verdict"], "%.0fs" % r["took"],
                                             r["asof"] or "-", r["note"] or ""))
-    bad = [r for r in results if r["verdict"] in ("FAIL", "STALE") and r["required"]]
-    warn = [r for r in results if r["verdict"] in ("FAIL", "STALE", "SKIP") and not r["required"]]
+    bad = [r for r in results
+           if r["verdict"] in ("FAIL", "STALE", "EMPTY") and r["required"]]
+    warn = [r for r in results
+            if r["verdict"] in ("FAIL", "STALE", "EMPTY", "SKIP") and not r["required"]]
     print("-" * 100)
     print("필수 실패/미갱신: %d건 %s" % (len(bad), [r["key"] for r in bad] or ""))
     print("선택 실패/생략  : %d건 %s" % (len(warn), [r["key"] for r in warn] or ""))

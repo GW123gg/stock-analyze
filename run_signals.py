@@ -82,6 +82,12 @@ STEPS = [
      "root:credit_balance.json",         False, 300),
     ("earnings",   "실적 캘린더",                 ["earnings_collect.py"],
      "session:earnings_calendar.json",   False, 600),
+    # ★2026-08-25 추가. 뉴스 수집기 5종은 멀쩡히 동작하는데 **호출부가 지시문에만**
+    #   있어서, 아침 Cowork 가 멈춘 뒤로 아무도 안 돌렸다. 그 결과 분석가는
+    #   "각 회사의 호재·악재"를 쓰라는 지시를 받으면서 입력으로는 한 달 넘게 낡은
+    #   파일을 봤다(news_rss 08-03 · naver 07-25 · media/yahoo/gdelt 06-25~26).
+    ("news",       "뉴스 5종(호재/악재 입력)",    ["news_collect_all.py"],
+     "session:news_bundle.json",         True,  1200),
     ("caution",    "국면 종합게이트(반드시 뒤)",  ["market_caution.py"],
      "root:market_caution.json",         True,  600),
     ("snapshot",   "루트 신호 세션 동결",         ["snapshot_signals.py"],
@@ -89,6 +95,20 @@ STEPS = [
     ("holdrev",    "보유 픽 재평가",              ["holding_review.py"],
      "session:holding_review.json",      True,  900),
 ]
+
+# ★아침 2단계 (2026-08-25) — 06:05 사전 / 06:20 본수집
+#   [왜] 분석 모델이 생각하는 데 오래 걸려 06:20 한 번에 다 하면 장 시작까지 못 끝난다.
+#   야간선물은 **06:00 에 마감**한다 — 그 직후 화면이 확정값이고, 시간이 지나면
+#   카이로스 화면이 다음 세션 값으로 바뀐다. 그래서 야간·카이로스 먼저 찍고,
+#   무거운 나머지는 06:20 에 돌린 뒤 그때까지 나온 것으로 분석을 시작한다.
+#   ★early 에만 있는 산출물을 main 이 필요로 하면 안 된다(main 단독 실행이 깨진다).
+#     caution 이 읽는 deriv/flow/ecos 는 전부 main 에 남겨 뒀다 — 확인하고 옮겨라.
+EARLY = ("nightfut", "hts", "taildrop", "vkospi")
+STAGES = {
+    "early": lambda k: k in EARLY,
+    "main":  lambda k: k not in EARLY,
+    "all":   lambda k: True,
+}
 
 # 기준일 필드 후보(있는 것 하나를 읽어 신선도 판정)
 ASOF_KEYS = ("asof_date", "asof", "latest_trade_date", "generated_at")
@@ -174,7 +194,29 @@ def _content_hts(d):
 # ★내용 점검표. mtime 이 올라갔어도 알맹이가 비었으면 EMPTY 로 내린다.
 #   ★여기 넣는 함수는 **문제일 때만** 문자열을 돌려줘라(정상이면 None).
 #   ★과잉 판정 금지 — 스키마가 다르면 None 을 돌려 판단을 미뤄라.
-CONTENT_CHECKS = {"hts": _content_hts}
+def _content_news(d):
+    """뉴스: 몇 종목에 실제로 기사가 붙었나.
+
+    ★기사 0건은 '뉴스가 없는 날'이 아니라 대개 **차단·개편**이다.
+      0 을 '조용한 하루'로 읽으면 호재·악재 섹션이 통째로 비고, 아무도 눈치채지 못한다.
+    """
+    n_t, n_w = d.get("n_tickers"), d.get("n_tickers_with_news")
+    if not isinstance(n_t, int) or not isinstance(n_w, int) or n_t <= 0:
+        return None
+    failed = d.get("sources_failed") or []
+    stale = d.get("sources_stale") or []
+    if n_w == 0:
+        return "기사 0건 — 전 종목 무수집(실패 %s / 미갱신 %s)" % (
+            ", ".join(failed) or "없음", ", ".join(stale) or "없음")
+    cov = n_w / n_t
+    if cov < 0.5:
+        return "종목 커버리지 %d/%d (%.0f%%) — 절반도 못 붙었다" % (n_w, n_t, cov * 100)
+    if failed:
+        return "커버리지 %d/%d 이나 소스 실패: %s" % (n_w, n_t, ", ".join(failed))
+    return None
+
+
+CONTENT_CHECKS = {"hts": _content_hts, "news": _content_news}
 
 
 def run_one(step, session, log_dir):
@@ -230,6 +272,10 @@ def main():
     ap.add_argument("--check", action="store_true", help="실행 없이 계획·현재 상태만")
     ap.add_argument("--only", default=None, help="쉼표구분 key 만 실행")
     ap.add_argument("--skip", default=None, help="쉼표구분 key 제외")
+    ap.add_argument("--stage", default="all", choices=("early", "main", "all"),
+                    help="early=야간선물·카이로스(06:05) / main=나머지(06:20) / all=전부")
+    ap.add_argument("--make-session", action="store_true",
+                    help="오늘 세션이 없으면 새로 만든다(06:05 단계가 collect 보다 먼저 도는 경우)")
     ap.add_argument("--allow-analyzed", action="store_true",
                     help="03_final_report.md 가 있는 세션에도 강행")
     ap.add_argument("--allow-nontrading", action="store_true",
@@ -252,8 +298,16 @@ def main():
         print("[run_signals] ※ %s (강행 중)" % _st["reason"])
 
     session = find_session(args.session)
+    if not session and args.make_session and not args.check:
+        # ★06:05 단계는 collect 보다 먼저 돈다 — 세션이 아직 없다.
+        #   여기서 만들어 두면 06:20 의 collect 가 같은 폴더를 이어 쓴다
+        #   (common.resolve_session 이 '오늘 세션'을 먼저 찾기 때문).
+        session = os.path.join(OUTPUT_DIR, datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+        os.makedirs(session, exist_ok=True)
+        print("[run_signals] 오늘 세션이 없어 새로 만들었다: %s" % os.path.basename(session))
     if not session:
         print("[run_signals] 오늘 세션을 찾지 못했다 — research_agent.py collect 를 먼저 돌려라.")
+        print("[run_signals]   (06:05 사전 단계라면 --make-session 을 붙여라)")
         return 1
     print("[run_signals] 세션: %s" % session)
     print("[run_signals] python: %s" % PY)
@@ -266,7 +320,12 @@ def main():
 
     only = {s.strip() for s in args.only.split(",")} if args.only else None
     skip = {s.strip() for s in args.skip.split(",")} if args.skip else set()
-    steps = [s for s in STEPS if (only is None or s[0] in only) and s[0] not in skip]
+    in_stage = STAGES[args.stage]
+    steps = [s for s in STEPS
+             if in_stage(s[0]) and (only is None or s[0] in only) and s[0] not in skip]
+    if args.stage != "all":
+        print("[run_signals] 단계: %s (%d개 — %s)"
+              % (args.stage, len(steps), ", ".join(s[0] for s in steps)))
 
     if args.check:
         print("\n%-11s %-26s %-9s %-19s %s" % ("KEY", "설명", "상태", "기준일/생성", "경로"))

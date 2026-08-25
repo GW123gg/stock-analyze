@@ -296,6 +296,13 @@ def main():
         return 1
     if not _st["is_trading_day"]:
         print("[run_signals] ※ %s (강행 중)" % _st["reason"])
+    if _st["is_trading_day"] and not _st.get("holiday_checked"):
+        # ★장이 안 열리는 날인지 모르는 채로 돌았다는 뜻이다.
+        #   휴장일에 돌면 수집기가 전 거래일 값을 새 파일로 다시 구워 신선도 게이트를
+        #   그냥 통과하고, 그 상태로 예측이 발행되면 채점 표본이 오염된다(append-only).
+        print("[run_signals] ※ 공휴일 여부를 확인하지 못했다 — 달력 소스가 없다.")
+        print("[run_signals]   %s" % _st["reason"])
+        print("[run_signals]   켜려면:  python -m pip install holidays")
 
     session = find_session(args.session)
     if not session and args.make_session and not args.check:

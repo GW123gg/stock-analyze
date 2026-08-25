@@ -16,6 +16,7 @@ import sys
 import io as _io
 import json
 import contextlib
+import datetime as _dt
 
 
 @contextlib.contextmanager
@@ -562,6 +563,53 @@ def load_holidays(path=None):
         return set()
 
 
+def _krx_extra_holidays(year, public):
+    """KRX 만 쉬는 날 — 공휴일표에 없다(역산 목록으로 실측 확인, 2026-08-25)."""
+    out = {"%d-05-01" % year}                     # 근로자의날
+    d = _dt.date(year, 12, 31)                    # 연말 휴장 = 그 해 마지막 영업일
+    for _ in range(10):                           # 연휴가 겹쳐도 열흘이면 충분하다
+        if d.weekday() < 5 and d.strftime("%Y-%m-%d") not in public:
+            break
+        d -= _dt.timedelta(days=1)
+    out.add(d.strftime("%Y-%m-%d"))
+    return out
+
+
+def _package_holidays(year):
+    """python-holidays 로 그 해 한국 휴장일. (집합, 사용가능여부).
+
+    ★없어도 동작한다 — 없으면 과거 역산 파일만 쓰고 '확인 못 함'으로 정직하게 답한다.
+      설치:  python -m pip install holidays
+    """
+    try:
+        import holidays as _hpkg
+    except Exception:                              # noqa: BLE001
+        return set(), False
+    try:
+        pub = {d.strftime("%Y-%m-%d") for d in _hpkg.SouthKorea(years=[year])}
+    except Exception:                              # noqa: BLE001
+        return set(), False
+    return pub | _krx_extra_holidays(year, pub), True
+
+
+def holidays_covered_until(path=None):
+    """휴장일 목록이 **언제까지**를 아는가. 모르면 ''.
+
+    ★krx_holidays.json 은 과거 일봉에서 역산한 파일이라 그 범위 밖은 알 수 없다.
+      "목록에 없다"와 "모른다"는 다르다 — 그 구분을 여기서 만든다.
+    """
+    p = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), HOLIDAYS_FILE)
+    try:
+        with _io.open(p, encoding="utf-8") as f:
+            raw = json.load(f)
+        rng = raw.get("derived_range") if isinstance(raw, dict) else None
+        if isinstance(rng, (list, tuple)) and len(rng) == 2 and rng[1]:
+            return str(rng[1])[:10]
+    except Exception:
+        pass
+    return ""
+
+
 def trading_day_status(d, holidays=None):
     """거래일 판정 → dict. 순수함수(holidays 를 주면 파일도 안 읽는다).
 
@@ -577,13 +625,37 @@ def trading_day_status(d, holidays=None):
                 "reason": "%s — 주말(%s)이라 증시가 열리지 않는다"
                           % (ds, "토요일" if d.weekday() == 5 else "일요일")}
     hs = load_holidays() if holidays is None else holidays
+    # ★앞을 보는 소스를 먼저 얹는다. 과거 역산 파일만으로는 추석을 절대 못 잡는다.
+    pkg_ok = False
+    if holidays is None:
+        pkg, pkg_ok = _package_holidays(d.year)
+        if pkg_ok:
+            hs = set(hs) | pkg
     if ds in hs:
         return {"date": ds, "is_trading_day": False, "holiday_checked": True,
+                "holiday_source": "달력+역산" if pkg_ok else "역산",
                 "reason": "%s — 휴장일(공휴일 목록에 등재)" % ds}
-    return {"date": ds, "is_trading_day": True, "holiday_checked": bool(hs),
-            "reason": ("%s — 평일이며 휴장일 목록에 없다" % ds) if hs else
-                      ("%s — 평일이다. 다만 휴장일 목록(%s)이 없어 **공휴일 여부는 확인하지 "
-                       "못했다**" % (ds, HOLIDAYS_FILE))}
+    if not hs:
+        return {"date": ds, "is_trading_day": True, "holiday_checked": False,
+                "reason": "%s — 평일이다. 다만 휴장일 목록(%s)이 없어 **공휴일 여부는 "
+                          "확인하지 못했다**" % (ds, HOLIDAYS_FILE)}
+    # ★목록이 아는 범위를 지났으면 '없다'가 아니라 '모른다'다.
+    #   파일이 과거 일봉 역산이라 추석·한글날 같은 앞으로의 평일 휴장일은 담길 수가 없다.
+    if pkg_ok:
+        # 달력 소스가 있으면 미래도 판정된다 — '확인함'이라고 말해도 된다.
+        return {"date": ds, "is_trading_day": True, "holiday_checked": True,
+                "holiday_source": "달력+역산",
+                "reason": "%s — 평일이며 공휴일 달력·역산 목록 어디에도 없다" % ds}
+    covered = holidays_covered_until() if holidays is None else ""
+    if covered and ds > covered:
+        return {"date": ds, "is_trading_day": True, "holiday_checked": False,
+                "covered_until": covered,
+                "reason": "%s — 평일이다. 다만 휴장일 목록은 %s 까지만 안다"
+                          "(과거 일봉 역산) — **공휴일 여부는 확인하지 못했다**"
+                          % (ds, covered)}
+    return {"date": ds, "is_trading_day": True, "holiday_checked": True,
+            "covered_until": covered,
+            "reason": "%s — 평일이며 휴장일 목록에 없다" % ds}
 
 
 def is_trading_day(d, holidays=None):

@@ -21,7 +21,9 @@
 
 | 하고 싶은 것 | ✅ 올바른 명령 | ❌ 함정 |
 |---|---|---|
-| **아침 신호 전체(19단계)** | ★`python run_signals.py` **한 줄** (순서가 코드에 고정 + 단계별 산출물 갱신·기준일 검증 → 요약표). 계획만 보려면 `--check` | **지시문 표를 한 줄씩 베껴 개별 실행 금지**. 2026-07-29 에 예정작업 SKILL.md 가 마스터보다 낡아 hts_capture·earnings·holding_review·night_futures·taildrop·snapshot 이 통째로 누락되고 **삭제된 `kis_collect.py`** 를 돌렸다(수급은 `mirae_collect.py`) |
+| **아침 신호 전체(21단계)** | ★`python run_signals.py` **한 줄** (순서가 코드에 고정 + 단계별 산출물 갱신·기준일 검증 → 요약표). 계획만 보려면 `--check` | **지시문 표를 한 줄씩 베껴 개별 실행 금지**. 2026-07-29 에 예정작업 SKILL.md 가 마스터보다 낡아 hts_capture·earnings·holding_review·night_futures·taildrop·snapshot 이 통째로 누락되고 **삭제된 `kis_collect.py`** 를 돌렸다(수급은 `mirae_collect.py`) |
+| **아침 2단계(v11.31)** | 06:05 ★`python run_signals.py --stage early --make-session` (야간선물·카이로스 4단계) → 06:20 ★`python run_signals.py --stage main` (나머지 17단계) | **야간선물은 06:00 마감** — 그 직후 화면이 확정값이고 시간이 지나면 카이로스 화면이 바뀐다. `--make-session` 을 빼면 collect 전이라 "세션 없음"으로 죽는다. `--stage main` 은 단독으로도 완결되게 짰다(caution 이 읽는 deriv/flow/ecos 는 전부 main 에 있다) — early 로 옮기지 마라 |
+| **뉴스 5종(호재/악재 입력)** | `python news_collect_all.py` (run_signals 의 `news` 단계가 자동 실행. 보유+관심 28종 → 세션 `news_bundle.json`) | ★수집기 5종은 멀쩡한데 **호출부가 지시문에만** 있어서 아무도 안 돌렸다 — 2026-08-25 실측으로 news_rss 08-03·naver 07-25·media/yahoo/gdelt 06-25 였다. **기사 0건은 '조용한 하루'가 아니라 대개 차단**이다. `sources_stale` 을 반드시 봐라 |
 | **주말·휴장일** | `python weekend_collect.py` (이슈 수집 + 포트폴리오만. 산출은 `output\_weekend_<날짜>\`) | ★`run_signals.py` 는 **비거래일에 거부**한다(v11.22, 강행 `--allow-nontrading`) — 주말 수집기는 실패하지 않고 **금요일 값을 새 파일로 다시 구워** 신선도 게이트를 통과하기 때문이다. 그 상태로 분석하면 주말 predictions 가 발행돼 다음 거래일분과 **같은 정산 창**을 본다(accuracy_log 는 append-only — 못 뺀다) |
 | 해외(미국·일본) 종목 사실 | `python foreign_collect.py --tickers NVDA,AAPL --country US` (또는 `--from-portfolio`). 전부 무료·무키(FDR·SEC EDGAR·yfinance) | ★해외 픽은 `predictions.json` 에 **`country` 필수**([6.10]) — 없으면 알파를 코스피 대비로 재서 회고 표본을 오염시킨다. SEC 매출은 회사마다 **기간이 다르다**(분기/연간/누적) — `revenue_caveat` 를 그대로 인용하라 |
 | 지시서 비대화 점검 | `python report_lint.py --rules` (증가/감소 횟수·증가율) | 가지치기 의무(v11.6)가 지켜지는지 아무도 안 셌다 — 실측 52커밋 증가 50·감소 0 |
@@ -35,6 +37,7 @@
 | 세션 경로 인자 | 따옴표 없이: `--session output\2026-…` | cmd에서 `--session "경로"`는 따옴표가 인자에 포함돼 "세션 없음" 오류 |
 
 - ★**'파일 존재'는 성공이 아니다**: 수집기가 실패해도 어제·지난주 파일이 그 자리에 남아 있어 그대로 통과한다. 2026-07-29 에 `short.json` 이 **5일 전(07-24) 값**인 채로 공매도 근거에 쓰였다(그날 KRX 응답이 빈 컬럼이라 `KeyError`). 판정은 반드시 **(가) 이번 실행으로 mtime 이 갱신됐는가 (나) `asof_date`/`generated_at` 이 전 거래일인가** 두 가지로 하라 — `run_signals.py` 가 이걸 자동으로 찍는다(`STALE` 판정). 리포트에는 "T+1~2 지연" 같은 일반 문구 대신 **지연 거래일 수를 숫자로** 적어라.
+- ★**휴장일 판정은 `holidays` 패키지가 있어야 앞을 본다(2026-08-25)**: `krx_holidays.json` 은 과거 지수 일봉에서 **역산**한 파일이라 구조상 미래 휴장일을 못 담는다. 예전엔 목록이 비어있지만 않으면 `holiday_checked=True` 로 답해 **추석에도 '평일'로 통과**했다. 지금은 `python-holidays` + KRX 고유 휴장(05-01 근로자의날 · 연말 마지막 영업일)을 함께 본다. 패키지가 없으면 run_signals 가 그 사실을 찍는다 — 조용히 진행하지 않는다. 앞으로 걸리는 평일 휴장일: **09-24·09-25(추석)·10-05·10-09·12-25·12-31**.
 - ★**수집기 로그를 믿지 마라(2026-07-29)**: 파일 리다이렉트 환경에서 `--- Logging error --- / TypeError: not all arguments converted during string formatting` 로 여러 수집기의 INFO 로그가 전멸했다(fsc·deriv·credit 구간 1~9줄, flow 구간은 같은 트레이스백 1,599줄). 로그가 조용하다고 성공이 아니다.
 - **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json·vkospi.json·credit_balance.json 5개는 루트에 저장**된다(정상 — 분석 지시 [5.9]~[5.12]가 루트에서 읽음). 세션에 없다고 실패 아님.
 - **신호 수집기는 '오늘 날짜 세션'을 자동 타겟**(common.resolve_session 위임): 자정 경계는 **6시간 폴백 창**으로 완화됨(23:50 collect→00:10 신호 OK). 오늘 세션도 6h 내 세션도 없으면 루트 폴백(무용).

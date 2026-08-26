@@ -15,8 +15,12 @@ WORK = `C:\Users\USER\Desktop\stock_research` (현재 작업 폴더)
 
 ## 시작 전 반드시 읽을 것
 
-1. `.claude/skills/morning-research/SKILL.md` — **이 작업의 절차서다. 순서·명령을 바꾸지 마라.**
-   아래 '순서'는 요약일 뿐이고, 판단이 갈리면 SKILL.md 가 우선이다.
+1. **아래 '순서'가 이 작업의 절차서다.** 실행할 명령의 진실은 `python run_signals.py --check`
+   (실제 단계 목록을 코드에서 읽어 찍는다)와 `CLAUDE.md` 의 CLI 진실표다.
+   ★`.claude/skills/morning-research/SKILL.md` 는 **2026-08-19 자로 낡았다** — `--stage
+   early/main` 도, `news` 단계도 없고, 개별 수집기를 한 줄씩 나열한다. **그대로 따르면
+   2026-07-29 사고가 재현된다**(낡은 절차서를 베껴 6단계 누락 + 삭제된 스크립트 실행).
+   참고용으로만 읽고, **어긋나면 이 문서와 `--check` 출력을 따르라.**
 2. `cowork_instructions.md` — 분석 판단 규칙의 원본([0.5]·[4.7]·[4.8]·[5.x]·[6.x]·[7.x]).
    여기 옮겨 적지 마라, 그 파일을 읽어라.
 3. `retro_feedback.md` — 최근 회고 피드백. 있으면 반영하라.

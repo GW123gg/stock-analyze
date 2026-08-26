@@ -71,6 +71,28 @@ def today_session(today):
     return max(cands, key=os.path.getmtime) if cands else None
 
 
+def session_in_progress(sess, quiet_min=30):
+    """세션 파일이 최근에도 쓰이고 있나 — 아침 파이프라인이 아직 도는 중인지 판별.
+
+    ★왜: 08:40 안전망이 '리포트 없음'만 보고 전체 재실행을 걸면, 늦게 도는 중인
+      아침 작업과 **같은 세션 폴더에서 수집기가 겹쳐** 산출물을 서로 덮어쓴다.
+      세션 안 파일이 quiet_min 분 안에 갱신됐으면 '아직 작업 중'으로 보고 비켜 준다.
+      (완전히 죽은 작업은 파일 갱신이 멎으므로 다음 판정에서 정상적으로 잡힌다)
+    """
+    import time
+    if not sess or not os.path.isdir(sess):
+        return False
+    newest = 0.0
+    try:
+        for name in os.listdir(sess):
+            p = os.path.join(sess, name)
+            if os.path.isfile(p):
+                newest = max(newest, os.path.getmtime(p))
+    except OSError:
+        return False
+    return newest > 0 and (time.time() - newest) < quiet_min * 60
+
+
 def run(argv, timeout, label):
     print("[safety] 실행: %s" % label)
     try:
@@ -142,27 +164,33 @@ def main():
         rel = os.path.relpath(sess, HERE)
         print("[safety] 리포트는 있는데 발송 기록이 없다 — 발송만 시도한다: %s" % rel)
         if a.dry_run:
-            return finish("would_mail", rel, True)
+            return finish("would_mail", rel, True, chk)
         rc, tail = run([PY, "-X", "utf8", os.path.join(HERE, "research_agent.py"),
                         "mail", "--session", rel, "--method", "appscript"], 900,
                        "research_agent mail")
         ok = rc == 0 and "MAIL_RESULT=success" in tail
-        return finish("mail_only", tail, ok)
+        return finish("mail_only", tail, ok, chk)
 
     # 3) 리포트 자체가 없다 — 아침이 통째로 안 돌았다
     why = "오늘 세션 없음" if not sess else "세션은 있으나 03_final_report.md 없음"
+    # ★단, 세션 파일이 방금까지 쓰이고 있으면 **아직 도는 중**이다 — 끼어들면
+    #   같은 폴더에서 수집기가 겹쳐 산출물을 서로 덮어쓴다. 비켜 준다.
+    if sess and session_in_progress(sess):
+        print("[safety] 세션 파일이 30분 내에 갱신되고 있다 — 아침 작업이 진행 중인 것으로 보고 비켜 준다")
+        return finish("in_progress", "진행 중으로 판단(파일 갱신 30분 이내): %s"
+                      % os.path.basename(sess), True, chk)
     print("[safety] ★%s — 아침 파이프라인이 돌지 않았다" % why)
     if a.no_full or a.dry_run:
-        return finish("would_run_full" if a.dry_run else "skipped_full", why, False)
+        return finish("would_run_full" if a.dry_run else "skipped_full", why, False, chk)
 
     cmd = os.path.join(HERE, "run_morning_research.cmd")
     if not os.path.isfile(cmd):
-        return finish("no_runner", "run_morning_research.cmd 없음", False)
+        return finish("no_runner", "run_morning_research.cmd 없음", False, chk)
     rc, tail = run(["cmd", "/c", cmd], 5400, "run_morning_research.cmd")
 
     done, key = sent_today(today)                      # 실제로 나갔는지로 판정한다
     if done:
-        return finish("full_run", "발송 확인: %s" % key, True)
+        return finish("full_run", "발송 확인: %s" % key, True, chk)
     return finish("full_run_failed", "돌렸으나 발송 기록이 없다\n" + tail, False)
 
 

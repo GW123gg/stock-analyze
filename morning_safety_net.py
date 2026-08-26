@@ -89,9 +89,10 @@ def run(argv, timeout, label):
         return -1, type(e).__name__
 
 
-def finish(action, detail, ok):
+def finish(action, detail, ok, skill_check=""):
     doc = {"run_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "tz": "KST",
            "action": action, "ok": bool(ok), "detail": detail,
+           "skill_check": skill_check,
            "_note": ("아침 발송 안전망의 마지막 실행 기록. action=none 이면 손댈 것이 "
                      "없었다는 뜻이다(이미 발송됐거나 비거래일).")}
     save_json_atomic(STATE, doc)
@@ -109,11 +110,23 @@ def main():
     today = now.strftime("%Y-%m-%d")
     print("[safety] %s %s" % (today, now.strftime("%H:%M")))
 
+    # ★예정작업 이름과 내용물이 어긋나면 '이름대로 동작하지 않는다'.
+    #   2026-08-13~26 아침 미발송의 진짜 원인이 그것이었다 — 그런데
+    #   그 사실을 기계가 볼 방법이 없어 같은 지적이 회차마다 반복 발행됐다.
+    #   메일이 나갔든 아니든 매일 한 번 대조해 둔다(실패해도 본 작업을 막지 않는다).
+    try:
+        rc_chk, chk = run([PY, "-X", "utf8", os.path.join(HERE, "cowork_skill_check.py")],
+                          120, "cowork_skill_check")
+        if rc_chk == 1:
+            print("[safety] ★예정작업 이름·내용물 어긋남 — 위 목록을 보라")
+    except Exception:                                  # noqa: BLE001
+        chk = ""
+
     # 0) 거래일인가
     st = trading_day_status(now.date())
     if not st["is_trading_day"]:
         print("[safety] %s" % st["reason"])
-        return finish("none", st["reason"], True)
+        return finish("none", st["reason"], True, chk)
     if not st.get("holiday_checked"):
         print("[safety] ※ %s" % st["reason"])
 
@@ -121,7 +134,7 @@ def main():
     done, key = sent_today(today)
     if done:
         print("[safety] 오늘 이미 발송됨(세션 %s) — 할 일 없음" % key)
-        return finish("none", "이미 발송: %s" % key, True)
+        return finish("none", "이미 발송: %s" % key, True, chk)
 
     # 2) 리포트는 있는데 발송만 안 됐나 — 가장 싼 복구
     sess = today_session(today)

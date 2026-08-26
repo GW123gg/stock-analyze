@@ -39,9 +39,9 @@
 - ★**'파일 존재'는 성공이 아니다**: 수집기가 실패해도 어제·지난주 파일이 그 자리에 남아 있어 그대로 통과한다. 2026-07-29 에 `short.json` 이 **5일 전(07-24) 값**인 채로 공매도 근거에 쓰였다(그날 KRX 응답이 빈 컬럼이라 `KeyError`). 판정은 반드시 **(가) 이번 실행으로 mtime 이 갱신됐는가 (나) `asof_date`/`generated_at` 이 전 거래일인가** 두 가지로 하라 — `run_signals.py` 가 이걸 자동으로 찍는다(`STALE` 판정). 리포트에는 "T+1~2 지연" 같은 일반 문구 대신 **지연 거래일 수를 숫자로** 적어라.
 - ★**휴장일 판정은 `holidays` 패키지가 있어야 앞을 본다(2026-08-25)**: `krx_holidays.json` 은 과거 지수 일봉에서 **역산**한 파일이라 구조상 미래 휴장일을 못 담는다. 예전엔 목록이 비어있지만 않으면 `holiday_checked=True` 로 답해 **추석에도 '평일'로 통과**했다. 지금은 `python-holidays` + KRX 고유 휴장(05-01 근로자의날 · 연말 마지막 영업일)을 함께 본다. 패키지가 없으면 run_signals 가 그 사실을 찍는다 — 조용히 진행하지 않는다. 앞으로 걸리는 평일 휴장일: **09-24·09-25(추석)·10-05·10-09·12-25·12-31**.
 - ★**수집기 로그를 믿지 마라(2026-07-29)**: 파일 리다이렉트 환경에서 `--- Logging error --- / TypeError: not all arguments converted during string formatting` 로 여러 수집기의 INFO 로그가 전멸했다(fsc·deriv·credit 구간 1~9줄, flow 구간은 같은 트레이스백 1,599줄). 로그가 조용하다고 성공이 아니다.
-- **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json·vkospi.json·credit_balance.json 5개는 루트에 저장**된다(정상 — 분석 지시 [5.9]~[5.12]가 루트에서 읽음). 세션에 없다고 실패 아님.
+- **신호파일 위치**: 대부분 세션폴더에 저장되지만 **deriv_sentiment.json·ecos_macro.json·market_caution.json·vkospi.json·credit_balance.json·night_futures.json 6개는 루트에 저장**된다(정상 — 분석 지시 [5.9]~[5.12]·[5.14]가 루트에서 읽음). 세션에 없다고 실패 아님. ★진실은 `snapshot_signals.py` 의 `ROOT_SIGNALS` 다 — 2026-08-26 까지 이 줄이 night_futures.json 을 빠뜨린 채 '5개'라 적어 인수인계 문서까지 그 오류를 물려받았다.
 - **신호 수집기는 '오늘 날짜 세션'을 자동 타겟**(common.resolve_session 위임): 자정 경계는 **6시간 폴백 창**으로 완화됨(23:50 collect→00:10 신호 OK). 오늘 세션도 6h 내 세션도 없으면 루트 폴백(무용).
-- **market_caution.py는 flow/deriv/ecos 산출물을 읽으므로 신호 수집기 중 맨 마지막에 실행, 그 직후 snapshot_signals.py로 루트 신호 5종을 세션에 signals_snapshot_*로 동결**(빠뜨리면 루트 파일이 다음날 덮어써져 회고 국면입력(F1/F8)이 영구 공백).
+- **market_caution.py는 flow/deriv/ecos 산출물을 읽으므로 신호 수집기 중 맨 마지막에 실행, 그 직후 snapshot_signals.py로 루트 신호 6종을 세션에 signals_snapshot_*로 동결**(빠뜨리면 루트 파일이 다음날 덮어써져 회고 국면입력(F1/F8)이 영구 공백).
 - KRX(pykrx)·BOK(ecos)는 **저녁·밤에 간헐 실패**(krx=0, timeout) — 스크립트는 exit 0 graceful. 데이터 완전성은 장중/아침이 최고.
 - 온디맨드 전 과정 절차는 **`..\stock_research_mcp\코워크_통합지시_최종.md`**(PART A) 참조.
 

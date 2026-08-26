@@ -2375,6 +2375,37 @@ def new_session_dir() -> str:
     return d
 
 
+def reuse_today_session() -> str:
+    """오늘 날짜의 **아직 분석되지 않은** 세션이 있으면 그 경로. 없으면 "".
+
+    [왜 — 2026-08-26 역검증에서 잡은 결함]
+      아침 2단계에서 06:05 의 `run_signals.py --stage early --make-session` 이
+      세션을 먼저 만든다. 그런데 collect 가 무조건 새 폴더를 만들면 하루에
+      세션이 둘로 갈라지고, snapshot(required)이 '산출물 없음'으로 FAIL 하며
+      06:05 에 찍은 카이로스 캡처가 분석 세션에 안 들어온다.
+
+    ★분석이 끝난 세션(03_final_report.md 존재)은 돌려주지 않는다 —
+      재사용하면 그날 분석가가 본 입력이 새 값으로 덮여 회고 스냅샷이 오염된다.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    cands = []
+    try:
+        for name in os.listdir(OUTPUT_DIR):
+            if not name.startswith(today) or name.startswith("_"):
+                continue
+            p = os.path.join(OUTPUT_DIR, name)
+            if not os.path.isdir(p):
+                continue
+            if os.path.exists(os.path.join(p, "03_final_report.md")):
+                continue                      # 이미 분석 완료 — 건드리지 않는다
+            cands.append(p)
+    except OSError:
+        return ""
+    if not cands:
+        return ""
+    return min(cands, key=lambda d: os.path.basename(d))   # 가장 먼저 생긴 것
+
+
 def latest_session_dir() -> str:
     """output/ 에서 가장 최근 세션 폴더 경로(없으면 ''). _로 시작하는 폴더(_archive 등) 제외."""
     if not os.path.isdir(OUTPUT_DIR):
@@ -3855,7 +3886,13 @@ def cmd_collect(args):
             log.warning("[collect] ⚠️ 수집된 기사가 0개입니다. "
                         "네트워크/소스 토글/차단 여부를 확인하세요. (그래도 세션은 생성)")
 
-        sess = new_session_dir()
+        # ★오늘 세션이 이미 있으면 이어 쓴다(06:05 --make-session 이 만든 것).
+        #   갈라두면 snapshot 이 FAIL 하고 카이로스 캡처가 분석 세션에 안 들어온다.
+        sess = "" if getattr(args, "new_session", False) else reuse_today_session()
+        if sess:
+            log.info("[collect] 오늘 세션을 이어 쓴다: %s", os.path.basename(sess))
+        else:
+            sess = new_session_dir()
         meta = {"수집 기사 수": len(arts), "소스당 기사 수": limit,
                 "Gemini 키": len(gk), "Naver": "O" if (cid and csec) else "X",
                 "KRX 종목": len(_KRX_MAP_CACHE or {}),
@@ -4020,6 +4057,11 @@ def main():
 
     p_col = sub.add_parser("collect", help="광역 수집 + INSTRUCTIONS 작성 (Cowork 핸드오프)")
     add_common(p_col)
+    # ★기본은 '오늘의 아직 분석 안 된 세션을 이어 쓰기'다(reuse_today_session).
+    #   06:05 --make-session 이 만든 세션과 갈라지면 snapshot 이 FAIL 하고
+    #   그날 카이로스 캡처가 분석 세션에 안 들어온다(2026-08-26 역검증).
+    p_col.add_argument("--new-session", action="store_true",
+                       help="오늘 세션이 있어도 새 폴더를 만든다(종전 동작)")
 
     p_deep = sub.add_parser("deep", help="심층 수집 (--session 또는 키워드 직접)")
     add_common(p_deep)

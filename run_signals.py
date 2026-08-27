@@ -29,6 +29,7 @@ run_signals.py — 아침 신호 수집 '한 방' 러너 (실행 순서를 코�
 import os
 import sys
 import glob
+import io
 import json
 import time
 import argparse
@@ -216,7 +217,40 @@ def _content_news(d):
     return None
 
 
-CONTENT_CHECKS = {"hts": _content_hts, "news": _content_news}
+def _content_nightfut(d):
+    """야간선물: 정말 **간밤 야간 세션**을 잡았나.
+
+    ★2026-08-27 실측 사고. 파일은 06:23 에 새로 쓰였고 asof 도 오늘이라
+      신선도 게이트를 통과했는데, 알맹이는 last_trade_kst='2026-08-25 14:00',
+      session_guess='day' — **2거래일 전 주간 종가**였다. 그 값(-0.16%)이 세션
+      스냅샷으로 동결됐고, 실제 간밤 야간선물은 +0.64% 로 **부호가 반대**였다.
+      아침 분석가는 마침 HTS 9308 캡처를 써서 살았지만, 회고는 스냅샷을 읽으므로
+      국면입력(F1/F8)에 반대 부호가 영구히 남는다.
+      08-26 전야 리서치도 같은 현상을 이미 보고했는데(그때는 08-24) 안 고쳐졌다.
+
+    ★'모르는 것'과 '0'은 다르다 — 야간 세션을 못 잡았으면 그렇게 말해야 한다.
+    """
+    sess = (d.get("session_guess") or "").strip().lower()
+    last = (d.get("last_trade_kst") or "").strip()
+    if not sess and not last:
+        return None                      # 옛 스키마 — 판단하지 않는다
+    if sess and sess != "night":
+        return "야간 세션이 아니다(session_guess=%s, 마지막체결 %s) — 간밤 값 확인 불가" % (
+            sess or "미상", last or "미상")
+    # 마지막 체결이 어제 15시보다 앞이면 간밤 세션을 못 잡은 것이다.
+    if last:
+        try:
+            t = datetime.strptime(last[:16], "%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+        if (datetime.now() - t).total_seconds() > 18 * 3600:
+            return "마지막 체결이 %s — %.1f시간 전이라 간밤 야간선물이 아니다" % (
+                last, (datetime.now() - t).total_seconds() / 3600.0)
+    return None
+
+
+CONTENT_CHECKS = {"hts": _content_hts, "news": _content_news,
+                  "nightfut": _content_nightfut}
 
 
 def run_one(step, session, log_dir):
@@ -402,15 +436,37 @@ def main():
     #   "그날 신호가 STALE/지연이었나"를 사후 참조할 방법이 없었다.
     try:
         from common import save_json_atomic
-        save_json_atomic(os.path.join(session, "run_signals_summary.json"),
+        sum_path = os.path.join(session, "run_signals_summary.json")
+        rows = [{k: r.get(k) for k in
+                 ("key", "desc", "verdict", "asof", "asof_lag_days",
+                  "note", "rc", "took")} for r in results]
+        # ★2단계 운영에서는 **덮어쓰면 안 된다**(2026-08-27 실측 결함).
+        #   06:05 early 가 4단계 판정을 쓰고, 06:20 main 이 같은 경로에 통째로
+        #   덮어써서 hts·taildrop·vkospi·nightfut 판정이 통째로 사라졌다.
+        #   그 4단계는 회고가 '그날 카이로스 캡처·야간선물이 정상이었나'를 판단하는
+        #   유일한 근거인데, 요약 JSON 만 보면 영영 알 수 없었다.
+        #   그래서 같은 key 는 이번 판정으로 갈아끼우고, 없는 key 는 남긴다.
+        prev = []
+        try:
+            with io.open(sum_path, encoding="utf-8") as fh:
+                prev = (json.load(fh) or {}).get("results") or []
+        except Exception:                       # noqa: BLE001
+            prev = []
+        mine = {r.get("key") for r in rows}
+        merged = [r for r in prev if r.get("key") not in mine] + rows
+        order = {k: i for i, k in enumerate(st[0] for st in STEPS)}
+        merged.sort(key=lambda r: order.get(r.get("key"), 999))
+        save_json_atomic(sum_path,
                          {"generated_at": datetime.now().isoformat(timespec="seconds"),
                           "what": ("run_signals 판정 요약 — 그날 신호 수집이 STALE/지연/실패였는지 "
-                                   "사후 참조용(회고 국면입력 신뢰도 판단·분석가 근거 각주)"),
+                                   "사후 참조용(회고 국면입력 신뢰도 판단·분석가 근거 각주). "
+                                   "★2단계(early+main) 판정이 합쳐져 있다"),
+                          "stage": getattr(args, "stage", "all"),
                           "n_required_bad": len(bad),
-                          "results": [{k: r.get(k) for k in
-                                       ("key", "desc", "verdict", "asof", "asof_lag_days",
-                                        "note", "rc", "took")} for r in results]})
-        print("[run_signals] 판정 요약 저장: run_signals_summary.json")
+                          "n_steps_total": len(STEPS),
+                          "results": merged})
+        print("[run_signals] 판정 요약 저장: run_signals_summary.json (%d/%d 단계)"
+              % (len(merged), len(STEPS)))
     except Exception as e:
         print("[run_signals] 요약 저장 실패(무시): %s" % type(e).__name__)
     return 1 if bad else 0

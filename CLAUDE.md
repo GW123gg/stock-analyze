@@ -7,7 +7,7 @@
 
 ## ★ 절대 규칙 (위반 금지)
 
-1. **비밀 파일 내용 출력·전송·커밋 금지**: `*_api.txt`(dart/fsc/mirae/naver/gemini/ecos/gdelt/apify)·`gemini_keys.txt`·`mail_config.txt(.full)`·`appscript_config.txt`·`krx_account.txt`·`gmail_credentials.json`. 존재 확인은 크기만. `.gitignore`가 `*.txt` 전체를 차단하니 **git add -f 금지**, 커밋 전 `git status`로 비밀 미포함 확인.
+1. **비밀 파일 내용 출력·전송·커밋 금지**: `*_api.txt`(dart/fsc/mirae/naver/gemini/ecos/gdelt/apify/**kis/vkospi/kairos**)·`gemini_keys.txt`·`mail_config.txt(.full)`·`appscript_config.txt`·`krx_account.txt`·`gmail_credentials.json`. 존재 확인은 크기만. ★**열거를 신뢰하지 말고 `*_api.txt` 라는 패턴을 신뢰하라** — 2026-08-27 실측으로 `kis_api.txt`·`vkospi_api.txt` 가 실재하는데 이 줄에 빠져 있었다. `.gitignore`가 `*.txt` 전체를 차단하니 **git add -f 금지**, 커밋 전 `git status`로 비밀 미포함 확인.
 2. **콘솔에 4바이트 이모지 출력 금지**(cp949 크래시). 리포트·메일 본문도 이모지 금지, 기호는 BMP(▲▼)만. 파일 IO는 UTF-8, JSON은 `ensure_ascii=False`.
 3. **supervisor/데몬을 임의로 재시작·종료하지 마라**(사용자 확인 필요). 종료는 `stop_supervisor.bat`(lock PID 기반)로만.
    **현재 데몬은 상시 오프**: `SUPERVISOR_DISABLED.flag`(코드 킬스위치 — supervisor·watchdog 이 시작 즉시 종료) +

@@ -128,12 +128,30 @@ def find_session(explicit=None):
         if name.startswith(today):
             cands.append(d)
     if not cands:  # 자정 경계 6시간 폴백
+        # ★폴백에서는 **분석이 끝난 세션을 절대 집지 않는다**(2026-08-27 추가).
+        #   폴백의 목적은 '23:50 collect → 00:10 신호' 뿐이고, 그 상황의 세션은
+        #   정의상 아직 분석 전이다. 분석 완료 세션이 잡히면 아래 게이트에서
+        #   "이미 분석 완료 → 중단(rc=1)" 이 되어 **--make-session 이 발동조차
+        #   못 하고** 06:05 의 야간선물·카이로스 4단계를 통째로 잃는다.
+        #   common.resolve_session 은 2026-07-20 사고 뒤 이미 이렇게 한다 —
+        #   여기만 빠져 있었다.
         cutoff = time.time() - 6 * 3600
         for d in glob.glob(os.path.join(OUTPUT_DIR, "*")):
             name = os.path.basename(d)
-            if os.path.isdir(d) and not name.startswith("_") and os.path.getmtime(d) >= cutoff:
-                cands.append(d)
-    return max(cands, key=os.path.getmtime) if cands else None
+            if not os.path.isdir(d) or name.startswith("_"):
+                continue
+            if os.path.getmtime(d) < cutoff:
+                continue
+            if os.path.isfile(os.path.join(d, "03_final_report.md")):
+                continue
+            cands.append(d)
+    # ★오늘 세션이 여럿이면 **아직 분석 안 된 것**을 먼저 본다. 전부 분석 완료면
+    #   원래대로 최신을 돌려줘 아래 게이트가 "이미 분석 완료"라고 말하게 둔다
+    #   (그 경우엔 그게 맞는 신호다).
+    fresh = [d for d in cands
+             if not os.path.isfile(os.path.join(d, "03_final_report.md"))]
+    pool = fresh or cands
+    return max(pool, key=os.path.getmtime) if pool else None
 
 
 def resolve_out(spec, session):
@@ -152,13 +170,36 @@ def peek_asof(path):
         return ""
     if not isinstance(d, dict):
         return ""
+    # ★generated_at 은 **맨 마지막**에 본다(2026-08-27 실측 결함).
+    #   그것은 '언제 이 파일을 썼나'이지 '언제 시점의 데이터인가'가 아니다.
+    #   먼저 걸리면 방금 구운 낡은 데이터가 전부 '오늘 기준일'로 통과한다.
     for k in ASOF_KEYS:
+        if k == "generated_at":
+            continue
         v = d.get(k)
         if isinstance(v, str) and v[:4].isdigit():
             return v[:19]
     fr = d.get("freshness")
     if isinstance(fr, dict) and isinstance(fr.get("latest_trade_date"), str):
         return fr["latest_trade_date"]
+    # ★최상위에 기준일이 없으면 **항목 안**을 본다(2026-08-27 실측 결함).
+    #   short.json 이 그렇다 — 최상위엔 generated_at(오늘)뿐이고 종목마다 asof 가
+    #   따로 있다. 그래서 종목 59개가 전부 3거래일 전 값인데 판정표에는
+    #   'OK · 기준일 오늘' 로 찍혔다(6개 세션 연속). CLAUDE.md 가 경고한
+    #   2026-07-29 사고(short.json 이 5일 전 값인 채 공매도 근거로 쓰임)와 같은 형태다.
+    #   ★가장 최신 항목을 기준으로 삼는다 — 그래야 '지연 N일' 이 실제 지연이 된다.
+    for key in ("tickers", "items", "rows"):
+        rows = d.get(key)
+        if not isinstance(rows, list):
+            continue
+        seen = [r.get("asof") for r in rows
+                if isinstance(r, dict) and isinstance(r.get("asof"), str)
+                and r["asof"][:4].isdigit()]
+        if seen:
+            return max(seen)[:19]
+    v = d.get("generated_at")                     # ★최후의 수단
+    if isinstance(v, str) and v[:4].isdigit():
+        return v[:19]
     return ""
 
 
@@ -222,11 +263,23 @@ def _content_nightfut(d):
 
     ★2026-08-27 실측 사고. 파일은 06:23 에 새로 쓰였고 asof 도 오늘이라
       신선도 게이트를 통과했는데, 알맹이는 last_trade_kst='2026-08-25 14:00',
-      session_guess='day' — **2거래일 전 주간 종가**였다. 그 값(-0.16%)이 세션
-      스냅샷으로 동결됐고, 실제 간밤 야간선물은 +0.64% 로 **부호가 반대**였다.
-      아침 분석가는 마침 HTS 9308 캡처를 써서 살았지만, 회고는 스냅샷을 읽으므로
-      국면입력(F1/F8)에 반대 부호가 영구히 남는다.
+      session_guess='day' — **2거래일 전 주간 종가**였다. 그 값(-0.16%)이었고
+      실제 간밤 야간선물은 +0.64% 로 **부호가 반대**였다.
       08-26 전야 리서치도 같은 현상을 이미 보고했는데(그때는 08-24) 안 고쳐졌다.
+
+    ★막는 것은 **분석가가 이 값을 인용하는 것**이다. 08-27 에는 다행히
+      HTS 9308 캡처를 썼다(cowork_instructions [5.14] 가 그렇게 지시한다).
+
+    ★**회고는 이 파일을 읽지 않는다**(2026-08-27 실측: retro_label.py 가 읽는
+      스냅샷은 market_caution·deriv·ecos·vkospi·credit 5종뿐, night 문자열 0건).
+      처음 이 함수를 넣을 때 '회고 F1/F8 이 영구 오염된다'고 적었으나 그것은
+      **확인하지 않고 쓴 문장이었다.** 실제 피해는 아침 리포트 인용에 한정된다.
+
+    ★**지금은 사실상 매일 걸린다** — 기록된 스냅샷 23개가 전부 session_guess='day'
+      다(수집 소스가 항상 T-2 주간 종가를 준다). 즉 이 EMPTY 는 '오늘 뭔가
+      고장났다'가 아니라 '이 소스는 원래 간밤 값을 못 준다'는 뜻이다.
+      nightfut 은 선택 단계라 아침을 멈추지 않는다 — **재시도하지 말고
+      '확인 불가'로 두고 넘어가라.**
 
     ★'모르는 것'과 '0'은 다르다 — 야간 세션을 못 잡았으면 그렇게 말해야 한다.
     """

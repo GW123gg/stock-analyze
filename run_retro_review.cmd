@@ -63,8 +63,13 @@ type "%PROMPT%" | claude -p --model %MODEL% --permission-mode acceptEdits --stri
 set "RC=%ERRORLEVEL%"
 echo [claude call end rc=%RC%]>>"%LOG%"
 
-for /f %%t in ('powershell -NoProfile -Command "Get-Date -Format \"yyyy-MM-dd HH:mm:ss\""') do set "END=%%t"
-echo [%END%] exit=%RC%>>"%LOG%"
+REM  delims= : without it, for /f splits on the space and END keeps only the date.
+REM  Space before >> : `exit=0>>file` makes cmd read the 0 as a stream handle and
+REM    the code never reaches the log (measured 2026-08-26 on morning; night and
+REM    retro runners still had it on 2026-08-27 - night_cli_20260826.log had no
+REM    exit= line at all).
+for /f "delims=" %%t in ('powershell -NoProfile -Command "Get-Date -Format \"yyyy-MM-dd HH:mm:ss\""') do set "END=%%t"
+echo [%END%] exit=%RC% >>"%LOG%"
 
 python "%~dp0retro_cli_status.py" --rc %RC% --log "%LOG%" --model "%MODEL%">>"%LOG%" 2>&1
 

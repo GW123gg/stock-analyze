@@ -73,8 +73,10 @@ STEPS = [
      "session:short.json",               True,  900),
     ("hts",        "카이로스 HTS 캡처",           ["hts_capture_collect.py"],
      "session:hts_capture.json",         False, 900),
+    # ★spec 이 None 이면 판정이 늘 '(산출물 없음 단계) OK' 라 실패가 안 보인다.
+    #   실제 산출물을 지목해 _content_taildrop 이 알맹이를 보게 했다(v11.33).
     ("taildrop",   "노트북 전송분 이관",          ["taildrop_receive.py"],
-     None,                               False, 300),
+     "session:hts_capture_batch.json",   False, 300),
     ("vkospi",     "변동성지수",                  ["vkospi_collect.py"],
      "root:vkospi.json",                 False, 300),
     ("nightfut",   "야간선물",                    ["night_futures_collect.py"],
@@ -302,8 +304,35 @@ def _content_nightfut(d):
     return None
 
 
+def _content_taildrop(d):
+    """노트북 전송분 이관 — zip 은 왔는데 한 장도 못 받았으면 실패다 [v11.33].
+
+    ★왜 넣었나(2026-08-30 실측): 이 단계는 spec 이 None 이라 판정이 늘
+      '(산출물 없음 단계) OK' 였다. 그런데 실제 산출물을 열어 보면
+      **13세션 누적 채택 0장 · 거부 220장**이다. 매번 zip 1개를 받아
+      21장을 전부 거부하고도 요약표에는 OK 로 보였다 — CLAUDE.md 가 경고하는
+      "'파일 존재'는 성공이 아니다"의 또 다른 판이다.
+
+    ★거부 사유는 대개 '기대 화면번호와 다른 화면'이다(마커 불일치).
+      노트북 배치가 요청과 다른 화면을 찍어 보낸다는 뜻이므로,
+      **0으로 읽지 말고 '노트북 배치가 어긋나 있다'로 읽어라.**
+
+    zip 이 아예 없으면(n_zip=0) 보낼 게 없었던 것이라 정상이다 — None 을 돌려준다.
+    taildrop 은 선택 단계라 이 EMPTY 가 아침을 멈추지는 않는다(가시화 목적).
+    """
+    z = d.get("n_zip")
+    if not z:                                   # 0 또는 None — 대기분 없음(정상)
+        return None
+    ok = d.get("n_ok") or 0
+    if ok:
+        return None
+    rej = d.get("n_rejected") or 0
+    return ("zip %s개를 받았으나 채택 0장(거부 %s장) — 노트북 배치가 요청과 다른 "
+            "화면을 보내고 있다. '데이터 없음'이 아니라 '이관 실패'다" % (z, rej))
+
+
 CONTENT_CHECKS = {"hts": _content_hts, "news": _content_news,
-                  "nightfut": _content_nightfut}
+                  "nightfut": _content_nightfut, "taildrop": _content_taildrop}
 
 
 def run_one(step, session, log_dir):

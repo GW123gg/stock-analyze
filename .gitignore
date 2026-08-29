@@ -64,3 +64,13 @@ report_mail_*.html
 # 전야 콜 원장·성적(로컬 데이터 — scorecard.md 와 같은 급)
 night_calls.jsonl
 night_scorecard.md
+
+# ── 스크래치·일회성 산출물 (v11.33) ──
+#   실측 2026-08-30: 미추적 파일이 77개까지 늘어 `git status` 로 '진짜 새 파일'을
+#   골라내기 어려웠다. 지우지 않고 무시만 한다 — 조사 흔적은 남겨 두는 편이 낫다.
+_scratch/
+_tmp_*/
+tmp_*/
+*.log
+*.err
+retro28*.py

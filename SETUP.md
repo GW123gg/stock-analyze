@@ -111,7 +111,7 @@ python -c "import requests, bs4, google.genai, pykrx, FinanceDataReader, markdow
 
 `mail_config.txt` 예시 (Apps Script 체제에선 **to만 있으면 됨**):
 ```
-to = student01@example.kr, friend@example.com
+to = you@example.com, friend@example.com
 ```
 
 > 참고: `gmail_credentials.json`, `gmail_token.json` 은 **Apps Script 전환으로 더 이상

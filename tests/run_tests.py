@@ -1292,9 +1292,10 @@ def test_new_collectors_pure():
         check("allow: 형식 아닌 값 거절",
               _al.normalize("없음") is None and _al.normalize("") is None)
         # ★로그에 원문이 새면 안 된다 — mail_config 내용은 밖으로 못 나간다
+        # ★공개 저장소에 실제 주소를 남기지 않는다 — 가짜 주소로 같은 성질을 검증한다.
         _mk = _al.mask("student01@example.kr")
         check("allow: 마스킹이 원문을 안 드러낸다",
-              "2024010203" not in _mk and "ushs" not in _mk and _mk.endswith(".kr"), _mk)
+              "student01" not in _mk and "example" not in _mk and _mk.endswith(".kr"), _mk)
         # ★Apps Script 의 hmacHex_ 가 내는 값과 **바이트 단위로 같아야** 한다.
         #   아래 기대값은 Apps Script 의 부호있는 바이트 변환을 Node 로 재현해 얻은 것이다.
         #   어긋나면 대조가 전부 실패해 **아무도 등록하지 못한다**(전원 차단).
@@ -1303,7 +1304,7 @@ def test_new_collectors_pure():
             ("a@b.com",
              "a40b8e6864e2ef145080116b5cad980d41a90860f5d9f5011c0331daf89ed614"),
             ("student01@example.kr",
-             "57e55129b434cf63abd69540954c8ea7784131cd1d7d1a84b0ff28f3403fdd4b"),
+             "7a1a5e241b9ea29adaebdaecefb1d45319a43baa722a551cc5f1b0b50b3ba401"),
             ("한글@테스트.com",
              "332cf5d2cc62360f6a32ae11cee0c711aaa3c2debc75a3380f3cadfc60689db4"),
         ]

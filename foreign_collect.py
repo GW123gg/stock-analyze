@@ -60,7 +60,12 @@ logging.basicConfig(level=logging.INFO, format="[foreign] %(message)s")
 log = logging.getLogger("foreign")
 
 # SEC 는 User-Agent 로 연락처를 요구한다(없으면 403). 키는 필요 없다.
-SEC_UA = {"User-Agent": "stock_research (research contact: you@example.com)"}
+#   ★연락처를 코드에 박지 않는다 — 저장소를 공개하면 그대로 노출된다.
+#   환경변수 SEC_CONTACT 에 본인 주소를 넣어라. 없으면 프로젝트명만 보낸다
+#   (저빈도 조회에서는 통과하지만, SEC 정책상 연락처를 넣는 편이 옳다).
+_SEC_CONTACT = os.environ.get("SEC_CONTACT", "").strip()
+SEC_UA = {"User-Agent": ("stock_research (%s)" % _SEC_CONTACT) if _SEC_CONTACT
+                        else "stock_research (educational research project)"}
 SEC_TICKERS = "https://www.sec.gov/files/company_tickers.json"
 SEC_FACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK%010d.json"
 

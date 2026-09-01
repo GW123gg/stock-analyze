@@ -430,20 +430,27 @@ def main():
         import subprocess
         key = os.path.join(os.path.expanduser("~"), ".ssh", "id_ed25519_node1")
         src = os.path.join(sess, "order_plan.json")
-        dst = "Owner@100.84.184.80:C:/Users/Owner/Desktop/kairos_pc/order_inbox/order_plan.json"
-        try:
-            r = subprocess.run(["scp", "-i", key, "-o", "StrictHostKeyChecking=accept-new",
-                                "-o", "ConnectTimeout=15", src, dst],
-                               capture_output=True, text=True, timeout=120)
-            if r.returncode == 0:
-                log.info("노드 전송 완료 -> order_inbox/order_plan.json")
-                log.info("  노트북에서 auto_trade.cmd 를 실행하면 이 계획을 읽는다"
-                         "(스위치 enabled=1 필요).")
-            else:
-                log.error("노드 전송 실패(rc=%d): %s", r.returncode,
-                          (r.stderr or "")[:200])
-        except Exception as e:
-            log.error("노드 전송 예외: %s", e)
+        # ★내부 호스트를 코드에 박지 않는다(저장소 공개 시 내부망 노출).
+        #   환경변수 NODE1_SCP_DEST 에 "<user>@<host>:<경로>" 를 넣어라.
+        dst = os.environ.get("NODE1_SCP_DEST", "").strip()
+        if not dst:
+            # 계획 파일은 이미 저장됐다 — 이관만 건너뛰고 정상 종료한다.
+            log.warning("NODE1_SCP_DEST 미설정 — 노트북 이관을 건너뛴다"
+                        "(자동매매를 쓰지 않으면 정상이다)")
+        else:
+            try:
+                r = subprocess.run(["scp", "-i", key, "-o", "StrictHostKeyChecking=accept-new",
+                                    "-o", "ConnectTimeout=15", src, dst],
+                                   capture_output=True, text=True, timeout=120)
+                if r.returncode == 0:
+                    log.info("노드 전송 완료 -> order_inbox/order_plan.json")
+                    log.info("  노트북에서 auto_trade.cmd 를 실행하면 이 계획을 읽는다"
+                             "(스위치 enabled=1 필요).")
+                else:
+                    log.error("노드 전송 실패(rc=%d): %s", r.returncode,
+                              (r.stderr or "")[:200])
+            except Exception as e:
+                log.error("노드 전송 예외: %s", e)
 
     # ── arm(폼 채우기) ──
     if args.arm is not None:

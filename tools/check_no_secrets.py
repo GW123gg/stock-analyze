@@ -64,10 +64,19 @@ FORBIDDEN_PATH = [
 #      애초에 특기입증자료에 적어 공개하는 값이다. 여기서 막으려면 자동매매
 #      폴백 경로(kairos_client·trade_client 의 IP 폴백)를 건드려야 하는데,
 #      실제로 얻는 안전이 없다(2026-09-01 판단).
+# ★대소문자를 무시한다. 예전 규칙은 소문자 example 만 봐서
+#   테스트 벡터의 A@Example.com 을 진짜 주소로 오해했다(2026-09-03).
 _ALLOW_MAIL = re.compile(
     r"example\.|invalid\.local|noreply@|@stock\.research|@anthropic\.com|"
-    r"your_id@|@b\.com|@d\.com|@x\.com|@y\.com|@테스트\.com|localhost"
+    r"your_id@|@b\.com|@d\.com|@x\.com|@y\.com|@테스트\.com|localhost|"
+    r"you@|user@|me@|someone@|test@|admin@",
+    re.I
 )
+
+# 공개용 양식에 일부러 넣은 자리표시자. 진짜 키가 아니다.
+# ★좁게 쓴다. `<...>` 같은 넓은 규칙을 넣으면 <user@real.com> 형태의
+#   진짜 주소까지 통과시킨다 - 예외는 검사기를 조용히 무력화하는 통로다.
+_PLACEHOLDER = re.compile(r"REPLACE_WITH|CHANGE_ME|REPLACEME|PUT_YOUR|YOUR_KEY|YOUR_TOKEN|YOUR_DEPLOYMENT", re.I)
 
 PATTERNS = [
     ("실제 이메일 주소",
@@ -115,6 +124,8 @@ def main() -> int:
                 hit = m.group(0)
                 if allow and allow.search(hit):
                     continue
+                if _PLACEHOLDER.search(hit):
+                    continue          # 채워 넣으라고 적어 둔 자리표시자
                 line = txt.count("\n", 0, m.start()) + 1
                 problems.append(("내용", "%s:%d" % (n, line), label, hit))
 

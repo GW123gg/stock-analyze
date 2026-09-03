@@ -1,0 +1,10 @@
+# naver_api.txt
+# 네이버 검색 API
+#
+# 이 파일은 **양식**입니다. 값이 비어 있습니다.
+#   1) 이 파일을 같은 폴더에 naver_api.txt 라는 이름으로 복사하세요.
+#   2) = 오른쪽에 본인 값을 채우세요.
+#   3) naver_api.txt 는 .gitignore 로 막혀 있어 저장소에 올라가지 않습니다.
+#
+client_id = 
+client_secret = 

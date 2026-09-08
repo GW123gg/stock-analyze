@@ -6,7 +6,8 @@
 ## ★ 온디맨드 전환 (2026-07-06) — 데몬 끄고 아무 때나 실행
 이제 **supervisor 데몬(스케줄 자동실행) 대신 이 MCP-코워크가 온디맨드로 전 과정**을 돈다. 6:30/6:45 고정이 아니라 **원할 때 실행하면 그 자리에서** collect→신호12종→deep→리포트→(발송)까지 수행한다(임의 시각 차단 하드코딩 없음 — 검증됨).
 
-**아침 분석 실행법**: Claude Desktop 코워크를 `analyze_instructions_mcp.md` 로 열고 "오늘 리서치 돌려줘"라고 하면, 지시문의 '실행 순서 0~7'을 그대로 수행한다:
+**아침 분석 실행법**: Claude Desktop 코워크에 `코워크_통합지시_최종.md` **PART A** 를 물리고 "오늘 리서치 돌려줘"라고 한다.
+절차는 `python run_signals.py --stage early/main` 한 줄씩이다(개별 수집기를 베껴 실행하지 않는다). 아래 구판 요약은 이력용:
 `0)accuracy_tracker(scorecard갱신) → 1)collect → 신호 13종(force/market/fsc/flow/overheat/deriv/ecos/dart/disclosure/mirae/short/★market_caution) → 2)1차분석·commands.txt → 3)deep → 4)리포트+predictions.json → 5)mail(완성HTML) → 6)recommend_track → 7)archive`.
 **회고 실행법**: 코워크를 `review_instructions_mcp.md` 로 열면 retro_label→push→gen_scorecard→회고리포트→`retro_feedback.md` 갱신까지 데몬 없이 폐루프.
 
@@ -23,7 +24,7 @@ Disable-ScheduledTask -TaskName "StockResearchStop"
 |---|---|---|
 | ★★`코워크_통합지시_최종.md` | **최종 통합 진입점(권장)** | PART A(리서치+회고)+PART B(모의투자+**실전 확장 훅**) 한 파일. 분석 판단은 원본 read_file 참조. **코워크엔 이걸 물려라.** |
 | `코워크_온디맨드_런북.md` | PART A 요약본(리서치+회고만) | 모의투자 없이 분석만 돌릴 때. 통합본의 PART A와 동일 |
-| `analyze_instructions_mcp.md` | 아침 분석 자기완결 상세본 | 원본 108KB 복사 + [MCP 모드] 헤더. **참고용 폴백** |
+| `analyze_instructions_mcp.md` | 아침 분석 상세본(**자동 생성 사본**) | `python build_mcp_instructions.py` 가 원본 `cowork_instructions.md` 에서 재생성(머리에 원본 sha256 마커). 손으로 고치지 말 것. **참고용 폴백** |
 | `review_instructions_mcp.md` | 회고 자기완결 상세본 | [MCP 모드] 헤더가 RETRO_GO/DONE·inbox/outbox 대체. **참고용 폴백** |
 | `README_SETUP.md` | (이 파일) | 세팅·동작 설명 |
 
@@ -48,7 +49,7 @@ Disable-ScheduledTask -TaskName "StockResearchStop"
 
 ## 세팅 (요약 — 자세한 건 채팅 답변 참고)
 1. **터미널 MCP 권한**: 코워크에서 `run_command` 등을 'Allow always'로 허용(도구 단위 전역).
-2. **지시사항 지정**: 아침 분석 작업엔 `analyze_instructions_mcp.md`, 회고 작업엔 `review_instructions_mcp.md` 를 코워크에 물린다.
+2. **지시사항 지정**: 아침 분석·회고 작업 모두 `코워크_통합지시_최종.md`(PART A)를 코워크에 물린다. `analyze_instructions_mcp.md`·`review_instructions_mcp.md` 는 참고용 폴백이지 진입점이 아니다(2026-09-08 정정 — 구판 안내가 낡은 사본을 물리게 했다).
 3. **WORK 경로 확인**: 두 파일 상단 [MCP 모드]의 `WORK = ...stock_research` 가 네 환경과 맞는지 확인.
 4. **수집 겹침 주의**: 기존 자동 파이프라인(supervisor 06:30/02:00)과 **시간이 겹치지 않게** 수동 실행(사용자 확인됨). 필요하면 supervisor 의 해당 시간대 자동수집을 끄거나, MCP-코워크 실행 시간을 분리.
 5. **발송**: 자동 발송을 원치 않으면 analyze 5)번(`mail`)을 건너뛰고 리포트만 저장하도록 지시.

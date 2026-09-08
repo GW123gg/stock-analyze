@@ -255,9 +255,51 @@ def _copy_guide_once(folder: str):
         log(f"지시문 복사 실패(무시): {type(e).__name__}: {e}")
 
 
-def push() -> bool:
+def _maybe_refresh_scorecard(dataset_json: str, timeout_s: int = 900) -> dict:
+    """★v11.41(호스트 감사 2026-09-08 — 원장 A65 재발 2회): 드롭될 scorecard.md 가 라벨(retro_dataset.json)보다
+    낡으면 push 직전에 accuracy_tracker.py 를 1회 돌려 갱신한다(37회차 실측: scorecard 08:43 vs 라벨 18:04 =
+    9시간 21분 낡음 → 회고가 아침 판 성적표로 저녁 라벨을 해석). 실패·타임아웃이면 낡은 판을 그대로 싣되
+    latest.json 의 scorecard_refresh 에 사실을 남긴다(무음 실패 금지). 반환: {ran, reason, rc, ...}."""
+    sc = os.path.join(BASE_DIR, "scorecard.md")
+    info = {"ran": False, "reason": None, "rc": None,
+            "dataset_mtime": None, "scorecard_mtime_before": None, "scorecard_mtime_after": None}
+
+    def _iso(ts):
+        try:
+            return datetime.fromtimestamp(ts).isoformat(timespec="seconds") if ts else None
+        except Exception:
+            return None
+    try:
+        ds_m = os.path.getmtime(dataset_json) if os.path.isfile(dataset_json) else None
+        sc_m = os.path.getmtime(sc) if os.path.isfile(sc) else None
+        info["dataset_mtime"], info["scorecard_mtime_before"] = _iso(ds_m), _iso(sc_m)
+        if ds_m is None:
+            info["reason"] = "no_dataset"
+            return info
+        if sc_m is not None and sc_m >= ds_m - 60:
+            info["reason"] = "fresh"
+            return info
+        import subprocess
+        log("scorecard.md 가 retro_dataset.json 보다 낡음(A65) — accuracy_tracker.py 1회 실행 후 push")
+        r = subprocess.run([sys.executable, os.path.join(BASE_DIR, "accuracy_tracker.py")],
+                           cwd=BASE_DIR, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout_s)
+        info["ran"], info["rc"] = True, r.returncode
+        sc_m2 = os.path.getmtime(sc) if os.path.isfile(sc) else None
+        info["scorecard_mtime_after"] = _iso(sc_m2)
+        info["reason"] = ("refreshed" if (sc_m2 and (sc_m is None or sc_m2 > sc_m)) else "ran_but_not_updated")
+        log(f"scorecard 갱신 결과: {info['reason']} (rc={r.returncode})")
+    except Exception as e:      # subprocess.TimeoutExpired 포함 — push 자체는 계속
+        info["ran"] = info["ran"] or isinstance(e, getattr(__import__("subprocess"), "TimeoutExpired", ()))
+        info["reason"] = f"error:{type(e).__name__}"
+        log(f"scorecard 갱신 실패(낡은 판 그대로 전달): {type(e).__name__}: {e}")
+    return info
+
+
+def push(no_refresh: bool = False) -> bool:
     """retro_dataset.* + scorecard.md 를 folder/inbox/ 로 전달하고 RETRO_GO.flag + latest.json 작성.
-    enabled=0/ folder 미설정이면 아무것도 안 함. 1개 이상 전달했으면 True."""
+    enabled=0/ folder 미설정이면 아무것도 안 함. 1개 이상 전달했으면 True.
+    v11.41: scorecard.md 가 라벨보다 낡으면 accuracy_tracker 를 먼저 1회 실행(--no-refresh 로 생략)."""
     cfg = load_config()
     if not cfg["enabled"]:
         log("enabled=0 — push 보류")
@@ -297,6 +339,9 @@ def push() -> bool:
     #   되돌림 대상 자체가 없어 경합이 성립하지 않는다. 회고는 latest.json 의 files 를 보고 읽는다.
     stamp = datetime.now().strftime("%Y-%m-%d")
     copied, name_map = [], {}
+    # ★v11.41(A65): 낡은 scorecard 를 싣지 않는다 — 라벨보다 오래됐으면 여기서 1회 갱신
+    _refresh = ({"ran": False, "reason": "no_refresh"} if no_refresh
+                else _maybe_refresh_scorecard(json_src))
     # ★v11.6: 루트 파일 + 최신 세션의 장중 실측 파일을 같은 규약(버저닝·검증)으로 드롭
     _push_pairs = [(fn, os.path.join(BASE_DIR, fn)) for fn in PUSH_FILES]
     for fn in SESSION_PUSH_FILES:
@@ -350,6 +395,8 @@ def push() -> bool:
               # #P0-1: 회고가 '역할 → 실제 파일명'을 찾는 표. 파일명이 매 회차 달라지므로 이 표가 전거다.
               "roles": name_map,
               "checksums": checks,
+              # v11.41(A65): scorecard 가 라벨과 같은 빈티지인지 — reason=fresh|refreshed 면 정상, 그 외는 낡은 판
+              "scorecard_refresh": _refresh,
               "_note": ("파일명은 회차마다 날짜가 붙는다(불변 드롭 — 덮어쓰기 경합/되돌림 방지). "
                         "roles 로 실제 파일명을 찾고, checksums 로 무결성을 대조한 뒤 읽어라.")}
     try:
@@ -462,17 +509,19 @@ def main():
     ap.add_argument("--scan-back", action="store_true", help="outbox 피드백을 호스트로 회수")
     ap.add_argument("--push-collections", action="store_true",
                     help="수집결과(종가/수급/거시/파생/뉴스)를 회고 폴더 collections/<날짜>/ 로 복사")
+    ap.add_argument("--no-refresh", action="store_true",
+                    help="v11.41: push 전 scorecard.md 자동 갱신(accuracy_tracker 1회)을 생략")
     args = ap.parse_args()
     if args.push_collections:
         push_collections()
         return
     if not args.push and not args.scan_back:
-        push()
+        push(no_refresh=args.no_refresh)
         c = scan_back()
         log(f"기본 모드 종료 (회수 {c}건)")
         return
     if args.push:
-        push()
+        push(no_refresh=args.no_refresh)
     if args.scan_back:
         c = scan_back()
         log(f"scan-back 종료 (회수 {c}건)")

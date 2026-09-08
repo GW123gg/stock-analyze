@@ -138,6 +138,56 @@ def _kospi_ret5d(base_date):
     return val
 
 
+_KOSPI_POS_CACHE = {}
+
+
+def _kospi_pre_position(base_date):
+    """★v11.41(호스트 감사 2026-09-08) 지수 '위치' 피처 — D-1 종가까지만(룩어헤드 없음).
+    [6.7] B7·B8·B13 의 '직전 1~2일 -5% 급락'·'ATH권(직전 고점 부근)'·'저점권' 조건을 데이터셋에서
+    처음으로 판정할 수 있게 한다(그동안 열이 없어 13개 B게이트가 검정 불가였다).
+      pre_kospi_ret1d  : D-2 -> D-1 수익률(%)      pre_kospi_ret2d : D-3 -> D-1 수익률(%)
+      pre_kospi_dist_high60_pct : D-1 종가 / 직전 60거래일 최고 종가 - 1 (%)  (0 근처 = ATH권)
+      pre_kospi_dist_low60_pct  : D-1 종가 / 직전 60거래일 최저 종가 - 1 (%)  (0 근처 = 저점권)
+    _ks11_series()(오늘 봉 제외) 재사용 — 행별 재조회 없음, 날짜별 캐시."""
+    out = {"pre_kospi_ret1d": None, "pre_kospi_ret2d": None,
+           "pre_kospi_dist_high60_pct": None, "pre_kospi_dist_low60_pct": None}
+    if base_date is None:
+        return out
+    key = base_date.strftime("%Y%m%d")
+    if key in _KOSPI_POS_CACHE:
+        return dict(_KOSPI_POS_CACHE[key])
+    try:
+        prior = [c for d, c in _ks11_series() if d < base_date and c]
+        if len(prior) >= 3:
+            out["pre_kospi_ret1d"] = round((prior[-1] / prior[-2] - 1.0) * 100.0, 2)
+            out["pre_kospi_ret2d"] = round((prior[-1] / prior[-3] - 1.0) * 100.0, 2)
+        if len(prior) >= 20:
+            win = prior[-60:]
+            out["pre_kospi_dist_high60_pct"] = round((prior[-1] / max(win) - 1.0) * 100.0, 2)
+            out["pre_kospi_dist_low60_pct"] = round((prior[-1] / min(win) - 1.0) * 100.0, 2)
+    except Exception:
+        pass
+    _KOSPI_POS_CACHE[key] = dict(out)
+    return out
+
+
+import re as _re_gate   # noqa: E402 — 게이트 ID 정규화 전용(모듈 상단 import 목록 불변)
+_GATE_ID_RE = _re_gate.compile(r"^\s*(F[1-8]|B\d{1,2})")
+
+
+def _norm_gate_ids(tokens):
+    """★v11.41 applied_gates 자유문 토큰 → 정규 게이트 ID 목록(';' 연결, 순서 보존·중복 제거).
+    'F6-3'·'F6③'·'F8-b:...' 는 모 ID(F6·F8)로 흡수(회고 15-c 계수 단위와 동일), 규칙 ID 로 시작하지
+    않는 토큰('반증검색:…'·'entry_window=…')은 OTHER. 원문 열(applied_gates)은 그대로 두고 병기한다."""
+    ids = []
+    for t in (tokens or []):
+        m = _GATE_ID_RE.match(str(t))
+        gid = m.group(1) if m else "OTHER"
+        if gid not in ids:
+            ids.append(gid)
+    return ";".join(ids) if ids else None
+
+
 # --- 알파(지수 차감) 라벨(#R1) — KOSPI 전 구간 1회 조회 캐시 ---
 _KS11_SERIES = None
 
@@ -551,6 +601,9 @@ PRE_COLS = [
     "pre_foreign_5d_ratio", "pre_indiv_5d_ratio", "pre_avg_trade_value_20d_eok",
     # 진입시점 기술피처(P1b 백필) — §3 과열/즉시고점 가설 검증용
     "pre_rsi14", "pre_up_streak", "pre_ret_20d_pct", "pre_dist_52w_high_pct", "pre_disparity20", "pre_overheat",
+    # ★v11.41(호스트 감사 2026-09-08) 지수 '위치' 피처 — [6.7] B7/B8/B13 의 '직전 1~2일 급락'·'ATH권/저점권'
+    #   조건이 열로 없어 검정 불가였다. FDR KS11 의 D-1 종가까지만 사용(룩어헤드 없음). _kospi_pre_position().
+    "pre_kospi_ret1d", "pre_kospi_ret2d", "pre_kospi_dist_high60_pct", "pre_kospi_dist_low60_pct",
 ]
 # 라벨side 보강 컬럼(보유 후 결과 — 진입규칙 사용 금지). cats/titles 도 CSV 에 포함(JSON 과 일관, 조용한 드롭 방지)
 ENRICH_COLS = ["dist_disc_count", "dist_disc_cats", "dist_disc_titles", "dist_disc_truncated"]
@@ -595,6 +648,13 @@ FEATURE_COLS = [
     # ★v11.6(leakage-3) 스냅샷 빈티지 — vkospi·신용잔고는 공표 지연으로 상시 D-2 실측.
     #   '지연 거래일 수를 숫자로'(CLAUDE.md) 원칙을 데이터셋에도 적용 — 회고가 지연을 보고 판단.
     "pre_vkospi_asof", "pre_margin_asof",
+    # ★v11.41(호스트 감사 2026-09-08) [6.7] B게이트 검정용 시장수준 피처 — 13개 B게이트가 요구하는
+    #   breadth·외인 레짐·KOSDAQ 자체 추세가 열로 없어 원장 B표에 행조차 없었다(0/13, applied 0건).
+    #   그날 아침 market_context.json(분석가가 실제로 본 파일)·flow_data.json market 에서 싣는다.
+    #   ※ market_context 는 10:20 장중 재작성될 수 있다 — feature_vintage_late 에 그 파일이 있으면 그 행은 경계.
+    "pre_breadth_adv", "pre_breadth_dec", "pre_breadth_dec_adv_ratio",
+    "pre_mkt_flows_trend", "pre_mkt_foreign_5d_eok", "pre_mkt_foreign_20d_eok",
+    "pre_mkt_foreign_sell_streak", "pre_mkt_risk_off_score", "pre_kosdaq_ret5d",
 ]
 # 위 중 '시장수준(그날 공통)' 컬럼 — _row_for 가 종목별 feats 가 아니라 regime 에서 읽어야 하는 것들.
 SNAPSHOT_MARKET_COLS = {
@@ -605,6 +665,10 @@ SNAPSHOT_MARKET_COLS = {
     "pre_margin_total_eok", "pre_margin_d5_chg_pct", "pre_margin_pct_rank",
     # v11.6 스냅샷 빈티지(시장수준)
     "pre_vkospi_asof", "pre_margin_asof",
+    # v11.41 B게이트 검정용(시장수준 — regime dict 경유)
+    "pre_breadth_adv", "pre_breadth_dec", "pre_breadth_dec_adv_ratio",
+    "pre_mkt_flows_trend", "pre_mkt_foreign_5d_eok", "pre_mkt_foreign_20d_eok",
+    "pre_mkt_foreign_sell_streak", "pre_mkt_risk_off_score", "pre_kosdaq_ret5d",
 }
 LABEL_COLS = [
     "matured", "label_status", "fwd_days_avail", "ret_h_pct",
@@ -618,6 +682,9 @@ LABEL_COLS = [
     "kospi_ret_h_pct", "alpha_h_pct",              # #R1 지수차감(베타/선택 분리)
     "ret_if_stop8_pct", "ret_if_stop8_tp12_pct",   # #S2 손절 반사실(규칙을 지켰다면)
     "ret_if_stop8_tp12_cap_pct",                   # #A15 익절 지정가 체결 가정(상방편향 보정판)
+    # ★v11.41(호스트 감사): 분석가가 실제로 적은 stop_pct/target_pct 대로 했다면 — F4(익절/손절 의무)의
+    #   준수·효과가 고정 -8/+12 반사실로는 잴 수 없었다(측정 불가 게이트). 픽만(숏은 부호 반전이라 미산출).
+    "ret_if_analyst_stop_pct", "ret_if_analyst_stop_tp_cap_pct", "analyst_stop_hit_day",
     "profit_take_flag", "hit", "settle_close",
     # 거래량(차익실현·큰손 매도 신호)
     "entry_volume", "avg_volume_20d", "avg_volume_20d_ex_entry", "peak_day_vol_ratio", "trough_day_vol_ratio",
@@ -708,6 +775,12 @@ BASE_COLS = [
     # ★v11.6(feedback-stability-8) 게이트 발동 기록 — '게이트가 강등시킨 픽 vs 통과 픽' 성과 대조용.
     #   분석가가 [7.5] 선택 필드로 제출(도입 전·미제출은 null 정상).
     "applied_gates", "rule_regime",
+    # ★v11.41(호스트 감사 2026-09-08): applied_gates 는 자유문(접두 25종 실측)이라 게이트별 집계가 불가했다 →
+    #   정규 ID 로 접은 열을 병기(F6-3·F6③·F8-b 는 모 ID 흡수, 비규칙 토큰은 OTHER). 원문 열은 그대로 둔다.
+    "applied_gate_ids",
+    # ★v11.41: 분석가 보유관리 계획(F4·F6④·[7.5]) — predictions.json 에는 07월부터 있었으나 데이터셋에 실리지
+    #   않아 F4 가 '측정 불가 게이트'였다. size_pct 는 conviction 과 Spearman 0.78 동행(실측) 감시용.
+    "target_pct", "stop_pct", "trailing_stop_pct", "partial_take_pct", "size_pct",
 ]
 
 
@@ -826,7 +899,34 @@ def load_signal_snapshot(session_dir):
     regime = {}
     mc = _load_json(os.path.join(session_dir, "market_context.json"))
     if isinstance(mc, dict) and isinstance(mc.get("regime"), dict):
-        regime = mc["regime"]
+        regime = dict(mc["regime"])
+    # ★v11.41(호스트 감사 2026-09-08): [6.7] B7~B14 가 요구하는 시장수준 조건(breadth·외인 레짐·KOSDAQ 자체
+    #   추세)이 열로 없어 13개 B게이트가 구조적으로 검정 불가였다(원장 B표 행 0/13, applied_gates B 0건).
+    #   분석가가 그날 아침 실제로 본 market_context 값을 그대로 싣는다(장중 재작성 여부는 feature_vintage_late).
+    if isinstance(mc, dict):
+        _br = mc.get("breadth") if isinstance(mc.get("breadth"), dict) else {}
+        _adv, _dec = _br.get("advancers"), _br.get("decliners")
+        regime["pre_breadth_adv"] = _adv
+        regime["pre_breadth_dec"] = _dec
+        try:
+            regime["pre_breadth_dec_adv_ratio"] = (round(float(_dec) / float(_adv), 2)
+                                                   if (_adv is not None and _dec is not None
+                                                       and float(_adv) > 0) else None)
+        except (TypeError, ValueError):
+            regime["pre_breadth_dec_adv_ratio"] = None
+        _fl = mc.get("flows") if isinstance(mc.get("flows"), dict) else {}
+        regime["pre_mkt_flows_trend"] = _fl.get("trend")
+        regime["pre_mkt_foreign_5d_eok"] = _fl.get("foreign_net_5d")
+        regime["pre_mkt_foreign_20d_eok"] = _fl.get("foreign_net_20d")
+        _ki = mc.get("kr_index") if isinstance(mc.get("kr_index"), dict) else {}
+        regime["pre_kosdaq_ret5d"] = _ki.get("kosdaq_ret5d_pct")
+    _fdm = _load_json(os.path.join(session_dir, "flow_data.json"))
+    if isinstance(_fdm, dict):
+        _mk = _fdm.get("market") if isinstance(_fdm.get("market"), dict) else {}
+        _km = _mk.get("KOSPI") if isinstance(_mk.get("KOSPI"), dict) else {}
+        regime["pre_mkt_foreign_sell_streak"] = _km.get("foreign_sell_streak")
+        _ro = _fdm.get("risk_off") if isinstance(_fdm.get("risk_off"), dict) else {}
+        regime["pre_mkt_risk_off_score"] = _ro.get("risk_off_score")
     # #S1(사각지대 #10): 루트 신호 4종의 세션 동결본(snapshot_signals.py 산출)을 시장수준 피처로.
     # 아침 [6.6]F1/F8 게이트의 1차 입력(국면·PCR·거시·공포)이 회고 학습에 전혀 없던 공백을 메운다.
     # 동결본이 없는 과거 세션은 전부 None(룩어헤드 없음 — 그날 존재하던 값만 씀).
@@ -879,7 +979,7 @@ def _snapshot_market_feats(session_dir):
     return out
 
 
-def compute_labels(ticker, base_date, entry_ref, horizon):
+def compute_labels(ticker, base_date, entry_ref, horizon, stop_pct=None, target_pct=None):
     """추천일(base_date) 이후 horizon 거래일까지의 가격경로로 라벨 계산.
     가격 출처: 금융위(FSC) 공식 종가 우선, 실패 시 FDR 폴백(fsc_collect.get_close_series).
     핵심: peak_gain(고점 상승), days_to_peak(고점까지 일수), post_peak_drawdown(고점 후 반납)."""
@@ -1027,6 +1127,34 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
     ret_stop8_tp12 = _counterfactual(-8.0, 12.0)   # auto stock strategy_config 의 실제 룰(-8/+12)
     ret_stop8_tp12_cap = _counterfactual(-8.0, 12.0, cap_tp=True)  # A15 상방편향 보정판(비교용 병존)
 
+    # ★v11.41(호스트 감사 2026-09-08): 분석가가 실제로 적은 stop_pct/target_pct 를 지켰다면 — F4 의 효과를
+    #   처음으로 잴 수 있게 한다(그동안 F4 는 고정 -8/+12 반사실뿐이라 '측정 불가'로 분류됐다).
+    #   규약은 _counterfactual 과 동일(종가 기준·손절은 실제 종가·익절은 지정가 캡). 값 없음 → null(정상).
+    ret_analyst_stop = ret_analyst_stop_tp_cap = analyst_stop_day = None
+    try:
+        _sp = float(stop_pct) if stop_pct is not None else None
+        if _sp is not None and _sp > 0:
+            _sp = -_sp                       # '5' 로 적힌 손절폭은 -5 로 해석([7.5] 규약은 음수)
+    except (TypeError, ValueError):
+        _sp = None
+    try:
+        _tp = float(target_pct) if target_pct is not None else None
+        if _tp is not None and _tp <= 0:
+            _tp = None
+    except (TypeError, ValueError):
+        _tp = None
+    if _sp is not None and _sp < 0:
+        ret_analyst_stop = _counterfactual(_sp)
+        ret_analyst_stop_tp_cap = (_counterfactual(_sp, _tp, cap_tp=True) if _tp is not None
+                                   else ret_analyst_stop)
+        if matured:
+            for _k in range(1, horizon + 1):
+                if _k >= len(rets):
+                    break
+                if rets[_k] <= _sp:
+                    analyst_stop_day = _k
+                    break
+
     def _ratio(x):
         return round(x / avg_vol, 2) if (x and avg_vol and avg_vol > 0) else None
 
@@ -1061,6 +1189,10 @@ def compute_labels(ticker, base_date, entry_ref, horizon):
         "kosdaq_ret_h_pct": kosdaq_rh,
         "ret_if_stop8_pct": ret_stop8, "ret_if_stop8_tp12_pct": ret_stop8_tp12,
         "ret_if_stop8_tp12_cap_pct": ret_stop8_tp12_cap,
+        # v11.41 분석가 계획 반사실(F4 측정 가능화)
+        "ret_if_analyst_stop_pct": ret_analyst_stop,
+        "ret_if_analyst_stop_tp_cap_pct": ret_analyst_stop_tp_cap,
+        "analyst_stop_hit_day": analyst_stop_day,
         "profit_take_flag": (bool(profit_take) if profit_take is not None else None),
         "settle_close": settle_close_v, "last_close": last_close_v,
         # 거래량
@@ -1131,6 +1263,14 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
         # v11.6 진입시점·익일 전망(예측) — 도입(2026-08-01) 전 추천은 null 이 정상
         "entry_window": (str(item.get("entry_window")).strip()
                          if item.get("entry_window") else None),
+        # ★v11.41(호스트 감사): 분석가 보유관리 계획(F4·F6④·[7.5]) — 그동안 행에 실리지 않았다
+        "target_pct": (acc._safe_float(item.get("target_pct")) if ACC_OK else item.get("target_pct")),
+        "stop_pct": (acc._safe_float(item.get("stop_pct")) if ACC_OK else item.get("stop_pct")),
+        "trailing_stop_pct": (acc._safe_float(item.get("trailing_stop_pct")) if ACC_OK
+                              else item.get("trailing_stop_pct")),
+        "partial_take_pct": (acc._safe_float(item.get("partial_take_pct")) if ACC_OK
+                             else item.get("partial_take_pct")),
+        "size_pct": (acc._safe_float(item.get("size_pct")) if ACC_OK else item.get("size_pct")),
     }
     _pnd = item.get("next_day") if isinstance(item.get("next_day"), dict) else {}
     row["next_day_dir"] = _pnd.get("dir")
@@ -1138,8 +1278,10 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
     row["next_day_expected_pct"] = _pnd.get("expected_pct")
     # v11.6 게이트 발동 기록 — 리스트는 CSV 안전하게 세미콜론 문자열로 압축
     _ag = item.get("applied_gates")
-    row["applied_gates"] = (";".join(str(x)[:40] for x in _ag[:12])
+    # v11.41: 토큰 절단 40→80자(실측 최장 77자 토큰이 잘려 조치 내용이 유실됐다) + 정규 ID 열 병기
+    row["applied_gates"] = (";".join(str(x)[:80] for x in _ag[:12])
                             if isinstance(_ag, list) and _ag else None)
+    row["applied_gate_ids"] = (_norm_gate_ids(_ag[:12]) if isinstance(_ag, list) and _ag else None)
     row["rule_regime"] = (str(item.get("rule_regime"))[:40]
                           if item.get("rule_regime") else None)
     # 피처(추천 시점 스냅샷)
@@ -1160,9 +1302,14 @@ def _row_for(item, kind, pred_date, base_date, feats, regime):
     pre = pre_entry_features(code, base_date, f)
     for col in PRE_COLS:
         row[col] = pre.get(col)
-    # 라벨(이후 결과)
+    # ★v11.41 지수 위치 피처(D-1 종가까지 — B7/B8/B13 '급락 직후'·'ATH권/저점권' 판별). 날짜별 캐시.
+    for _pk, _pv in _kospi_pre_position(base_date).items():
+        row[_pk] = _pv
+    # 라벨(이후 결과) — v11.41: 픽은 분석가 stop/target 도 넘겨 F4 반사실을 산출(숏은 부호 반전이라 제외)
     if entry_ref and horizon and base_date is not None:
-        lab = compute_labels(code, base_date, entry_ref, horizon)
+        lab = compute_labels(code, base_date, entry_ref, horizon,
+                             stop_pct=(item.get("stop_pct") if kind == "pick" else None),
+                             target_pct=(item.get("target_pct") if kind == "pick" else None))
     else:
         lab = {"matured": None, "note": "missing_entry_or_horizon"}
     for col in LABEL_COLS:
@@ -1370,17 +1517,42 @@ def build_rows():
     # 원인 분석(§3.15) 입력. predictions 를 이미 전부 로드했으므로 여기서 부산물로 모아 별도 파일로 저장.
     try:
         calls = []
+        # ★v11.41(호스트 감사 — 원장 A63/A70, 3회차 연속 미이행): accuracy_log 의 채점 결과를 콜에 동봉해
+        #   회고가 §3.15(scored_from 별 T+1/T+5 적중·Brier)를 우회 재계산 없이 독립 재현하게 한다.
+        _sc = {}
+        try:
+            for _e in (acc.load_log().get("entries") or []):
+                if _e.get("kind") != "market":
+                    continue
+                _sc.setdefault((str(_e.get("pred_date")), str(_e.get("market"))), {})[
+                    "h%s" % _e.get("horizon")] = {
+                    "dir": _e.get("dir"), "hit": _e.get("hit"),
+                    "index_return_pct": _e.get("index_return_pct"),
+                    "scored_from": _e.get("scored_from"), "brier": _e.get("brier"),
+                    "conviction": _e.get("conviction"), "settle_date": _e.get("settle_date")}
+        except Exception as _e2:
+            log.warning("[retro] market_calls 채점 조인 실패(콜 원문만 저장): %s", type(_e2).__name__)
+            _sc = {}
         for pred in preds:
             mc = pred.get("market_call")
             if isinstance(mc, dict):
+                _d = str(pred.get("date"))
                 calls.append({"date": pred.get("date"), "_src_kind": pred.get("_src_kind", "prediction"),
                               "kospi": mc.get("kospi"), "kosdaq": mc.get("kosdaq"),
-                              "regime": pred.get("regime")})
+                              "regime": pred.get("regime"),
+                              # v11.41: 익일 전용 예측(next_day) 보유 여부 + 채점 결과(h1/h5)
+                              "has_next_day": {m: isinstance((mc.get(m) or {}).get("next_day"), dict)
+                                               for m in ("kospi", "kosdaq")},
+                              "scored": {m: _sc.get((_d, m)) for m in ("kospi", "kosdaq")}})
         if calls:
             _save_json_atomic(os.path.join(HERE, "market_calls.json"),
                               {"generated_at": datetime.now().isoformat(timespec="seconds"),
-                               "what": "일자별 market_call 원본(kospi/kosdaq dir·conviction·invalidation) — 회고 §3.15 입력",
-                               "n": len(calls), "calls": calls})
+                               "what": ("일자별 market_call 원본(kospi/kosdaq dir·conviction·invalidation) — 회고 §3.15 입력. "
+                                        "v11.41: scored.{kospi,kosdaq}.{h1,h5} 에 accuracy_log 채점(dir·hit·index_return_pct·"
+                                        "scored_from·brier) 동봉, has_next_day 병기(A63/A70)"),
+                               "n": len(calls),
+                               "n_scored": sum(1 for c in calls if any(c["scored"].values())),
+                               "calls": calls})
             log.info("[retro] market_calls.json 저장(%d일) — 회고 §3.15 입력", len(calls))
     except Exception as e:
         log.warning("[retro] market_calls 저장 실패(무시): %s", type(e).__name__)
@@ -1490,6 +1662,29 @@ def main():
             "entry_gap_pct": "[라벨·v11.6] 추천일 시가 갭(%, 시가/entry_ref-1). entry_window 사후검증용 — 당일 OHLC 는 라벨측 데이터(진입규칙 사용 금지)",
             "entry_low_pct": "[라벨·v11.6] 추천일 저가(%, 저가/entry_ref-1) — 당일눌림 진입 가능성 판정",
             "entry_buyable": "[라벨·v11.6] 그 자리에서 실제로 살 수 있었나 — 당일시가: 갭<=+3%, 당일눌림: 저가<=진입가. 당일종가/익일이후/미지정=null(판정 유보). ★만기 30건+ 전까지 규칙화 금지",
+            # ★v11.41(호스트 감사 2026-09-08) 신규 열 — 아래 설명은 회고분석_지시사항 §2 와 동일
+            "target_pct": "[예측·v11.41] 분석가가 적은 익절 목표(%, F4). predictions.json 엔 07월부터 있었으나 데이터셋엔 처음 실린다 — ret_if_analyst_stop_* 와 대조해 F4 준수·효과를 잰다",
+            "stop_pct": "[예측·v11.41] 분석가가 적은 손절(%, 음수, F4)",
+            "trailing_stop_pct": "[예측·v11.41] 트레일링 스탑(%)",
+            "partial_take_pct": "[예측·v11.41] 분할익절 지점(%, F6④)",
+            "size_pct": "[예측·v11.41] 권장 비중(%) — ★실측 conviction 과 Spearman 0.78 동행. 비중이 확신을 그대로 따라가는지(회고 37회차 #3 위반) 감시용",
+            "applied_gate_ids": "[예측·v11.41] applied_gates 자유문을 정규 ID 로 접은 열('F6;F8;OTHER'). 접미(F6-3·F6③·F8-b)는 모 ID 흡수, 비규칙 토큰은 OTHER. 게이트별 발동 건수·'발동 픽 vs 비발동 픽' 대조는 이 열로 — 단 필드가 빈 날(미기록일)은 분모에서 제외하라",
+            "ret_if_analyst_stop_pct": "[라벨·v11.41] 분석가 stop_pct 를 지켰다면의 만기수익(%) — 종가 기준·실제 종가(ret_if_stop8 과 같은 규약). stop_pct 없으면 null. 픽만",
+            "ret_if_analyst_stop_tp_cap_pct": "[라벨·v11.41] 분석가 stop_pct+target_pct 룰(익절 지정가 캡) 반사실. target 없으면 stop 단독판과 동일",
+            "analyst_stop_hit_day": "[라벨·v11.41] 분석가 손절선 최초 도달 거래일(없으면 null)",
+            "pre_breadth_adv": "[진입피처·시장·v11.41] 그날 아침 market_context breadth 상승 종목 수(D-1 기준) — B10/B8 'breadth 극단' 판정용",
+            "pre_breadth_dec": "[진입피처·시장·v11.41] 하락 종목 수",
+            "pre_breadth_dec_adv_ratio": "[진입피처·시장·v11.41] 하락/상승 비(>=5 면 B10 'breadth 극단 5:1')",
+            "pre_mkt_flows_trend": "[진입피처·시장·v11.41] market_context flows.trend — B10b '외인 레짐' 프록시(broad_buying/flip 라벨은 수집기에 없다 — 이 값+pre_mkt_foreign_5d/20d 부호로 판정)",
+            "pre_mkt_foreign_5d_eok": "[진입피처·시장·v11.41] 시장 전체 외인 5일 순매수(억원, market_context)",
+            "pre_mkt_foreign_20d_eok": "[진입피처·시장·v11.41] 시장 전체 외인 20일 순매수(억원) — B10 '외인 20d 대량매도'·F1 '-5조' 판정",
+            "pre_mkt_foreign_sell_streak": "[진입피처·시장·v11.41] KOSPI 시장 외인 연속 순매도일(flow_data.market.KOSPI) — F1 ① '10일+'",
+            "pre_mkt_risk_off_score": "[진입피처·시장·v11.41] flow_data risk_off_score",
+            "pre_kosdaq_ret5d": "[진입피처·시장·v11.41] KOSDAQ 직전 5일 수익률(%) — B14 'KOSDAQ 자체 추세'",
+            "pre_kospi_ret1d": "[진입피처·시장·v11.41] KOSPI D-2→D-1 수익률(%) — B7 '직전 1~2일 -5% 급락' 판정(FDR KS11, 룩어헤드 없음)",
+            "pre_kospi_ret2d": "[진입피처·시장·v11.41] KOSPI D-3→D-1 수익률(%)",
+            "pre_kospi_dist_high60_pct": "[진입피처·시장·v11.41] D-1 종가의 직전 60거래일 최고 종가 대비(%) — 0 근처면 'ATH권'(B7/B8/B13 위치)",
+            "pre_kospi_dist_low60_pct": "[진입피처·시장·v11.41] 60거래일 최저 대비(%) — 0 근처면 '저점권'(B13 flip&저점권)",
             "next_day_dir": "[예측·v11.6] 픽 익일(T+1) 방향 전망(up/down/neutral) — ret_1 라벨과 대조 채점. accuracy_log 의 kind=pick_nd1 이 자동 채점",
             "next_day_prob_up": "[예측·v11.6] 픽 익일 상승 확률(분석가 제출)",
             "next_day_expected_pct": "[예측·v11.6] 픽 익일 기대 등락(%)",

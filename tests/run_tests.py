@@ -2156,6 +2156,109 @@ def test_email_charts():
 
 
 # =====================================================================
+# =====================================================================
+# 9. v11.41 호스트 과적합 감사(2026-09-08) — 채점 밴드 통일·kind 별 calibration·게이트 ID 정규화·
+#    분석가 손절 반사실·지수 위치 피처·무효화 인용 lint (전부 순수함수·네트워크 0)
+# =====================================================================
+def test_audit_v1141():
+    import accuracy_tracker as at
+    # (a) 밴드 통일 적중 — up 은 ret>band, down 은 ret<-band, neutral 은 |ret|<band
+    check("strict_hit: up +0.3 (밴드 0.5 안) = False (관대판은 True)", at._strict_hit("up", 0.3, 0.5) is False)
+    check("strict_hit: up +0.8 = True", at._strict_hit("up", 0.8, 0.5) is True)
+    check("strict_hit: down -0.2 = False / -1.5(밴드 1.2) = True",
+          at._strict_hit("down", -0.2, 0.5) is False and at._strict_hit("down", -1.5, 1.2) is True)
+    check("strict_hit: neutral |0.4|<0.5 = True", at._strict_hit("neutral", 0.4, 0.5) is True)
+    check("strict_hit: ret None -> None(판정 불가)", at._strict_hit("up", None, 0.5) is None)
+    # (b) aggregate — kind 별 calib 분리 + 시장콜 무정보 3종 + 관대/통일 병기
+    ents = [
+        {"kind": "market", "pred_date": "2026-08-01", "market": "kospi", "dir": "up", "horizon": 1,
+         "settle_date": "2026-08-04", "index_return_pct": 0.3, "conviction": 0.7, "hit": True},
+        {"kind": "market", "pred_date": "2026-08-01", "market": "kospi", "dir": "up", "horizon": 5,
+         "settle_date": "2026-08-08", "index_return_pct": -2.0, "conviction": 0.7, "hit": False},
+        {"kind": "pick", "pred_date": "2026-08-01", "ticker": "000001", "horizon": 5, "settle_date": "2026-08-08",
+         "return_pct": 3.0, "alpha_pct": 1.0, "conviction": 0.55, "hit": True, "tag": "단기스윙"},
+        {"kind": "short", "pred_date": "2026-08-01", "ticker": "000002", "horizon": 5, "settle_date": "2026-08-08",
+         "return_pct": -1.0, "alpha_pct": -0.5, "conviction": 0.45, "hit": True},
+        {"kind": "pick_nd1", "pred_date": "2026-08-01", "ticker": "000001", "horizon": 1, "settle_date": "2026-08-04",
+         "dir": "up", "return_pct": 0.2, "hit": True},
+    ]
+    agg = at.aggregate(ents)
+    cbk = agg.get("calib_by_kind") or {}
+    check("calib_by_kind: 시장콜 h1/h5·픽·숏이 따로 집계", set(cbk) == {"market_h1", "market_h5", "pick", "short"},
+          str(sorted(cbk)))
+    check("calib_by_kind: (0.65-0.80] 이 시장콜 h1/h5 각 1건(같은 콜 2창 — 합산 표에선 2건으로 보이던 것)",
+          cbk["market_h1"]["(0.65-0.80]"]["total"] == 1 and cbk["market_h5"]["(0.65-0.80]"]["total"] == 1
+          and agg["calib"]["(0.65-0.80]"]["total"] == 2)
+    m1 = agg["market"][1]
+    check("market T+1: 관대 hit 1/1, 밴드통일 0/1(+0.3 은 밴드 안)", m1["hit"] == 1 and m1["strict_hit"] == 0 and m1["strict_n"] == 1)
+    check("market T+1: 무정보 3종 — always-up(관대) 1, strict up 0, flat 1", m1["bench_up_hit"] == 1
+          and m1["bench_s_up"] == 0 and m1["bench_s_flat"] == 1, str({k: m1[k] for k in ("bench_up_hit", "bench_s_up", "bench_s_flat")}))
+    nd = agg["picks_nd1"]
+    check("pick_nd1: 관대 1/1 vs 밴드통일 0/1", nd["hit"] == 1 and nd["strict_hit"] == 0 and nd["strict_n"] == 1)
+    txt = at.build_scorecard(agg, len(ents), 0)
+    check("scorecard: 밴드통일 줄·kind 별 calibration 표가 렌더된다",
+          "밴드통일" in txt and "**픽(주관 확신)**" in txt and "무정보 3종" in txt)
+    # (c) retro_label — 게이트 ID 정규화 · 분석가 손절 반사실 · 지수 위치 피처
+    import retro_label as rl
+    check("gate_ids: 접미 흡수·OTHER·중복 제거·순서 보존",
+          rl._norm_gate_ids(["F6-3:경고", "F6③", "F8-b:alpha", "반증검색:x", "F1:caution", "F6:위반없음"]) == "F6;F8;OTHER;F1")
+    check("gate_ids: 빈 목록 -> None", rl._norm_gate_ids([]) is None)
+    check("gate_ids: B 계열도 ID 로", rl._norm_gate_ids(["B12:숏 최소화"]) == "B12")
+    base = date(2026, 6, 2)
+    days = [base + timedelta(days=i) for i in range(6)]
+    closes = [100.0, 110.0, 96.0, 88.0, 92.0, 95.0]
+    vols = [1000, 5000, 1200, 3000, 900, 800]
+
+    class _Fsc:
+        @staticmethod
+        def get_ohlcv_series(ticker, base_date):
+            return list(zip(days, closes, vols))
+    old = (rl.fsc, rl.FSC_OK, rl._KS11_SERIES, rl.FLOW_OK)
+    try:
+        rl.fsc, rl.FSC_OK, rl.FLOW_OK = _Fsc, True, False
+        rl._KS11_SERIES = ([(base - timedelta(days=1), 100.0)] +
+                           [(d, c) for d, c in zip(days, [100.0, 101.0, 100.5, 99.0, 101.5, 102.0])])
+        lab = rl.compute_labels("TEST", base, 100.0, 5, stop_pct=-10, target_pct=12)
+        check("analyst stop -10/+12: D+3 -12 도달 -> 실제 종가 -12.0, day 3",
+              lab["ret_if_analyst_stop_pct"] == -12.0 and lab["analyst_stop_hit_day"] == 3
+              and lab["ret_if_analyst_stop_tp_cap_pct"] == -12.0, str((lab["ret_if_analyst_stop_pct"], lab["analyst_stop_hit_day"])))
+        lab3 = rl.compute_labels("TEST", base, 100.0, 5, stop_pct=3, target_pct=None)   # 양수 3 -> -3 해석
+        check("analyst stop '3'(양수) -> -3: D+2 -4 도달 -> -4.0, day 2",
+              lab3["ret_if_analyst_stop_pct"] == -4.0 and lab3["analyst_stop_hit_day"] == 2
+              and lab3["ret_if_analyst_stop_tp_cap_pct"] == -4.0, str(lab3["ret_if_analyst_stop_pct"]))
+        lab0 = rl.compute_labels("TEST", base, 100.0, 5)
+        check("analyst stop 없음 -> 3열 모두 None(기존 호출 호환)",
+              lab0["ret_if_analyst_stop_pct"] is None and lab0["analyst_stop_hit_day"] is None)
+        check("LABEL_COLS: 분석가 반사실 3열 등록", all(c in rl.LABEL_COLS for c in
+              ("ret_if_analyst_stop_pct", "ret_if_analyst_stop_tp_cap_pct", "analyst_stop_hit_day")))
+        # 지수 위치 피처 — 합성 KS11: D-1 까지만 사용(base_date 당일 100.0 은 제외돼야 한다)
+        rl._KS11_SERIES = [(base - timedelta(days=k), 100.0 + (25 - k) * 0.1) for k in range(25, 0, -1)] + \
+                          [(base, 999.0)]
+        rl._KOSPI_POS_CACHE.clear()
+        pos = rl._kospi_pre_position(base)
+        _c1, _c2, _c3 = 102.4, 102.3, 102.2
+        check("kospi_pre_position: ret1d/ret2d 는 D-1·D-2·D-3 종가로(당일 999 제외)",
+              abs(pos["pre_kospi_ret1d"] - round((_c1 / _c2 - 1) * 100, 2)) < 1e-9
+              and abs(pos["pre_kospi_ret2d"] - round((_c1 / _c3 - 1) * 100, 2)) < 1e-9, str(pos))
+        check("kospi_pre_position: 60일 고점 대비 0.0(단조 상승이라 D-1 이 최고)·저점 대비 >0",
+              pos["pre_kospi_dist_high60_pct"] == 0.0 and pos["pre_kospi_dist_low60_pct"] > 0)
+        check("kospi_pre_position: base None -> 전부 None", all(v is None for v in rl._kospi_pre_position(None).values()))
+        check("FEATURE/PRE/BASE 등록: B게이트 열·분석가 계획·gate_ids",
+              all(c in rl.FEATURE_COLS for c in ("pre_breadth_dec_adv_ratio", "pre_mkt_flows_trend", "pre_kosdaq_ret5d"))
+              and all(c in rl.PRE_COLS for c in ("pre_kospi_ret1d", "pre_kospi_dist_high60_pct"))
+              and all(c in rl.BASE_COLS for c in ("target_pct", "stop_pct", "size_pct", "applied_gate_ids")))
+    finally:
+        rl.fsc, rl.FSC_OK, rl._KS11_SERIES, rl.FLOW_OK = old
+        rl._KOSPI_POS_CACHE.clear()
+    # (d) report_lint 무효화 인용 패턴 — 잡아야 할 문장은 잡고 정정문은 통과
+    import report_lint as lint
+    import re as _re
+    bad = "    - 시장 방향콜(KOSPI up/down): **66%(12/18)** — grind 국면"
+    good = "    - 시장 방향콜: T+5 15/37(40.5%) (구판 66%는 출처 부재)"
+    check("doc lint: '66%(12/18)' 잔존 탐지", any(_re.search(p, bad) for p, _ in lint._BANNED_CITATIONS))
+    check("doc lint: 정정문은 통과", not any(_re.search(p, good) for p, _ in lint._BANNED_CITATIONS))
+
+
 def main():
     print("=" * 60)
     print("stock_research 골든 테스트 (네트워크 0 · 라이브 파일 무수정)")
@@ -2163,7 +2266,7 @@ def main():
     for fn in (test_validate_predictions, test_norm_tag, test_compute_labels_golden,
                test_pre_entry_snapshot_first, test_retro_forward_helpers, test_snapshot_signals,
                test_resolve_session_multisession, test_new_collectors_pure,
-               test_email_charts):
+               test_email_charts, test_audit_v1141):
         try:
             fn()
         except Exception as e:

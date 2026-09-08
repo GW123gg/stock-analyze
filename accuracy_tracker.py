@@ -71,6 +71,21 @@ from common import COUNTRY_BENCH   # noqa: E402  (순수 모듈 — import 부�
 NEUTRAL_BAND_BY_H = {1: 0.5, 5: 1.2}
 NEUTRAL_BAND_PCT = 0.5   # 폴백(미정의 지평)
 
+
+def _strict_hit(direction, ret, band):
+    """★v11.41(호스트 감사 2026-09-08) 밴드 통일 적중 — up 은 ret > +band, down 은 ret < -band,
+    neutral 은 |ret| < band. 기존 `hit`(up: ret>0 / down: ret<0 — 밴드 무시)은 Brier 실현 클래스와
+    달라 같은 엔트리가 hit=True 인데 Brier 는 flat 오답으로 채점됐다(실측 T+1 84건 중 밴드 안
+    up/down 적중 7건, 관대 44.0% vs 통일 35.7%). 로그의 `hit` 필드는 불변(append-only) — 집계
+    시점에 index_return_pct/return_pct 로 재판정해 두 판을 병기한다. None 이면 판정 불가(None)."""
+    if ret is None or direction not in ("up", "down", "neutral"):
+        return None
+    if direction == "neutral":
+        return abs(ret) < band
+    if direction == "up":
+        return ret > band
+    return ret < -band
+
 # scorecard 요약 대상 최근 예측일 수
 RECENT_DAYS = 20
 
@@ -897,10 +912,16 @@ def aggregate(entries):
                   "alpha_sum": 0.0, "alpha_n": 0},
         "shorts": {"total": 0, "hit": 0, "ret_sum": 0.0, "ret_n": 0,
                    "alpha_sum": 0.0, "alpha_n": 0, "idx_down": 0, "idx_n": 0},
-        "picks_nd1": {"total": 0, "hit": 0, "brier_sum": 0.0, "brier_n": 0},   # v11.6 픽 T+1 전망
+        "picks_nd1": {"total": 0, "hit": 0, "brier_sum": 0.0, "brier_n": 0,
+                      "strict_hit": 0, "strict_n": 0},   # v11.6 픽 T+1 전망 (+v11.41 밴드통일)
         "by_tag": {},      # tag -> {total, hit, ret_sum, ret_n, alpha_sum, alpha_n}
         "by_timing": {},   # timing(임박/단기/중기) -> 동일 구조 (T1: 신호별 적중률)
         "calib": {b[0]: {"total": 0, "hit": 0} for b in CALIB_BUCKETS},
+        # ★v11.41(호스트 감사): kind 별 calibration — 시장콜 conviction 은 max(prob)(확률)이고
+        #   픽 conviction 은 주관 척도라 '기대 적중률' 잣대가 다르며, hit 정의도 셋이 다르다
+        #   (지수 방향 / ret>0 / ret<0). 한 표에 섞으면 (0.65-0.80] '2건 0%' 처럼 같은 콜의
+        #   h1/h5 이중 계상이 '과신 경향' 권고를 만든다 → kind(+시장은 h)별로 나눠 집계한다.
+        "calib_by_kind": {},   # "market_h1"|"market_h5"|"pick"|"short" -> {bucket: {total, hit}}
         "examples_hit": [],
         "examples_miss": [],
     }
@@ -927,16 +948,27 @@ def aggregate(entries):
             if _b is not None:
                 nd["brier_sum"] += _b
                 nd["brier_n"] += 1
+            _sh = _strict_hit(str(e.get("dir") or ""), _safe_float(e.get("return_pct")),
+                              NEUTRAL_BAND_BY_H.get(1, NEUTRAL_BAND_PCT))   # v11.41 밴드통일
+            if _sh is not None:
+                nd["strict_n"] += 1
+                if _sh:
+                    nd["strict_hit"] += 1
             continue
 
-        # calibration (모든 종류 공통; conviction 있는 것만)
+        # calibration (모든 종류 공통; conviction 있는 것만) + v11.41 kind 별 분리 집계
         if conv is not None:
+            _ck = (f"market_h{e.get('horizon')}" if kind == "market" else str(kind))
+            _cb = agg["calib_by_kind"].setdefault(
+                _ck, {b[0]: {"total": 0, "hit": 0} for b in CALIB_BUCKETS})
             for label, lo, hi in CALIB_BUCKETS:
                 in_bucket = (conv <= hi) and (conv > lo or (lo == 0.0 and conv >= 0.0))
                 if in_bucket:
                     agg["calib"][label]["total"] += 1
+                    _cb[label]["total"] += 1
                     if hit:
                         agg["calib"][label]["hit"] += 1
+                        _cb[label]["hit"] += 1
                     break
 
         if kind == "market":
@@ -944,10 +976,34 @@ def aggregate(entries):
             m = agg["market"].setdefault(h, {"total": 0, "hit": 0,
                                              "brier_sum": 0.0, "brier_n": 0,
                                              "by_dir": {}, "by_src": {},
-                                             "bench_down_hit": 0})
+                                             "bench_down_hit": 0,
+                                             # v11.41: 밴드통일 적중 + 무정보 3종(A61·회고 37회차 #5)
+                                             "strict_hit": 0, "strict_n": 0,
+                                             "bench_up_hit": 0, "bench_flat_hit": 0,
+                                             "bench_s_up": 0, "bench_s_down": 0, "bench_s_flat": 0})
             m["total"] += 1
             if hit:
                 m["hit"] += 1
+            _ir = _safe_float(e.get("index_return_pct"))
+            _band = NEUTRAL_BAND_BY_H.get(h, NEUTRAL_BAND_PCT)
+            _sh = _strict_hit(str(e.get("dir") or ""), _ir, _band)
+            if _sh is not None:
+                m["strict_n"] = m.get("strict_n", 0) + 1
+                if _sh:
+                    m["strict_hit"] = m.get("strict_hit", 0) + 1
+            if _ir is not None:
+                # 무정보 벤치마크 3종 — 관대판(always-up: ir>0 / always-flat: |ir|<band) 과
+                # 밴드통일판(always-up: ir>band / always-down: ir<-band / always-flat: |ir|<band).
+                # 회고 37회차 #5: 한 방향만 적고 '벤치마크 상회'라 쓰지 마라 — 최댓값이 상한이다.
+                if _ir > 0:
+                    m["bench_up_hit"] = m.get("bench_up_hit", 0) + 1
+                if abs(_ir) < _band:
+                    m["bench_flat_hit"] = m.get("bench_flat_hit", 0) + 1
+                    m["bench_s_flat"] = m.get("bench_s_flat", 0) + 1
+                if _ir > _band:
+                    m["bench_s_up"] = m.get("bench_s_up", 0) + 1
+                if _ir < -_band:
+                    m["bench_s_down"] = m.get("bench_s_down", 0) + 1
             d = agg["market"][h]["by_dir"].setdefault(str(e.get("dir")), {"total": 0, "hit": 0})
             d["total"] += 1
             if hit:
@@ -1106,17 +1162,32 @@ def build_recommendations(agg):
         if len(recs) >= 4:
             break
 
-    # calibration 과신 진단
+    # calibration 과신 진단 — ★v11.41: kind 별로 따로 본다(시장콜·픽·숏을 한 버킷에 섞으면
+    #   hit 정의가 셋이라 '기대 적중률' 비교가 성립하지 않고, 같은 시장콜의 h1/h5 가 이중 계상된다).
+    #   시장콜 conviction=max(prob) 는 확률이라 기대치 비교가 정당하지만, 픽 conviction 은
+    #   주관 척도다 — 픽 권고는 '과신' 단정이 아니라 '고확신 픽이 저확신보다 못함' 서술로만.
     if len(recs) < 4:
-        for label, lo, hi in reversed(CALIB_BUCKETS):
-            c = agg["calib"].get(label, {})
-            if c.get("total", 0) >= 10:      # v11.6: 3→10
-                rate = _pct(c["hit"], c["total"])
-                mid = (lo + hi) / 2 * 100
-                if rate is not None and rate < mid - 15:
-                    recs.append(f"고확신 구간 {label} 실제적중 {rate:.0f}% "
-                                f"<< 기대 {mid:.0f}% -> 과신 경향, conviction 보정 필요.")
-                    break
+        _kind_ko = {"market_h1": "시장콜 T+1", "market_h5": "시장콜 T+5", "pick": "픽", "short": "숏"}
+        _found = False
+        for _ck in ("market_h5", "market_h1", "pick", "short"):
+            _cb = (agg.get("calib_by_kind") or {}).get(_ck) or {}
+            for label, lo, hi in reversed(CALIB_BUCKETS):
+                c = _cb.get(label, {})
+                if c.get("total", 0) >= 10:      # v11.6: 3→10
+                    rate = _pct(c["hit"], c["total"])
+                    mid = (lo + hi) / 2 * 100
+                    if rate is not None and rate < mid - 15:
+                        if _ck.startswith("market"):
+                            recs.append(f"{_kind_ko[_ck]} 확신구간 {label} 실제적중 {rate:.0f}% "
+                                        f"<< 기대 {mid:.0f}% -> 과신 경향(확률 예보), prob 보수적으로.")
+                        else:
+                            recs.append(f"{_kind_ko[_ck]} 확신구간 {label} 실제적중 {rate:.0f}% "
+                                        f"(N={c['total']}) — 확신 높은 {_kind_ko[_ck]}이 낮은 쪽보다 "
+                                        f"낫지 않다. 확신을 비중·순서에 쓰지 마라(회고 37회차 #3).")
+                        _found = True
+                        break
+            if _found:
+                break
 
     if not recs:
         recs.append("최근 채점 결과 특이사항 없음 -> 현 전략 유지.")
@@ -1203,11 +1274,27 @@ def build_scorecard(agg, total_entries, n_added):
             line = f"- T+{h}: 적중 {m['hit']}/{m['total']} ({_fmt_rate(rate)})"
             if m.get("total"):
                 bench = _pct(m.get("bench_down_hit", 0), m["total"])
-                line += f" | 벤치마크(always-down) {_fmt_rate(bench)}"    # #A14 정직 기준선
+                bench_up = _pct(m.get("bench_up_hit", 0), m["total"])
+                line += (f" | 벤치마크 always-down {_fmt_rate(bench)}"
+                         f" / always-up {_fmt_rate(bench_up)}")    # #A14 정직 기준선 + A61 양방향
             if m.get("brier_n", 0) >= 3:            # #WS 확률예보 품질(낮을수록 좋음, 0.667=무정보)
                 line += (f" | Brier {m['brier_sum'] / m['brier_n']:.3f}"
                          f" (N={m['brier_n']}, 무정보 기준선 0.667)")
             L.append(line)
+            # ★v11.41(호스트 감사): 밴드 통일판 병기 — 위 '적중'은 up/down 이 밴드를 무시한 관대판이라
+            #   Brier 실현 클래스(밴드 적용)와 어긋난다. 무정보 3종(always-up/flat/down)을 같은 창·같은
+            #   밴드로 셋 다 적고 그 최댓값이 상한이다(회고 37회차 #5·원장 A61).
+            _sn = m.get("strict_n", 0)
+            if _sn:
+                _band = NEUTRAL_BAND_BY_H.get(h, NEUTRAL_BAND_PCT)
+                _bu, _bf, _bd = (_pct(m.get("bench_s_up", 0), _sn), _pct(m.get("bench_s_flat", 0), _sn),
+                                 _pct(m.get("bench_s_down", 0), _sn))
+                _bmax = max(x for x in (_bu, _bf, _bd) if x is not None) if any(
+                    x is not None for x in (_bu, _bf, _bd)) else None
+                L.append(f"  · 밴드통일(up>+{_band}%/down<-{_band}%/neutral 안): 적중 "
+                         f"{m.get('strict_hit', 0)}/{_sn} ({_fmt_rate(_pct(m.get('strict_hit', 0), _sn))})"
+                         f" | 무정보 3종 always-up {_fmt_rate(_bu)} / flat {_fmt_rate(_bf)} / down "
+                         f"{_fmt_rate(_bd)} -> 상한 {_fmt_rate(_bmax)}  (Brier 실현 클래스와 동일 규약)")
             bd = m.get("by_dir") or {}
             if bd:
                 parts = [f"{k} {v['hit']}/{v['total']}" for k, v in sorted(bd.items())]
@@ -1245,9 +1332,13 @@ def build_scorecard(agg, total_entries, n_added):
     if nd.get("total"):
         _ndr = _pct(nd["hit"], nd["total"])
         _l = f"- 픽 익일(T+1) 전망: 적중 {nd['hit']}/{nd['total']} ({_fmt_rate(_ndr)})"
+        if nd.get("strict_n"):
+            _l += (f" | 밴드통일(±{NEUTRAL_BAND_BY_H.get(1, NEUTRAL_BAND_PCT)}%) "
+                   f"{nd['strict_hit']}/{nd['strict_n']} ({_fmt_rate(_pct(nd['strict_hit'], nd['strict_n']))})")
         if nd.get("brier_n"):
             _l += f" | Brier {nd['brier_sum'] / nd['brier_n']:.3f} (무정보 0.667)"
-        L.append(_l + "  (v11.6 신설 — 표본 30건+ 전까지 참고만)")
+        L.append(_l + ("  (v11.6 신설 — 표본 30건+ 전까지 참고만)" if nd["total"] < 30 else
+                       "  (표본 30건 도달 — Brier 가 무정보 0.667 이상이면 확률 표기는 정보가 없다)"))
     s = agg["shorts"]
     if s["total"] > 0:
         srate = _pct(s["hit"], s["total"])
@@ -1309,20 +1400,37 @@ def build_scorecard(agg, total_entries, n_added):
     L.append("확신(conviction)이 높을수록 실제 적중률도 높아야 정상. "
              "괴리가 크면 과신/과소.")
     L.append("")
-    L.append("| 확신구간 | 표본 | 실제적중률 |")
-    L.append("|---|---|---|")
+    # ★v11.41(호스트 감사): kind 별 분리 표 — 한 표에 시장콜(지수 방향 hit)·픽(ret>0)·숏(ret<0)을
+    #   섞으면 hit 정의가 달라 '기대 적중률' 비교가 성립하지 않고, 같은 시장콜의 T+1/T+5 가 한
+    #   예측인데 2건으로 계상된다((0.65-0.80] '2건 0%' = 2026-07-31 KOSPI 콜 1건의 이중 계상).
+    _cbk = agg.get("calib_by_kind") or {}
+    _kind_ko = {"market_h1": "시장콜 T+1(conviction=max prob)", "market_h5": "시장콜 T+5(conviction=max prob)",
+                "pick": "픽(주관 확신)", "short": "숏(주관 확신)"}
     any_calib = False
-    for label, lo, hi in CALIB_BUCKETS:
-        c = agg["calib"].get(label, {"total": 0, "hit": 0})
-        if c["total"] == 0:
-            L.append(f"| {label} | 0 | N/A |")
+    for _ck in ("market_h1", "market_h5", "pick", "short"):
+        _cb = _cbk.get(_ck)
+        if not _cb or not any(v["total"] for v in _cb.values()):
             continue
         any_calib = True
-        rate = _pct(c["hit"], c["total"])
-        L.append(f"| {label} | {c['total']} | {_fmt_rate(rate)} |")
+        L.append(f"**{_kind_ko[_ck]}**")
+        L.append("")
+        L.append("| 확신구간 | 표본 | 실제적중률 |")
+        L.append("|---|---|---|")
+        for label, lo, hi in CALIB_BUCKETS:
+            c = _cb.get(label, {"total": 0, "hit": 0})
+            if c["total"] == 0:
+                L.append(f"| {label} | 0 | N/A |")
+                continue
+            rate = _pct(c["hit"], c["total"])
+            L.append(f"| {label} | {c['total']} | {_fmt_rate(rate)} |")
+        L.append("")
     if not any_calib:
         L.append("")
         L.append("- (아직 채점된 표본이 없어 calibration 산출 불가)")
+    else:
+        L.append("  ※ 시장콜만 '기대 적중률 = 확신구간' 비교가 정당하다(확률 예보). 픽·숏 conviction 은 주관"
+                 " 척도라 구간 간 순서만 본다 — 고확신 구간이 저확신보다 낫지 않으면 확신을 비중·노출 순서에"
+                 " 쓰지 마라(회고 37회차 #3, 실측 h=5 픽 conviction↔alpha Spearman ≈ 0).")
     # ★표본 수가 줄어도 채점 오류가 아니다 — 회고가 '표본 감소 = 누락'으로 오독한 전례가 있어 명시한다.
     L.append("")
     L.append("  ※ 표본 계산은 §1 과 동일하게 '주말·휴장 중복 시장콜을 같은 창 1건으로 접은'"

@@ -198,6 +198,65 @@ def _rules_growth(n=12):
     return 0
 
 
+# ★v11.41(호스트 감사 2026-09-08): 원장이 무효화·철회·기각한 근거가 지시서에 수치로 살아남는 것을 잡는다.
+#   실측: '66%(12/18)'(출처 부재·재현 불가)·'6회 재현 + alpha 음수'(A22 무효화)·'검증된 사실: 강점은 숏'
+#   (24회차 철회)·'사후검증 표본 0'(공포 픽 68행 존재)이 정정된 절 옆의 다른 절에 그대로 남아 있었다.
+#   정정하면 이 목록에서 지우지 말고 남겨라 — 재유입(복붙·구판 병합)을 막는 것이 목적이다. 자문(막지 않음).
+_BANNED_CITATIONS = [
+    (r"66%\(12/18\)", "시장콜 66%(12/18): 출처 없음·accuracy_log 재현 불가(6월 KOSPI 콜 7건) — 09-08 감사"),
+    (r"45%\(14/31\)", "단순 롱 45%(14/31): 같은 출처 부재 — 09-08 감사"),
+    (r"86%\(31/36\)", "숏 86%(31/36): 원장 A24 가 07-26 철회(적중률 축 폐기)"),
+    (r"6회 재현 \+ alpha 음수", "k5 게이트 '6회 재현': 같은 6일 재계산 + A22 룩어헤드 빈티지 무효화"),
+    (r"검증된 사실: 이 시스템의 강점은", "F8 '강점은 숏': 24회차 숏 선별력 없음 확정으로 철회"),
+    (r"사후검증 표본 0", "F8 국면 게이트 '표본 0': 공포 만기 픽 68행/15일 존재(09-08) — 낡은 서술"),
+    (r"회고 3회 재현·'검증' 등급", "F8-b '검증' 등급: 회고 37회차가 '관찰(계보 유지)'로 표기"),
+]
+_DOC_COPIES = [
+    os.path.join(HERE, "setup_kit", "02_코워크_예정작업", "analyze_instructions_mcp.md"),
+    os.path.join(os.path.dirname(HERE), "stock_research_mcp", "analyze_instructions_mcp.md"),
+]
+
+
+def _doc_checks():
+    """★v11.41 지시서 문서 검사 2종(자문) — (1) 무효화된 인용 잔존 (2) MCP판 사본이 원본과 다른 빌드인가.
+    출력 마지막 줄: DOC_CITATIONS=ok|warn:N 과 DOC_COPY=ok|stale:N|missing."""
+    import hashlib
+    src = os.path.join(HERE, "cowork_instructions.md")
+    try:
+        with open(src, encoding="utf-8", errors="replace") as f:
+            body = f.read()
+    except Exception as e:
+        print("cowork_instructions.md 읽기 실패: %s" % e)
+        print("DOC_CITATIONS=error")
+        return 1
+    n_bad = 0
+    for pat, why in _BANNED_CITATIONS:
+        hits = [i + 1 for i, ln in enumerate(body.split("\n")) if re.search(pat, ln)]
+        if hits:
+            n_bad += 1
+            print("★무효화된 인용 잔존 L%s — %s" % (",".join(str(h) for h in hits[:6]), why))
+    print("DOC_CITATIONS=%s" % ("ok" if not n_bad else "warn:%d" % n_bad))
+    # (2) 사본 빌드 해시 대조 — build_mcp_instructions.py 가 머리에 'sha256:<원본 해시>' 마커를 남긴다
+    sha = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+    stale, found = 0, 0
+    for p in _DOC_COPIES:
+        if not os.path.isfile(p):
+            continue
+        found += 1
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                head = f.read(4000)
+        except Exception:
+            head = ""
+        m = re.search(r"sha256:([0-9a-f]{16})", head)
+        if not m or m.group(1) != sha:
+            stale += 1
+            print("★MCP판 사본이 원본과 다른 빌드다: %s (%s) → python build_mcp_instructions.py"
+                  % (p, "마커 없음(구판 수동 사본)" if not m else "해시 불일치"))
+    print("DOC_COPY=%s" % ("missing" if not found else ("ok" if not stale else "stale:%d" % stale)))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="아침 리포트 [7.0] 계약 검사(자문)")
     ap.add_argument("--session", default=None, help="세션 폴더(없으면 오늘 최신)")
@@ -205,11 +264,18 @@ def main():
     ap.add_argument("--history", action="store_true",
                     help="과거 리포트 전수 측정(읽기 전용 — _archive 포함, 추세 표)")
     ap.add_argument("--rules", action="store_true",
-                    help="★지시서 비대화 계측(과적합 가지치기 의무 추적)")
+                    help="★지시서 비대화 계측(과적합 가지치기 의무 추적) + 무효화 인용·사본 빌드 검사(v11.41)")
+    ap.add_argument("--doc", action="store_true",
+                    help="★v11.41 지시서 문서 검사만(무효화 인용 잔존·MCP판 사본 해시)")
     args = ap.parse_args()
 
+    if args.doc:
+        return _doc_checks()
     if args.rules:
-        return _rules_growth()
+        rc = _rules_growth()
+        print()
+        _doc_checks()
+        return rc
 
     if args.history:
         # ★읽기 전용이다. _archive 는 원래 분석·수정 금지 구역이지만(절대규칙 4),

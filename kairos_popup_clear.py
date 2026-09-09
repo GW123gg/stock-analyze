@@ -112,6 +112,51 @@ def _shot(tag: str, region=None) -> str | None:
     return p
 
 
+# ★v11.42(2026-09-09) 되풀이되는 '버튼 없는' 공지 대화상자 — 좌표표
+#   카이로스가 직접 그린 대화상자는 표준 버튼 컨트롤이 아니라서 노드의 열거기가
+#   `buttons: []` 로 본다(제목도 없다). 그러면 ESC/ENTER/우상단X 자동 해제가 실패하고
+#   그날 캡처가 통째로 빈다 — 2026-08-26·2026-09-09 두 번 같은 창에 막혔고, 09-09 에는
+#   07:00 노드 배치가 10개 화면 전부 `modal_blocked` 로 죽었다.
+#   그 창은 크기가 고정이라 **사각형 크기로 식별**하고 버튼 위치를 상대좌표로 계산할 수 있다.
+#   안전 장치는 그대로다 — 노드가 '열거된 사각형 안'인지 다시 검사하고, 주문·인증 팝업이
+#   하나라도 있으면 이 경로는 아예 실행되지 않는다.
+KNOWN_NOTICES = [
+    {
+        "name": "종목정보 변경 공지(확인)",
+        "w": 336, "h": 172, "tol": 10,
+        "dx": 125, "dy": 150,          # '확인' 버튼 중심 = 사각형 좌상단 + (dx, dy)
+        "why": ("미래에셋 '종목정보가 변경되었습니다' 공지. 확인을 누르면 변경분을 받고 화면을 다시 그린다."
+                " 누른 뒤 mst/*.dat 진행바가 잠깐 뜨는데 버튼이 없다 — 20~30초 뒤 저절로 사라진다."),
+        "seen": "2026-08-26, 2026-09-09",
+    },
+]
+
+
+def match_known_notice(popup: dict):
+    """버튼을 못 찾은 공지 대화상자가 '알려진 창'이면 누를 지점을 계산한다.
+
+    반환: (rule, x, y) 또는 None. 순수함수 — 네트워크·부작용 없음(하네스가 계약을 고정한다).
+    조건: (1) 열거된 버튼이 없다 (2) 주문·인증 계열이 아니다 (3) 사각형 크기가 표와 tol 안에서 일치.
+    크기가 다르면 **아무것도 하지 않는다** — 모르는 창을 찍어 누르는 것이 미발송보다 나쁘다.
+    """
+    if not isinstance(popup, dict):
+        return None
+    if popup.get("buttons"):
+        return None                     # 버튼을 찾았으면 정상 경로가 처리한다
+    if str(popup.get("kind") or "").lower() in ("order", "auth", "cert"):
+        return None
+    r = popup.get("rect") or {}
+    try:
+        w, h, x, y = int(r["w"]), int(r["h"]), int(r["x"]), int(r["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    for rule in KNOWN_NOTICES:
+        t = rule["tol"]
+        if abs(w - rule["w"]) <= t and abs(h - rule["h"]) <= t:
+            return rule, x + rule["dx"], y + rule["dy"]
+    return None
+
+
 def _print_popups(state: dict) -> None:
     for p in state.get("popups") or []:
         r = p["rect"]
@@ -242,6 +287,38 @@ def main() -> int:
 
     if res.get("cleared"):
         return 0
+
+    # ★v11.42: 정상 해제(ESC/ENTER/우상단X)가 실패했고 남은 것이 '알려진 공지'면 좌표로 한 번 더.
+    #   여기까지 왔다는 것은 이미 has_order_popup=False 로 통과한 뒤다(위에서 return 3).
+    if not a.click and not a.dry:
+        for p in res.get("after") or []:
+            hit = match_known_notice(p)
+            if not hit:
+                continue
+            rule, cx, cy = hit
+            print("[popup] ★알려진 공지로 인식: %s — 좌표 %d,%d 로 1회 더 시도"
+                  % (rule["name"], cx, cy))
+            print("        근거: %s (관측: %s)" % (rule["why"], rule["seen"]))
+            try:
+                res2 = kc.call("/popups/close", body={"click": {"x": cx, "y": cy},
+                                                      "max_rounds": 1,
+                                                      "allow_keys": False,
+                                                      "allow_corner_click": False}, timeout=180)
+            except Exception as exc:                  # noqa: BLE001
+                print("[popup] 재시도 호출 실패: %s" % exc)
+                break
+            for s in res2.get("steps") or []:
+                pt = s.get("point")
+                print("   %-6s %-28s %s%s"
+                      % (s.get("action"), (s.get("title") or "")[:28], s.get("result"),
+                         (" @%d,%d" % (pt["x"], pt["y"])) if pt else ""))
+            _shot("after_known")
+            if res2.get("cleared"):
+                print("[popup] 알려진 공지 해제 성공 — 캡처를 진행하면 된다.")
+                return 0
+            print("[popup] 알려진 공지를 눌렀으나 창이 남았다(대개 mst/*.dat 진행바다 —"
+                  " 20~30초 뒤 --check 를 다시 하면 사라진다).")
+            break
 
     print("[popup] ★남은 팝업이 있다. 다음 순서로 처리하라:")
     print("        1) 이 이미지를 읽어라: %s" % (after_png or "(저장 실패)"))

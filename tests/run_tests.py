@@ -2259,6 +2259,45 @@ def test_audit_v1141():
     check("doc lint: 정정문은 통과", not any(_re.search(p, good) for p, _ in lint._BANNED_CITATIONS))
 
 
+# =====================================================================
+# 10. v11.42 카이로스 '버튼 없는 공지' 좌표 규칙 (2026-09-09 아침 배치 전멸 사고)
+#     — 순수함수라 네트워크 0. 모르는 창을 찍어 누르지 않는다는 계약을 고정한다.
+# =====================================================================
+def test_kairos_known_notice():
+    import kairos_popup_clear as kp
+
+    def pop(w, h, x=792, y=433, buttons=None, kind="unknown"):
+        return {"kind": kind, "title": "", "buttons": buttons or [],
+                "rect": {"x": x, "y": y, "w": w, "h": h}}
+
+    hit = kp.match_known_notice(pop(336, 172))
+    check("known notice: 실측 크기(336x172) 인식", hit is not None)
+    if hit:
+        rule, cx, cy = hit
+        check("known notice: 확인 좌표 = 좌상단+(125,150) = 917,583(2026-09-09 실측)",
+              (cx, cy) == (917, 583), "%s,%s" % (cx, cy))
+        check("known notice: 좌표가 사각형 안(노드가 재검사하는 경계)",
+              792 <= cx <= 792 + 336 and 433 <= cy <= 433 + 172)
+    # 사각형이 움직여도 상대좌표로 따라간다
+    hit2 = kp.match_known_notice(pop(336, 172, x=1000, y=500))
+    check("known notice: 창이 이동해도 상대좌표로 따라간다",
+          hit2 is not None and (hit2[1], hit2[2]) == (1125, 650), str(hit2 and hit2[1:]))
+    # 허용 오차 안/밖
+    check("known notice: ±10 오차 안이면 인식", kp.match_known_notice(pop(344, 165)) is not None)
+    check("known notice: 크기가 다르면 모르는 창 — 누르지 않는다",
+          kp.match_known_notice(pop(500, 300)) is None)
+    # 안전 계약
+    check("known notice: 버튼을 찾았으면 정상 경로에 맡긴다",
+          kp.match_known_notice(pop(336, 172, buttons=[{"text": "확인", "x": 1, "y": 2}])) is None)
+    check("known notice: 주문·인증 창은 절대 누르지 않는다",
+          kp.match_known_notice(pop(336, 172, kind="order")) is None
+          and kp.match_known_notice(pop(336, 172, kind="auth")) is None)
+    check("known notice: rect 결측·형식오류는 None", kp.match_known_notice({"buttons": []}) is None
+          and kp.match_known_notice(None) is None)
+    check("known notice: 표에 근거·관측일이 적혀 있다(왜 눌러도 되는지)",
+          all(r.get("why") and r.get("seen") for r in kp.KNOWN_NOTICES))
+
+
 def main():
     print("=" * 60)
     print("stock_research 골든 테스트 (네트워크 0 · 라이브 파일 무수정)")
@@ -2266,7 +2305,7 @@ def main():
     for fn in (test_validate_predictions, test_norm_tag, test_compute_labels_golden,
                test_pre_entry_snapshot_first, test_retro_forward_helpers, test_snapshot_signals,
                test_resolve_session_multisession, test_new_collectors_pure,
-               test_email_charts, test_audit_v1141):
+               test_email_charts, test_audit_v1141, test_kairos_known_notice):
         try:
             fn()
         except Exception as e:

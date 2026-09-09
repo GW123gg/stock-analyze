@@ -14,7 +14,9 @@ logs/
 collection_check/
 cache/
 precollect/
-retro_reports/
+# retro_reports/ — 2026-09-09 부터 추적한다(특기입증자료 증빙).
+#   회차당 1개씩 쌓이고 한번 쓰면 바뀌지 않는 파일이라 매일 갱신되는 산출물과 성격이 다르다.
+#   실측 스캔 결과 실제 이메일·토큰·개인 보유 정보 0건(38개 파일).
 _backup/
 _retired/
 __pycache__/
@@ -80,3 +82,12 @@ retro28*.py
 _tmp_*.py
 *.bak[0-9]*
 *.bak_*
+
+# ══ 증빙 스냅샷(records/) — ★이 블록은 반드시 파일 맨 끝에 둔다 ══════════════
+#   (2026-09-09) 라이브 파일(scorecard.md·night_scorecard.md·retro_dataset.json 등)은
+#   매일 덮어써지므로 계속 무시한다. 대신 날짜를 박은 **사본**을 records/ 아래 한 번만
+#   담는다 — 커밋마다 3MB 가 다시 들어오는 일이 없고, 받는 쪽은 고정된 한 시점의 기록을 본다.
+#   ★뒤에 규칙을 더 붙이지 마라: git 은 나중 규칙이 이기므로 위쪽에 두면 *.json·
+#     night_scorecard.md 같은 뒤쪽 규칙이 이 예외를 도로 덮는다(실측으로 걸렸다).
+!records/
+!records/**

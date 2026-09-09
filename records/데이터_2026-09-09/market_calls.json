@@ -1,0 +1,4405 @@
+{
+  "generated_at": "2026-09-09T18:06:11",
+  "what": "일자별 market_call 원본(kospi/kosdaq dir·conviction·invalidation) — 회고 §3.15 입력. v11.41: scored.{kospi,kosdaq}.{h1,h5} 에 accuracy_log 채점(dir·hit·index_return_pct·scored_from·brier) 동봉, has_next_day 병기(A63/A70)",
+  "n": 57,
+  "n_scored": 54,
+  "calls": [
+    {
+      "date": "2026-06-18",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.5,
+        "target_pct": 0.0,
+        "invalidation": "종가 8700 이탈 시 하락 전환 / 장중 8933 돌파+외국인 순매수 복귀 시 상승 가속"
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.5,
+        "target_pct": -0.5,
+        "invalidation": "1010 이탈 시 추가 하락 / 1040 회복+외인·기관 동반 순매수 시 중립 복귀"
+      },
+      "regime": "중립(전환) — 반도체 협소 주도 + 매파 Fed 미반영, 은행·조선 순환매",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.13,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-19"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -1.47,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-25"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -3.43,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-19"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -11.3,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-25"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-19",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.58,
+        "target_pct": 1.5,
+        "invalidation": "코스피 8700 종가 이탈 OR 외국인 반도체 순매도 전환 OR 환율 1560 재돌파"
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.55,
+        "target_pct": -1.5,
+        "invalidation": "코스닥 1030 회복 + 코스닥 외국인 순매수 전환"
+      },
+      "regime": "균열 있는 risk-on / 반도체 주도, 코스닥 소외",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.69,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.58,
+            "settle_date": "2026-06-22"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -7.08,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.58,
+            "settle_date": "2026-06-26"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.19,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.55,
+            "settle_date": "2026-06-22"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -11.92,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.55,
+            "settle_date": "2026-06-26"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-24",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.53,
+        "target_pct": 1.5,
+        "invalidation": "美선물·SOX 재차 하락 반전 또는 원/달러 1,560원 상향 돌파 시 투매 재개 → 하락 우위 전환",
+        "comment": "사상 최대 -9.99% 급락 직후라 과매도가 극단적이고, 개인이 하루 11.5조원을 저가매수했으며 美-이란 잠정 평화로 美선물이 올라 단기 기술적 반등 가능성이 소폭 우위입니다. 다만 빚투 38.4조 레버리지 청산과 메모리 공급과잉 우려가 남아 확신은 낮게 봅니다. 美선물·SOX 방향과 원/달러 1,560선을 보고 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.53,
+        "target_pct": 1.5,
+        "invalidation": "레버리지 ETF 추가 청산 재개 또는 코스피 8,000 종가 이탈",
+        "comment": "코스닥은 폭락 와중에도 외국인이 3,102억원 순매수로 전환했고 낙폭(-7.94%)이 코스피보다 작아 단기 반등 여지가 소폭 우위입니다. 그러나 개인·신용·레버리지 비중이 커 디레버리징 2차 충격에 가장 취약하니 반등 시에도 비중은 보수적으로 가져가세요."
+      },
+      "regime": "risk-off 디레버리징 충격 직후 기록적 과매도 — 반도체/AI 쏠림 되돌림, 단기 기술적 반등 대 중기 경계 혼재",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 5.42,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.53,
+            "settle_date": "2026-06-25"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -1.98,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.53,
+            "settle_date": "2026-07-01"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -2.36,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.53,
+            "settle_date": "2026-06-25"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 2.2,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.53,
+            "settle_date": "2026-07-01"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-25",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.52,
+        "target_pct": 0.8,
+        "invalidation": "외국인 일 순매도 4조원+ 지속 + 코스피 8,200 종가 이탈 + 신용 반대매매 재점화",
+        "comment": "마이크론 어닝 서프라이즈로 지수 절반인 삼전닉스에 개장 호재가 있고 과매도 반등이 연장될 여지가 있어 단기 소폭 상승에 무게를 둡니다. 다만 외국인 강제매도가 반등일에도 4.6조 이어졌고 7월 국민연금 리밸런싱(추정 55조 매도 대기)이 상단을 막아 확신은 낮게 봅니다. 외국인 수급과 환율 1,540원 방어 여부를 보고 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": 0.3,
+        "invalidation": "반도체 소부장 순환매 실패 + 개인 수급 둔화 + 코스닥 대형주 추가 이탈",
+        "comment": "RSI 35로 과매도이고 반도체 장비 소형주에 외국인 순매수가 들어오지만, 대형 반도체 쏠림으로 자금 이탈과 실적 모멘텀 부재가 겹쳐 중립으로 봅니다. 소부장 순환매가 확인되면 선별 반등이 가능합니다."
+      },
+      "regime": "neutral / 전환 — 마이크론 메모리 촉매 vs 외국인 강제매도·국민연금 7월 리밸런싱 수급부담, 소부장·방산·바이오 순환매",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -5.81,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.52,
+            "settle_date": "2026-06-26"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -14.36,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.52,
+            "settle_date": "2026-07-02"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.1,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-06-26"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -2.38,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-02"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-26",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.5,
+        "target_pct": 1.5,
+        "invalidation": "코스피 8,700 종가 이탈 또는 외국인 순매도 지속·VKOSPI 90 이상 지속",
+        "comment": "마이크론發 메모리 슈퍼사이클 모멘텀으로 9,000선·20일선을 회복했지만, 외국인이 급등 당일에도 순매도하고 시장 폭(상승 691 vs 하락 1869)이 극도로 부진한 좁은 반도체 단독 랠리입니다. 변동성지수(VKOSPI)가 사상 최고라 양방향 변동이 큽니다. 추격보다 분할·눌림 대응이 유효하며, 8,700 이탈 시 방어로 전환합니다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.48,
+        "target_pct": 0.0,
+        "invalidation": "코스닥 850 이탈시 약세 / 920 회복시 중립 상향",
+        "comment": "RSI 37로 과매도이나 고변동 장세에서 고베타 부담이 큽니다. 외국인이 코스닥은 5월 +2조 순매수해 코스피와 차별화되고 바이오 상대강도가 우위인 점은 지지 요인입니다. 지수 베팅보다 바이오 등 퀄리티 종목 선별이 유효합니다."
+      },
+      "regime": "neutral (risk-off 기울기) / 반도체 단독 반등·외국인 분산·VKOSPI 95 사상최고",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -0.2,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-29"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -3.84,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-03"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 8.13,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.48,
+            "settle_date": "2026-06-29"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 2.0,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.48,
+            "settle_date": "2026-07-03"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-27",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.5,
+        "target_pct": 0.0,
+        "invalidation": "상방: SOX 반등+6/29 메가프로젝트 서프라이즈+외국인 순매도 종료 동시. 하방: 원달러 1550 결정적 상향 돌파+삼성/하이닉스 신용잔고 반대매매 임계",
+        "comment": "6/26 코스피가 -5.81%(장중 서킷브레이커)로 급락해 단기 과매도가 심하고(PCR 2.736 극단 헤지) 6/29 1000조 메가프로젝트라는 임박 촉매가 있어 반등 여지가 있습니다. 그러나 미국 PCE 재가속발 강달러와 원화 약세(1532)로 외국인 매도가 구조적으로 이어져 반도체 비중 큰 지수는 무겁습니다. 강약이 팽팽해 지수 베팅보다 종목 선별과 현금 버퍼로 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.5,
+        "target_pct": 0.5,
+        "invalidation": "코스피 추가 급락 동조 시 동반 하락 / 외국인 코스닥 순매수 지속+로봇·바이오 촉매 시 상대 아웃퍼폼",
+        "comment": "코스닥은 6/26 -4.10%로 코스피보다 덜 빠졌고 당일 외국인·기관이 순매수해 상대적 수급 우위 신호가 있습니다. 6/29 피지컬 AI·로봇과 바이오 CDMO 모멘텀이 코스닥 친화적이나, 공포 국면에서 중소형 변동성은 큽니다."
+      },
+      "regime": "risk-off 우위(공포·falling knife)+단기 과매도 혼재 / 반도체 쏠림 되돌림·강달러(원달러 1532)·외국인 셀코리아",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 0.97,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-30"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.09,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-06"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.48,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-30"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -7.98,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-06"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-28",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.5,
+        "target_pct": 1.8,
+        "invalidation": "외국인 일중 순매도 1조+ 재확대 또는 코스피 종가 8100 이탈 또는 7/2 미 고용 강세로 금리인하 기대 후퇴",
+        "comment": "지난주 사상 첫 주간 서킷브레이커 2회의 폭락은 연초 이후 +108% 급등에 대한 리밸런싱·레버리지 청산이지 실적 붕괴가 아닙니다. 반기말 정점(6/26)을 지나며 외국인 매도압력 완화 가능성과 마이크론 호실적·HBM 완판이라는 펀더멘털이 단기 반등을 지지하나, 원화 1535·외국인 누적매도 20조는 부담이라 확신은 낮게 둡니다. 8100 이탈과 7/2 미 고용지표를 보고 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 1.0,
+        "invalidation": "반도체 대형주 쏠림 지속으로 중소형 자금 이탈 또는 7/1 강화 상장폐지 제도 충격",
+        "comment": "코스닥은 주간 -11.92%로 더 크게 빠져 과매도 반등 여지는 있으나, 7/1 강화된 상장폐지 제도와 대형 반도체 쏠림이 중소형 심리를 누릅니다. 코스피 대비 열위를 예상하며, 매수는 외국인이 집중하는 우량 반도체 소부장·바이오 대장주로 선별하는 전략이 유효합니다."
+      },
+      "regime": "risk-off / 반도체 수퍼사이클은 견조하나 외국인 리밸런싱·레버리지 청산 조정",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.97,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-06-30"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -4.09,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-06"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.48,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-06-30"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -7.98,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-06"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-29",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.45,
+        "target_pct": -2.0,
+        "invalidation": "SOX 반등 + 외국인 순매수 전환 + 코스피 20일선 회복",
+        "comment": "기준일(6/26) 하락에 SOX 야간 -5.29%가 겹쳐 월요일 개장은 약세 압력이 우세합니다. 외국인 셀코리아(5일 -15.7조)와 시장 폭 붕괴(상승 331 vs 하락 2250)가 약세 근거이나, 마이크론 호실적과 SK하이닉스 ADR(7/10)로 반도체發 급반등 리스크가 크니 SOX·외국인 수급 전환을 매일 확인하며 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.4,
+        "target_pct": -2.5,
+        "invalidation": "코스닥 RSI 40 과매도 반등 + 바이오·로봇 테마 재점화",
+        "comment": "코스닥 RSI 42.6으로 코스피보다 약하고 고베타 중소형·헬스케어 비중이 커 하락 우위로 봅니다. 다만 과매도 영역이라 되돌림 변동성이 크므로 확신을 낮게 둡니다."
+      },
+      "regime": "risk-off(35) / 방어·배당 로테이션, 반도체 최대 변동성 진원, 외국인 셀코리아",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.97,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-06-30"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -4.09,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-06"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -0.48,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-06-30"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -7.98,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-06"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-06-30",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.5,
+        "target_pct": -1.0,
+        "invalidation": "외국인 순매도 둔화/순매수 전환, 또는 원달러 1530 하회, 또는 코스피 8525 회복",
+        "comment": "외국인이 하루 7.75조(역대 최대)를 팔고 7월부터 국민연금 리밸런싱(최대 74조) 매물이 더해지며, 원달러는 1,545원으로 17년 최약입니다. 다만 개인·기관의 강한 저가매수가 매물을 받아내 지수는 -0.2%에 그쳤습니다. 외국인 순매도 규모와 환율(1,550 돌파 여부)을 보고 대응하되, 메가캡 추격은 자제하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": 0.5,
+        "invalidation": "코스닥 880 이탈(랠리 실패), 또는 외국인 코스닥 순매도 전환",
+        "comment": "호남 800조 반도체 메가프로젝트·국민성장펀드 기대로 +8.13% 폭등했으나, 하루 급등분이 상당히 선반영됐습니다. 저가 오버슈팅성 반등이라 추가 상승보다 되돌림 위험이 큽니다. 추격보다 눌림목과 실적 있는 종목(바이오) 위주로 선별하세요."
+      },
+      "regime": "neutral, 한국 고유 risk-off / 외국인+연기금 매도·원화 17년 최약·VKOSPI 사상최고 / 반도체 메가캡 OUT, 바이오·방산·전력 순환매",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -2.04,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-01"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -9.68,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-07"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 1.44,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-01"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -9.27,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-07"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-01",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": -1.0,
+        "invalidation": "원달러 1500 안착+외국인 순매수 전환 시 상방 무효화 / 원달러 1580 돌파 또는 7월 FOMC 인상 신호 시 하방 확대",
+        "comment": "지금 코스피는 두 얼굴의 장입니다. 한쪽에는 삼성전자 2분기 영업이익이 전년비 +1728%로 추정될 만큼 AI 메모리 실적이 폭발하고 SOX가 사상 최고 분기를 보내는 강세 동력이 있고, 다른 쪽에는 원달러 28년래 최고(1550)와 외국인 8일 연속 역대급 순매도라는 강한 역풍이 있습니다. 둘이 팽팽해 방향은 중립으로 보고 확신을 낮췄습니다. 환율 1500 안착과 외국인 순매수 전환이 보이면 위로, 1580 돌파나 7월 FOMC 인상 신호면 아래로 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.5,
+        "target_pct": 1.5,
+        "invalidation": "코스닥 900선 종가 이탈 또는 전반 risk-off 심화 시 무효화",
+        "comment": "코스닥은 코스피 대비 상대 강세 우위로 봅니다. 외국인 매도가 코스피 반도체 대형주에 집중된 사이 코스닥은 외국인 순매수 우위이고, 상반기 -1%로 코스피(+101%) 대비 극단적으로 소외돼 키맞추기 여지가 있으며 바이오·소부장·로봇으로 매기가 확산 중입니다. 다만 절대 방향은 매크로에 종속되고 매파 연준 고금리가 성장주에 역풍이라 확신은 0.50으로 제한합니다."
+      },
+      "regime": "neutral(40) / AI반도체 실적 강세 vs 고환율·외국인 이탈·매파 연준 약세 충돌 / 반도체 소부장·바이오·전력 주도",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -7.89,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-02"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -12.73,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-08"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -6.74,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-02"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -15.53,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-08"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.55,
+        "target_pct": -1.5,
+        "invalidation": "반도체 저가매수로 삼성전자/SK하이닉스 반등 + 원달러 1540 하향 안정 + 외국인 순매수 전환",
+        "comment": "미 반도체지수(SOX)가 하루 -6.27% 급락했고 반도체가 코스피 시총의 절반을 넘어 지수를 끌어내릴 위험이 큽니다. 여기에 원달러 환율 1550원대(17년 최고)와 외국인의 9거래일 연속 순매도, 새 연준의장 워시의 매파 발언(금리인상 리스크)이 겹칩니다. 다만 6월 반도체 수출이 사상 최대라 급락보다는 대형 반도체에서 방어주로 자금이 옮겨가는 조정 국면으로 봅니다. 환율과 오늘 밤 미 고용지표를 보고 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": 0.0,
+        "invalidation": "방산-바이오 중소형 순매수 지속 시 강보합 / 성장주 투매 확산 시 급락",
+        "comment": "코스닥은 대형 반도체를 피한 자금의 상대적 유입처로 전일 강보합을 보였지만, 코스닥 구조조정(동전주 상장폐지 절차·저PBR 압박)과 2차전지 약세가 상단을 막습니다. 바이오·K뷰티 등 실적 있는 중소형은 버팀목이라 방향은 중립으로 보되, 종목별 차별화가 클 전망입니다."
+      },
+      "regime": "risk-off 우위의 중립 / 반도체 급락에 방어-정책수혜(방산-원전-바이오) 로테이션",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.76,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.55,
+            "settle_date": "2026-07-03"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -4.66,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.55,
+            "settle_date": "2026-07-09"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": 0.19,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-03"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -8.39,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-09"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-03",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": 0,
+        "invalidation": "상방: 7/7 삼성전자 잠정실적 서프라이즈 + 코스피 8000 회복 + 외국인 순매수 전환 / 하방: 7400 종가 이탈 또는 삼성 실적 쇼크",
+        "comment": "코스피는 삼전닉스(60% 비중)의 반도체 급락으로 -7.89% 폭락했습니다. 외국인 149조 순매도와 국민연금 리밸런싱 매도가 하방 압력이나, 과매도·개인 대량 매수·7/7 삼성 잠정실적 기대가 반등 소지를 만들어 방향은 중립입니다. 7/7 실적 결과를 확인하고 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": 1,
+        "invalidation": "상방: 낙폭과대 반등 확산 + 개인 수급 지속 / 하방: 빚투 반대매매 확산·마진콜 연쇄",
+        "comment": "코스닥은 RSI 29로 과매도이고 반도체 비중이 낮아 제약·바이오·게임 주도로 상대적으로 견조합니다(코스피 하락 중 반등). 위험회피가 상단을 제한하나 기술적 반등 소지가 있어 중립~소폭 우호입니다."
+      },
+      "regime": "risk-off (score 24) / 반도체 순환매 이탈, 비반도체 퀄리티(바이오·방산·자동차·은행) 주도",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.46,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-06"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -7.57,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-10"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -2.46,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-06"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -3.57,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-10"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-06",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 0,
+        "invalidation": "8000 종가 이탈 시 하방 전환 / 삼성전자 영업이익 90조+ 서프라이즈와 외국인 순매수 전환 동반 시 상방 전환",
+        "comment": "지난주 급락 후 반등 시도 중이지만 외국인이 12거래일 연속 파는 중이고, 내일 삼성전자 실적과 캐나다 잠수함 발표라는 큰 이벤트가 몰려 있어 방향을 단정하지 않습니다. 이벤트 결과와 외국인 매수 전환 여부를 확인하고 대응하는 구간입니다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.35,
+        "target_pct": 0,
+        "invalidation": "840 이탈 시 하방 / 외국인 코스닥 순매수 전환 + 거래대금 회복 시 상방",
+        "comment": "5일간 -8%로 과매도(RSI 29) 상태라 기술적 반등 여지는 있지만, 사줄 주체(외국인·기관)가 아직 없습니다. 반등이 나와도 추격보다는 낙폭과대 우량주 분할 접근이 안전합니다."
+      },
+      "regime": "중립/전환 — washout 직후 + 외인 broad_selling + 이벤트 밀집(삼성 실적·캐나다 잠수함·ADR)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.91,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-07"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -15.46,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-13"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -1.87,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-07"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.63,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-13"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-07",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.4,
+        "target_pct": 1.0,
+        "invalidation": "삼성전자 2분기 실적 후 셀온뉴스로 외국인 매도 재확대 -> 코스피 8000선 종가 이탈",
+        "comment": "07-02 반도체 쇼크로 급락(-7.89%) 후 8000선을 회복한 저점권 반등 국면입니다. 오늘 삼성전자 역대급 실적(컨센 85조)과 메모리 슈퍼사이클이 상방을, 외국인 셀코리아와 실적일 셀온뉴스가 하방을 만들어 팽팽합니다. 확신은 낮게 두고 대장주 급등 추격 대신 자동차/금융/바이오 로테이션과 외국인 순매수 전환 여부를 보고 대응하세요."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.35,
+        "target_pct": 0.0,
+        "invalidation": "중소형 투매 재개(하락) 또는 코스닥 고유 강세신호 출현(상승)",
+        "comment": "코스닥은 5일 -7.98%로 대형주보다 약하고 외국인 회전이 부재해 대형주 반등과 따로 움직일 수 있습니다(백테스트상 독립). 코스닥 고유의 강세·수급 신호가 확인되기 전까지 중립으로 봅니다."
+      },
+      "regime": "전환(washout 후 반등)/반도체 슈퍼사이클 vs 외인 분배 — 가치주 로테이션",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -5.35,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-08"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -10.44,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-14"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.56,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-08"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.68,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-14"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-08",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.45,
+        "target_pct": 2.5,
+        "invalidation": "외국인 순매도 지속 + 반도체 추가 급락 시 7,500 하회하면 무효. 반등 실패로 판단."
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.45,
+        "target_pct": 2.5,
+        "invalidation": "830 하회 고착 시 무효. 바이오·게임 리더십 훼손."
+      },
+      "regime": "risk-off 패닉 과매도 (코스피 5일 -9.68%, 서킷브레이커, 외국인 13일 연속 순매도). 밸류에이션 washout(코스피 선행 PER 6.65배). 방어적 과매도 반등 시도 국면.",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.62,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-09"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.52,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-15"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 1.15,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-09"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 5.66,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-15"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-10",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.42,
+        "target_pct": 0,
+        "invalidation": "외국인 순매도 재가속(일 2조+) 또는 SK하이닉스 ADR 셀온發 반도체 재급락 시 하락 전환. 반대로 외국인 순매수 전환 + 7,450 회복 시 상승 전환.",
+        "comment": "국면 종합게이트가 '공포'로 시장 상승 단정을 금지(breadth 붕괴+풋 급증). 그러나 과매도 극단(RSI 30)과 외국인 13일 연속매도 중단으로 하락도 단정 어려운 중립 구간. 지수보다 개별 종목 수급 신호에 집중하고, 오늘 밤 SK하이닉스 ADR 데뷔 결과를 확인해 대응한다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 0,
+        "invalidation": "제약·바이오 리더십 훼손 또는 외국인 순매수 소멸 시 하락. 790선 지지 + 바이오 강세 지속 시 반등.",
+        "comment": "외국인이 코스닥은 5일 순매수로 전환했고 제약·바이오가 상대강도 1위로 버티고 있어 과매도 반등 소지가 우위이나, 5일 -8.39%로 낙폭이 크고 성장주 투매가 잔존해 중립으로 본다."
+      },
+      "regime": "risk-off / 공포(falling knife) 경계 — 단 과매도 저점권. 코스피 5일 -4.66%, breadth 붕괴(하락:상승 2.75배), 옵션 PCR(OI) 2.01, 외국인 20일 -35.4조(단 13일 연속매도 07-08 중단). 방어·바이오·통신 순환, SK하이닉스 ADR 상장 분수령.",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -8.95,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.42,
+            "settle_date": "2026-07-13"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -12.84,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.42,
+            "settle_date": "2026-07-20"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.55,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-13"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -10.48,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-20"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-11",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.35,
+        "target_pct": 1.0,
+        "invalidation": "월요일 7,300 하회 + 외국인 순매도 재가속 시 약세 되돌림 확정 / 7,600 회복 + 외국인 순매수 전환 시 상승추세 복귀",
+        "comment": "주간 -7% 급락 뒤 금요일 +2.52% 급반등(7,475.94)했으나 외국인 20일 -37.5조 순매도·옵션 PCR 1.99(풋우위)로 반등 지속성 미검증. 저점권 역추세 진입은 우호적이나 지수 추격은 자제, 분할 대응."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.3,
+        "target_pct": 1.0,
+        "invalidation": "820 하회 시 되돌림 / 860 돌파 + 반도체 소부장 외국인 수급 지속 시 상승",
+        "comment": "금요일 +5.47% 급반등은 과도한 되돌림 소지. 바이오 양극화(펩트론·HLB 하한가 vs 브릿지바이오 신고가)와 반도체 소부장 외국인 재유입이 관건. 중립."
+      },
+      "regime": "저점권 역추세 반등 시도 + 외국인 분배 지속 혼재 (KOSPI 5일 -7.57%, PCR(OI) 1.99 풋우위, 외국인 20일 -37.5조 순매도)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 0.73,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-14"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.87,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-21"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -1.92,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.3,
+            "settle_date": "2026-07-14"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.76,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.3,
+            "settle_date": "2026-07-21"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-12",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.3,
+        "target_pct": 0,
+        "invalidation": "외국인 순매도 재확대 + 코스피 7300 하회 시 하락 전환 / 외국인 매수 전환 + 반도체 주도 지속 시 상승 전환",
+        "comment": "5일 -7.57% 급락 후 07-10 +2.52% 반등했으나 외국인 20일 -37.5조 분배와 PCR 1.993 풋 우위가 상충. 급락 직후 고PCR은 바닥권 신호도 되어 지수 공격적 숏은 보류, 방향은 중립."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.3,
+        "target_pct": 0,
+        "invalidation": "바이오 주도 훼손 또는 코스피 급락 동조 시 하락 / 외국인 코스닥 순매수 전환 시 상승",
+        "comment": "07-10 +5.47% 반등, 제약바이오 20일 모멘텀 1위로 상대 주도. 다만 코스피 급락 동조 위험 상존해 중립."
+      },
+      "regime": "risk-off 오버솔드 반등 시도 / 반도체(SK하이닉스 나스닥) 투심 개선 vs 외국인 대량 분배 · 공포심리(PCR 2.0) · 방향 중립",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 0.73,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.3,
+            "settle_date": "2026-07-14"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.87,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.3,
+            "settle_date": "2026-07-21"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -1.92,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.3,
+            "settle_date": "2026-07-14"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.76,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.3,
+            "settle_date": "2026-07-21"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-14",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.45,
+        "target_pct": 0,
+        "invalidation": "상방=호르무즈 긴장 완화 + 외국인 반도체 순매도 진정/순매수 전환. 하방=WTI 90달러 상회 또는 호르무즈 봉쇄, 반도체 추가 급락.",
+        "comment": "코스피가 8거래일 만에 약 -18% 급락해 6,800선까지 밀린 과매도 국면입니다. 반도체 피크아웃 공포와 이란-호르무즈 오일쇼크가 겹쳐 방향을 단정하기 어렵습니다. 지수 베팅보다 오일·방산·방어주 선별과 현금 확보가 유효합니다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 0,
+        "invalidation": "상방=위험회피 완화 + 중소형 수급 회복. 하방=코스피 동반 급락·유가 추가 급등.",
+        "comment": "코스닥은 직전 5일 -5.63%로 코스피보다 방어됐지만 위험회피 국면에서 중소형 변동성이 큽니다. 고유 강세 신호가 없어 기본 중립으로 봅니다."
+      },
+      "regime": "risk-off / 지정학 오일쇼크 + 반도체 피크아웃 워시아웃 (코스피 과매도)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h5": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": -0.86,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-22"
+          },
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 6.24,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.45,
+            "settle_date": "2026-07-15"
+          }
+        },
+        "kosdaq": {
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.2,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-22"
+          },
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 5.8,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-15"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-15",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.42,
+        "target_pct": 1,
+        "invalidation": "외국인 재차 대량 순매도 전환 + 07-14 장중저 6,448 이탈 시 하락 재개 / 외국인 순매수 지속 + breadth 개선(하락배수<1.5) 시 상승 전환",
+        "comment": "07-14 장중 -5.26% 급락 후 +0.73% 반전 마감에 기관·외국인 4조+ 순매수 전환으로 자본항복형 반등 신호가 나왔고, SK하이닉스 ADR +27%·SOX +2.54%가 반도체 주도 기술적 반등을 지지한다. 다만 breadth 3:1 붕괴·외국인 20일 -41조·PCR 1.88로 추세반전은 미확인이라 단일 촉매로 지수 up을 단정하지 않고 중립(반등 우세 편향)으로 본다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": -1,
+        "invalidation": "제약바이오·2차전지 소재 개별 강세 확산 시 상향 / 개인 반대매매 2차 확산 시 하향",
+        "comment": "코스닥 5일 -5.68%로 코스피보다 낙폭이 작고 외국인 20일 +1.06조로 대형주와 분기하나, 반도체 대형주 촉매의 직접 수혜가 제한되고 공포 국면에서 소형주가 취약해 기본 중립으로 둔다."
+      },
+      "regime": "risk-off 공포(falling knife) + 과매도 반등 시도 / 반도체 주도",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -6.37,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.42,
+            "settle_date": "2026-07-16"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -2.57,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.42,
+            "settle_date": "2026-07-23"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.53,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-16"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -4.72,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-23"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-16",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.5,
+        "target_pct": 1.5,
+        "invalidation": "외국인 일간 -1조 이상 순매도 재전환, 또는 SOX 추가 -3% 급락, 또는 KOSPI 7,100 종가 이탈",
+        "comment": "외국인이 13거래일 동안 41조를 팔고 나서 하루에 2.3조를 순매수로 되돌렸습니다. 상승 종목이 하락 종목의 5.6배(2,176 대 386)로 특정 종목만이 아니라 시장 전반이 함께 오른 점, 지수 RSI가 29.9로 과매도이고 52주 고가 대비 크게 낮은 저점권이라는 점에서 바닥 회복 쪽에 무게를 둡니다. 다만 미국 반도체가 약세(SOX -2.08%)라 코스피 시총 1·2위인 반도체가 발목을 잡을 수 있어 확신은 0.5로 제한합니다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 0.0,
+        "invalidation": "코스닥 고유 외인·기관 동반 순매수 확인 시 up 전환, 5일 수익률 -3% 이상 반납 시 down",
+        "comment": "코스닥은 이미 5일간 +5.66% 올라 코스피(+0.52%)보다 훨씬 앞서 반영됐습니다. 과거 검증상 코스닥은 대형주 외국인 수급과 따로 움직이기 때문에, 코스닥만의 수급 신호가 확인되기 전에는 중립으로 봅니다."
+      },
+      "regime": "risk-on 저점권 외인 매수전환(flip) / 바이오·금융 주도, 반도체 조정",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -4.46,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-20"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -1.91,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.5,
+            "settle_date": "2026-07-24"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.33,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-20"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -5.51,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-24"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-17",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 0,
+        "invalidation": "외국인이 순매수로 전환하고 은행·자동차 주도로 상승종목이 하락종목을 앞서면 상승 우위로 전환 / SK하이닉스·삼성전자 갭하락이 -5%를 넘고 외국인 순매도가 2조원을 상회하면 하락 우위로 전환",
+        "comment": "어제 코스피는 -6.37%(6,820.60) 급락하며 올해 37번째 매도 사이드카가 발동했지만, 그 전날에는 +6.24% 급등했습니다. 지금은 하루 6~9%씩 양방향으로 흔들리는 국면이라 방향을 단정하기 어렵습니다. 급락 직후는 통계적으로 반등이 자주 나와 하락을 콜하지 않고, 외국인이 아직 1조4천억원 순매도 중이라 상승도 콜하지 않아 중립으로 봅니다. 오늘은 외국인 수급 방향 하나만 보시면 됩니다."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.35,
+        "target_pct": 0,
+        "invalidation": "코스닥 고유 수급(외국인 순매수 전환)이나 정책 촉매가 확인되면 방향 부여 / 국고채 3년물 추가 급등 시 하락 우위",
+        "comment": "코스닥은 어제 -4.53%(791.84)로 800선을 내줬지만 5일 기준으로는 -0.27%에 그쳐 코스피(-6.46%)보다 오히려 견조합니다. 다만 국고채 3년물이 3.848%까지 올라 고PER 성장주가 많은 코스닥에는 할인율 부담이 큽니다. 코스닥만의 뚜렷한 촉매가 확인되지 않아 중립으로 둡니다."
+      },
+      "regime": "risk-off 경계 / 초고변동성 되돌림 — 금리인상발 반도체에서 은행·자동차·바이오로 섹터 로테이션",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 3.56,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 3.68,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-27"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": 0.49,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 2.03,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-27"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-18",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.4,
+        "target_pct": 0,
+        "invalidation": "외국인 KOSPI 5일 순매수 +1조 이상 전환 시 상승 전환 / 삼성전자 250,000원 또는 SK하이닉스 1,800,000원 종가 이탈 시 하락 전환",
+        "comment": "코스피는 강하게 눌린 상태입니다. 5일간 -6.46% 하락했고 RSI가 30으로 과매도 구간이며, 외국인의 순매도가 사실상 멈췄습니다(5일 -0.1조, 연속 순매도 1일). 반면 7월 17일 제헌절 휴장 중에 미국 반도체 지수가 고점 대비 -20.3%로 약세장에 진입했는데 한국은 이를 아직 반영하지 못했습니다. 반등 동력과 갭다운 부담이 팽팽해 중립으로 봅니다. 월요일 장 초반 외국인 수급 방향을 보고 대응하십시오."
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.35,
+        "target_pct": 0,
+        "invalidation": "외국인 코스닥 5일 순매도가 -1.5조 이상으로 확대되면 하락 전환",
+        "comment": "코스닥은 5일 -0.27%로 코스피(-6.46%)보다 6%p 이상 잘 버텼고, 외국인이 20일간 +0.87조를 순매수했습니다(코스피는 -40.56조 순매도). 다만 7월 16일에 코스닥 주력인 반도체 소부장이 일제히 -7~-10% 급락해 상대강세가 흔들렸습니다. 코스닥은 대형주 수급과 독립적으로 움직이므로 중립으로 봅니다."
+      },
+      "regime": "risk-off / 반도체 단독 약세장(SOX -20.3%) + 비반도체 방어 로테이션(통신·바이오·정유·자동차)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 3.56,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 3.68,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-27"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": 0.49,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 2.03,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-27"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-19",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.4,
+        "target_pct": -1.5,
+        "invalidation": "외국인 현물 순매수 전환 + SK하이닉스 반등으로 코스피 6,900 회복 시 하락콜 무효"
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.35,
+        "target_pct": 0.0,
+        "invalidation": "제약·바이오 순환매 붕괴 또는 코스닥 5일선 급락 시 약세 전환"
+      },
+      "regime": "risk-off / 공포(낙폭과대 반등 대기)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 3.56,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 3.68,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.4,
+            "settle_date": "2026-07-27"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": true,
+            "index_return_pct": 0.49,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 2.03,
+            "scored_from": null,
+            "brier": null,
+            "conviction": 0.35,
+            "settle_date": "2026-07-27"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-20",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.46,
+        "target_pct": -2.5,
+        "invalidation": "7,060 종가 상회 시 콜 폐기",
+        "comment": "07-16 코스피는 6,820.60으로 하루 -6.37% 급락했고 장중 매도 사이드카가 발동했다. 원인은 반도체 고점 우려에 한국은행의 3년 6개월 만의 기준금리 인상과 외국인·기관 동반 매도가 겹친 복합 충격이다. RSI 30 부근의 과매도로 기술적 반등 여지는 있으나, 외국인이 13거래일 연속 순매도 중이고 매수 전환 증거가 없어 약세를 유지한다. 이번 주 SK하이닉스 실적이 방향을 가르는 최대 변수이므로 결과 확인 전까지는 현금 비중을 높게 가져가는 것이 유리하다.",
+        "prob_up": 0.34,
+        "prob_flat": 0.2,
+        "prob_down": 0.46,
+        "range_low": 6450,
+        "range_high": 7060,
+        "key_support": 6600,
+        "key_resistance": 7000
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.44,
+        "target_pct": -1.8,
+        "invalidation": "828 종가 상회 시 콜 폐기",
+        "comment": "코스닥은 791.84로 07-16 하루 -4.53% 하락했다. 5일 기준으로는 -0.27%에 그쳐 코스피(-6.46%)보다 잘 버틴 것처럼 보이지만, 이는 급락 직전 나흘의 상대강세 덕분이고 급락일에는 함께 무너졌다. 금리인상은 장기 현금흐름 비중이 큰 중소형 성장주의 할인율에 더 불리하게 작용하므로 약세로 판단한다. 다만 대형주 수급 레짐과는 독립적으로 움직일 수 있어 확신은 낮게 뒀다.",
+        "prob_up": 0.34,
+        "prob_flat": 0.22,
+        "prob_down": 0.44,
+        "range_low": 752,
+        "range_high": 828,
+        "key_support": 770,
+        "key_resistance": 815
+      },
+      "regime": "risk-off / 반도체 급락 후 금리인상발 은행·에너지 회전, 외국인 13거래일 연속 순매도",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 3.56,
+            "scored_from": null,
+            "brier": 0.6872,
+            "conviction": 0.46,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 3.68,
+            "scored_from": null,
+            "brier": 0.6872,
+            "conviction": 0.46,
+            "settle_date": "2026-07-27"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.49,
+            "scored_from": null,
+            "brier": 0.9176,
+            "conviction": 0.44,
+            "settle_date": "2026-07-21"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 2.03,
+            "scored_from": null,
+            "brier": 0.6776,
+            "conviction": 0.44,
+            "settle_date": "2026-07-27"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-21",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.44,
+        "target_pct": -2.5,
+        "invalidation": "6,820 종가 상회 시 콜 폐기",
+        "comment": "코스피는 07-20 하루 -4.46% 하락한 6,516.27로 마감했고 매도 사이드카가 이틀 연속 발동했다. 6/22 고점 대비 -28.5%로 약세장이며 5일 수익률이 -12.84%라 추세 프라이어는 아래를 가리킨다. 다만 외국인이 4주 만에 순매수로 돌아섰고(07-20 +5,161억) 신용융자가 5일 -8.93%로 반대매매 압력이 거의 소진돼 반등 위험도 실재한다. 외국인 매수가 3거래일 이어지는지, 6,000선이 지켜지는지를 보고 대응하라.",
+        "prob_up": 0.38,
+        "prob_flat": 0.18,
+        "prob_down": 0.44,
+        "range_low": 6150,
+        "range_high": 6900,
+        "key_support": 6000,
+        "key_resistance": 6820
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -3.0,
+        "invalidation": "792 종가 상회 시 콜 폐기",
+        "comment": "코스닥은 07-20 -5.33% 하락한 749.64로 작년 6월 수준까지 되돌아갔다. 코스피와 달리 외국인이 코스닥은 순매도(-703억~-1,313억)를 이어가 수급 지지가 없다. 거래대금이 4.83조로 이틀 연속 5조를 밑돌며 6/19 대비 -54.9% 급감했고 개인 이탈이 이번 하락의 특징이라, 반등이 와도 대형주보다 늦을 가능성이 높다. 700선 지지 여부가 관건이다.",
+        "prob_up": 0.3,
+        "prob_flat": 0.18,
+        "prob_down": 0.52,
+        "range_low": 690,
+        "range_high": 800,
+        "key_support": 700,
+        "key_resistance": 792
+      },
+      "regime": "risk-off 후기 — 자본항복 구간 진입, 외국인 4주 만에 순매수 전환했으나 기관 매도에 압도(바닥 미확증)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.74,
+            "scored_from": null,
+            "brier": 0.6104,
+            "conviction": 0.44,
+            "settle_date": "2026-07-22"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -10.73,
+            "scored_from": null,
+            "brier": 0.4904,
+            "conviction": 0.44,
+            "settle_date": "2026-07-28"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -0.3,
+            "scored_from": null,
+            "brier": 1.0328,
+            "conviction": 0.52,
+            "settle_date": "2026-07-22"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -6.3,
+            "scored_from": null,
+            "brier": 0.3528,
+            "conviction": 0.52,
+            "settle_date": "2026-07-28"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-22",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.57,
+        "target_pct": 2.0,
+        "invalidation": "6,600 종가 하회 시 회복 시나리오 폐기",
+        "comment": "7/20 급락(-4.46%)을 7/21 +3.56%로 되돌린 반등이 외국인·기관 실제 순매수로 확인됐고 간밤 미국 반도체(SOX +5.2%)가 강했다. 급락 후 외인 매수전환 회복이라 상승 우위로 보되, 옵션 풋 쏠림·외국인 20일 누적 매도 잔존으로 확신은 절제. 6,600 지지와 외국인 순매수 지속 여부를 본다.",
+        "prob_up": 0.57,
+        "prob_flat": 0.18,
+        "prob_down": 0.25,
+        "range_low": 6700,
+        "range_high": 7050,
+        "key_support": 6600,
+        "key_resistance": 7000
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.42,
+        "target_pct": -1.0,
+        "invalidation": "간밤 강세로 과매도 반등 시 상방(약세콜 부분 오답 인정)",
+        "comment": "52주 신저가에서 외국인 소형주 순환매가 아직 없어 대형주 회복이 코스닥으로 전이되지 않는 국면. 오늘 오버솔드 반등은 가능하나 추세는 약세라 하락 우위로 본다.",
+        "prob_up": 0.38,
+        "prob_flat": 0.2,
+        "prob_down": 0.42,
+        "range_low": null,
+        "range_high": null,
+        "key_support": null,
+        "key_resistance": null
+      },
+      "regime": "risk-on 회복(급락후 외국인 매수전환) / 반도체·바이오 주도",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 4.4,
+            "scored_from": null,
+            "brier": 0.2798,
+            "conviction": 0.57,
+            "settle_date": "2026-07-23"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -16.69,
+            "scored_from": null,
+            "brier": 0.9198,
+            "conviction": 0.57,
+            "settle_date": "2026-07-29"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.22,
+            "scored_from": null,
+            "brier": 0.6008,
+            "conviction": 0.42,
+            "settle_date": "2026-07-23"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -11.77,
+            "scored_from": null,
+            "brier": 0.5208,
+            "conviction": 0.42,
+            "settle_date": "2026-07-29"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-23",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.48,
+        "target_pct": -2.0,
+        "invalidation": "7,000 종가 상회 시 약세 콜 폐기",
+        "comment": "외국인이 어제 +2조6,211억원을 사며 두 달 만에 최대 순매수를 냈지만, 그 매수의 70%가 삼성전자와 SK하이닉스 두 종목에 몰려 있고 코스닥은 같은 날 내렸다. 장중 7,166까지 갔다가 6,797.70으로 368p를 반납한 것은 7,000선 돌파 실패다. 오늘 밤 무역법 301조 관세 발표와 다음 주 FOMC가 T+5 구간 안에 놓여 있어 아래쪽이 근소하게 무겁다. 다만 빚투 잔고가 60일 최저권까지 줄어 매도 압력의 원천은 마르는 중이라 확신은 절반 수준이다. 7,000 종가 안착과 외국인 4일 연속 순매수를 보라.",
+        "prob_up": 0.38,
+        "prob_flat": 0.14,
+        "prob_down": 0.48,
+        "range_low": 6300,
+        "range_high": 7250,
+        "key_support": 6516,
+        "key_resistance": 7000
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -2.5,
+        "invalidation": "789 종가 상회 시 약세 콜 폐기",
+        "comment": "외국인 매수가 대형주에만 들어오고 코스닥으로는 넘어오지 않았다. 어제 코스닥은 외국인 -842억·기관 -1,914억 순매도에 개인만 +2,638억을 받았고, 반대매매 비중은 연중 최고인 5.7%다. RSI 26.8로 과매도지만 과매도만으로 반등하지는 않는다. 789 종가 상회 전까지는 하락 우위로 본다.",
+        "prob_up": 0.35,
+        "prob_flat": 0.13,
+        "prob_down": 0.52,
+        "range_low": 700,
+        "range_high": 800,
+        "key_support": 720,
+        "key_resistance": 789
+      },
+      "regime": "risk-off / 급락 후 바닥 다지기 — 외국인 매수전환은 실재하나 2종목 70% 집중의 좁은 랠리",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -5.72,
+            "scored_from": null,
+            "brier": 0.4344,
+            "conviction": 0.48,
+            "settle_date": "2026-07-24"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -21.18,
+            "scored_from": null,
+            "brier": 0.4344,
+            "conviction": 0.48,
+            "settle_date": "2026-07-30"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -5.32,
+            "scored_from": null,
+            "brier": 0.3698,
+            "conviction": 0.52,
+            "settle_date": "2026-07-24"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -18.41,
+            "scored_from": null,
+            "brier": 0.3698,
+            "conviction": 0.52,
+            "settle_date": "2026-07-30"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-24",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.37,
+        "target_pct": 0.5,
+        "invalidation": "6,900 종가 하회 시 중립 콜 폐기(하락 전환)",
+        "comment": "어제 급반등을 소화하는 눌림·보합 국면. 외국인이 다시 사고 있어 반도체·대형주 눌림은 매수 기회지만, 간밤 미국 급락·유가 급등이 개장 갭하락 압력이다. 방향 베팅보다 선별 매수.",
+        "prob_up": 0.33,
+        "prob_flat": 0.37,
+        "prob_down": 0.3,
+        "range_low": 6950,
+        "range_high": 7260,
+        "key_support": 6950,
+        "key_resistance": 7220
+      },
+      "kosdaq": {
+        "dir": "neutral",
+        "conviction": 0.34,
+        "target_pct": 0.3,
+        "invalidation": "765 종가 하회 시 폐기",
+        "comment": "바이오·2차전지소재 개별 강세는 있으나 외국인 코스닥 수급은 대형주보다 약하다. 개별 종목 위주로 접근.",
+        "prob_up": 0.34,
+        "prob_flat": 0.34,
+        "prob_down": 0.32,
+        "range_low": 770,
+        "range_high": 818,
+        "key_support": 775,
+        "key_resistance": 812
+      },
+      "regime": "국내 회복(외인 순매수 복귀) + 간밤 글로벌 위험회피 교차 — 눌림 매수 선별",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 0.97,
+            "scored_from": null,
+            "brier": 0.6758,
+            "conviction": 0.37,
+            "settle_date": "2026-07-27"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -1.42,
+            "scored_from": null,
+            "brier": 0.7358,
+            "conviction": 0.37,
+            "settle_date": "2026-07-31"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": 2.22,
+            "scored_from": null,
+            "brier": 0.6536,
+            "conviction": 0.34,
+            "settle_date": "2026-07-27"
+          },
+          "h5": {
+            "dir": "neutral",
+            "hit": false,
+            "index_return_pct": -3.8,
+            "scored_from": null,
+            "brier": 0.6936,
+            "conviction": 0.34,
+            "settle_date": "2026-07-31"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-25",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.49,
+        "target_pct": -2.5,
+        "invalidation": "7,100 종가 상회 시 약세 콜 폐기",
+        "comment": "금요일 코스피는 유가 100달러 돌파와 미국·이란 긴장에 -5.72% 폭락하며 사이드카까지 걸렸고, 4거래일간 5조5천억원을 사들이던 외국인이 하루에 -3조2천억원을 되팔았습니다. 주말 미국장에서 유가는 진정됐지만 반도체지수가 -4.25% 더 빠져 반도체 압박은 오히려 커졌습니다. 지수는 과매도지만 투매 거래량이 확인되지 않아 추세 순응으로 하락 우위를 보되 확신은 절반 수준입니다. 7,100 회복이면 판단을 접고, 6,516이 깨지면 하방이 열립니다.",
+        "prob_up": 0.4,
+        "prob_flat": 0.11,
+        "prob_down": 0.49,
+        "range_low": 6150,
+        "range_high": 7250,
+        "key_support": 6516,
+        "key_resistance": 7097
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -2.5,
+        "invalidation": "790 종가 상회 시 약세 콜 폐기",
+        "comment": "코스닥은 5일 -5.51%로 코스피보다 낙폭이 크고, 외국인 참여도 대형주보다 약합니다. 금요일에도 사이드카가 걸렸고 수급은 개인 순매수에 의존했습니다. 과매도이지만 반등을 이끌 주체가 보이지 않아 하락 우위로 봅니다. 790 회복 전까지는 중소형 신규 진입을 보류하는 것이 안전합니다.",
+        "prob_up": 0.38,
+        "prob_flat": 0.1,
+        "prob_down": 0.52,
+        "range_low": 690,
+        "range_high": 800,
+        "key_support": 720,
+        "key_resistance": 790
+      },
+      "regime": "risk-off / 유가·지정학 충격에 사이드카 급락, 외국인 매수 레짐 mixed — 방어 로테이션(바이오·방산·은행) 우위",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -10.84,
+            "scored_from": null,
+            "brier": 0.4322,
+            "conviction": 0.49,
+            "settle_date": "2026-07-28"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -7.38,
+            "scored_from": "main_call",
+            "brier": 0.4322,
+            "conviction": 0.49,
+            "settle_date": "2026-08-03"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -7.72,
+            "scored_from": null,
+            "brier": 0.3848,
+            "conviction": 0.52,
+            "settle_date": "2026-07-28"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -3.6,
+            "scored_from": "main_call",
+            "brier": 0.3848,
+            "conviction": 0.52,
+            "settle_date": "2026-08-03"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-27",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.44,
+        "target_pct": -2.0,
+        "invalidation": "7,050 종가 상회 시 약세 콜 폐기",
+        "comment": "금요일 -5.72% 급락으로 6,690까지 밀렸습니다. 신용잔고가 60일 하위 1.7%까지 줄고 외국인이 2주 누적 2조5천억원 순매수로 돌아선 바닥 신호가 있지만, 정작 금요일 하루에 외국인이 3조2,685억원을 되팔았습니다. 수급이 돌아선 게 아니라 엇갈리는 국면이라 5일 추세를 따라 약세로 보되 확신은 낮게 둡니다. 29일 FOMC와 SK하이닉스 실적이 한 창에 몰려 방향보다 종목 선별이 중요합니다.",
+        "prob_up": 0.36,
+        "prob_flat": 0.2,
+        "prob_down": 0.44,
+        "range_low": 6300,
+        "range_high": 7200,
+        "key_support": 6300,
+        "key_resistance": 7000
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.5,
+        "target_pct": -2.5,
+        "invalidation": "800 종가 상회 시 약세 콜 폐기",
+        "comment": "코스닥 748.22는 작년 6월 이후 최저입니다. 코스피와 달리 외국인 5일 수급이 -0.23조로 지원이 없고, 개인은 5월 말 이후 1조680억원을 빼서 코스피로 옮겼습니다. 일평균 거래대금도 39% 줄어 유동성 자체가 훼손됐습니다. 700선 지지 확인 전에는 중소형 신규 진입을 보류합니다.",
+        "prob_up": 0.32,
+        "prob_flat": 0.18,
+        "prob_down": 0.5,
+        "range_low": 700,
+        "range_high": 800,
+        "key_support": 740,
+        "key_resistance": 790
+      },
+      "regime": "risk-off / 공포(falling knife) — 급락 직후 디레버리징 완료, 외국인 레짐 mixed",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -10.84,
+            "scored_from": null,
+            "brier": 0.4832,
+            "conviction": 0.44,
+            "settle_date": "2026-07-28"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -7.38,
+            "scored_from": "main_call",
+            "brier": 0.4832,
+            "conviction": 0.44,
+            "settle_date": "2026-08-03"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -7.72,
+            "scored_from": null,
+            "brier": 0.3848,
+            "conviction": 0.5,
+            "settle_date": "2026-07-28"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -3.6,
+            "scored_from": "main_call",
+            "brier": 0.3848,
+            "conviction": 0.5,
+            "settle_date": "2026-08-03"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-28",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -2.5,
+        "invalidation": "7,100 종가 상회 시 하락 콜 폐기(07-23 고점 7,096 회복)",
+        "comment": "어제 코스피는 장중 2% 급락을 딛고 +0.97% 반등해 6,755.75로 마감했지만, 그 반등 중에도 외국인은 2.9조원을 순매도했습니다. 간밤 SK하이닉스 예탁증서가 7.5% 급락하고 필라델피아반도체지수가 2.23% 빠져 지수 시가총액 상위 두 종목에 직접 압력이 왔습니다. 유가 8.3% 급락과 원화 강세는 반대편 힘이라 방향은 아래로 보되 확신은 절제합니다. 7,100을 종가로 넘으면 이 판단을 접습니다.",
+        "prob_up": 0.32,
+        "prob_flat": 0.16,
+        "prob_down": 0.52,
+        "range_low": 6300,
+        "range_high": 7050,
+        "key_support": 6690,
+        "key_resistance": 7096
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.46,
+        "target_pct": -1.8,
+        "invalidation": "795 종가 상회 시 하락 콜 폐기",
+        "comment": "코스닥은 어제 +2.22%로 코스피보다 강했고 엔터테인먼트와 바이오가 그 상승을 이끌었습니다. 다만 코스닥에도 반도체 소재·부품·장비 비중이 작지 않아 간밤 충격에서 자유롭지 않습니다. 자체 추세는 위를 가리키지만 오늘은 반도체 압력이 더 크다고 봐서 하락으로 내되, 확신은 코스피보다 낮춥니다.",
+        "prob_up": 0.36,
+        "prob_flat": 0.18,
+        "prob_down": 0.46,
+        "range_low": 720,
+        "range_high": 800,
+        "key_support": 748,
+        "key_resistance": 790
+      },
+      "regime": "공포(falling knife) 국면의 반등 실패 구간 — 반도체 대장 갭다운 압력 vs 유가 급락·원화 강세",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -5.98,
+            "scored_from": null,
+            "brier": 0.3584,
+            "conviction": 0.52,
+            "settle_date": "2026-07-29"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.57,
+            "scored_from": "main_call",
+            "brier": 0.7584,
+            "conviction": 0.52,
+            "settle_date": "2026-08-04"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -6.12,
+            "scored_from": null,
+            "brier": 0.4536,
+            "conviction": 0.46,
+            "settle_date": "2026-07-29"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 10.61,
+            "scored_from": "main_call",
+            "brier": 0.6536,
+            "conviction": 0.46,
+            "settle_date": "2026-08-04"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-29",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -1.5,
+        "invalidation": "6,400 종가 상회 시 하락 콜 폐기(07-28 시가 6,400.27 갭 상단 회복)",
+        "comment": "어제 코스피는 중국 창신메모리 상장 충격으로 -10.84% 폭락해 6,023.66에 마쳤습니다. 서킷브레이커와 사이드카가 모두 터진 자본 항복 자리라 추가 하락에 과신하지는 않지만, 외국인이 3거래일 연속 팔고 있고 상승 36종목 대 하락 878종목으로 시장 폭이 무너져 상승 콜은 낼 수 없습니다. 오늘 오전 9시 SK하이닉스 2분기 실적이 장중 방향을 가릅니다. 6,400을 종가로 회복하면 이 판단을 접습니다.",
+        "prob_up": 0.41,
+        "prob_flat": 0.07,
+        "prob_down": 0.52,
+        "range_low": 5500,
+        "range_high": 6550,
+        "key_support": 5990,
+        "key_resistance": 6400
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.48,
+        "target_pct": -1.2,
+        "invalidation": "745 종가 상회 시 하락 콜 폐기",
+        "comment": "코스닥도 어제 -7.72%로 705.85까지 밀렸고 오후 2시 37분 서킷브레이커가 발동됐습니다. 다만 코스닥에서는 외국인 연속 순매도가 0일이고 5일 순매도도 1,000억원 수준에 그쳐 대형주와 수급 사정이 다릅니다. 그래서 방향은 코스피와 같이 아래로 보되 확신은 더 낮춥니다. 700선을 지키는지가 관건입니다.",
+        "prob_up": 0.43,
+        "prob_flat": 0.09,
+        "prob_down": 0.48,
+        "range_low": 655,
+        "range_high": 760,
+        "key_support": 690,
+        "key_resistance": 745
+      },
+      "regime": "공포(falling knife) — 중국 창신메모리 상장발 메모리 재평가로 코스피 -10.84% 서킷브레이커, 외국인 매수전환 미확인",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -1.23,
+            "scored_from": null,
+            "brier": 0.4034,
+            "conviction": 0.52,
+            "settle_date": "2026-07-30"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 16.51,
+            "scored_from": "main_call",
+            "brier": 0.6234,
+            "conviction": 0.52,
+            "settle_date": "2026-08-05"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -2.7,
+            "scored_from": null,
+            "brier": 0.4634,
+            "conviction": 0.48,
+            "settle_date": "2026-07-30"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 20.66,
+            "scored_from": "main_call",
+            "brier": 0.5634,
+            "conviction": 0.48,
+            "settle_date": "2026-08-05"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-30",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.5,
+        "target_pct": -3.0,
+        "invalidation": "6,023 종가 상회 시 약세 콜 폐기(07-28 종가 회복 = 이틀치 낙폭 되돌림)",
+        "comment": "어제 코스피는 -5.98% 내린 5,663.24로 마쳤고 장중 -8.17%에서 서킷브레이커가 걸렸습니다. 이틀 연속 동반 서킷은 사상 처음입니다. 상승 232 대 하락 2,359로 시장 폭이 무너지고 신용융자 잔고가 60일 최저권까지 줄어 항복 신호는 충분히 나왔습니다. 그런데 반등을 이끌 외국인이 4거래일 연속 팔고 있습니다(5일 -9조7,600억원). 과매도만으로 반등하지 않는다는 것이 우리 자체 검증 결과라 방향은 아래로 두되 확신은 절반입니다. 오늘 삼성전자 주주환원 콘퍼런스콜과 외국인 순매수 전환을 보세요. 6,023 회복이면 판단을 접습니다.",
+        "prob_up": 0.32,
+        "prob_flat": 0.18,
+        "prob_down": 0.5,
+        "range_low": 5050,
+        "range_high": 6300,
+        "key_support": 5531,
+        "key_resistance": 6023
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.46,
+        "target_pct": -2.5,
+        "invalidation": "706 종가 상회 시 약세 콜 폐기(07-28 종가 회복)",
+        "comment": "코스닥은 -6.12% 내린 662.68로 마쳤고 코스피와 함께 서킷브레이커가 걸렸습니다. 다만 코스피와 다른 점이 하나 있습니다. 외국인이 코스닥에서는 5거래일 동안 2,900억원을 순매수했고 연속 순매도도 끊겼습니다. 그래도 지수 자체가 -6% 빠졌고 반대매매 물량이 남아 있어 방향은 같이 아래로 봅니다. 중소형 신규 진입은 보류하는 것이 안전합니다.",
+        "prob_up": 0.34,
+        "prob_flat": 0.2,
+        "prob_down": 0.46,
+        "range_low": 585,
+        "range_high": 745,
+        "key_support": 650,
+        "key_resistance": 706
+      },
+      "regime": "risk-off / 공포(falling knife) — 이틀 연속 동반 서킷브레이커로 극단 과매도이나 외국인 매수전환 미확인, 실물 지표는 개선",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 17.91,
+            "scored_from": null,
+            "brier": 0.7448,
+            "conviction": 0.5,
+            "settle_date": "2026-07-31"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 12.56,
+            "scored_from": "main_call",
+            "brier": 0.7448,
+            "conviction": 0.5,
+            "settle_date": "2026-08-06"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 11.63,
+            "scored_from": null,
+            "brier": 0.6872,
+            "conviction": 0.46,
+            "settle_date": "2026-07-31"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 24.33,
+            "scored_from": "main_call",
+            "brier": 0.6872,
+            "conviction": 0.46,
+            "settle_date": "2026-08-06"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-07-31",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.68,
+        "target_pct": 6.0,
+        "invalidation": "5,593 종가 하회 시 반등 시나리오 폐기",
+        "comment": "3거래일 동안 17% 빠진 자리에서 외국인이 1조 3,427억원 순매수로 돌아섰고, 간밤 미국 반도체지수가 8.2% 급등했습니다. 시초가는 크게 뛸 가능성이 높지만 그 갭을 쫓지 말고 눌림에서 분할로 접근하십시오. 오늘부터 레버리지 상품 예탁금 규제가 시행돼 상방은 제한적입니다.",
+        "prob_up": 0.68,
+        "prob_flat": 0.07,
+        "prob_down": 0.25,
+        "range_low": 5500,
+        "range_high": 6700,
+        "key_support": 5540,
+        "key_resistance": 6024
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.6,
+        "target_pct": 5.0,
+        "invalidation": "640 종가 하회 시 반등 시나리오 폐기",
+        "comment": "코스닥에서는 외국인이 5거래일 누적으로도 순매수(0.37조원)라 코스피보다 수급이 오히려 선명합니다. 다만 대형 반도체가 주도하는 반등이라 상승폭은 코스피에 못 미칠 수 있습니다.",
+        "prob_up": 0.6,
+        "prob_flat": 0.08,
+        "prob_down": 0.32,
+        "range_low": 630,
+        "range_high": 760,
+        "key_support": 640,
+        "key_resistance": 705
+      },
+      "regime": "risk-off 잔존 속 급락 후 반등 초입 / 반도체 주도 · 외국인 순매수 전환 첫날",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -5.12,
+            "scored_from": "main_call",
+            "brier": 1.0298,
+            "conviction": 0.68,
+            "settle_date": "2026-08-03"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -5.1,
+            "scored_from": "main_call",
+            "brier": 1.0298,
+            "conviction": 0.68,
+            "settle_date": "2026-08-07"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 2.44,
+            "scored_from": "main_call",
+            "brier": 0.2688,
+            "conviction": 0.6,
+            "settle_date": "2026-08-03"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 10.98,
+            "scored_from": "main_call",
+            "brier": 0.2688,
+            "conviction": 0.6,
+            "settle_date": "2026-08-07"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-01",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.47,
+        "target_pct": 2.5,
+        "invalidation": "6,000 종가 하회 시 반등 시나리오 폐기",
+        "comment": "7월 27~30일 서킷브레이커 두 번을 동반한 -17.2% 급락 뒤 31일 하루 +17.91%로 낙폭의 86%를 되돌렸습니다. 외국인이 사흘간 6조 4,660억원을 순매수하며 수급 주체가 완전히 바뀐 점을 반등 지속의 근거로 봤지만, 반등 재료가 전부 미국 실적과 물가라서 확신은 0.5 아래로 뒀습니다. 월요일은 간밤 한국물 이탈(미국 상장 한국 ETF -2.55%)로 되돌림 쪽으로 보고, 5일로는 상승 쪽에 근소하게 무게를 둡니다.",
+        "prob_up": 0.47,
+        "prob_flat": 0.12,
+        "prob_down": 0.41,
+        "range_low": 5950,
+        "range_high": 7250,
+        "key_support": 6000,
+        "key_resistance": 6755,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.35,
+          "prob_flat": 0.1,
+          "prob_down": 0.55,
+          "expected_pct": -2.0,
+          "range_low": 6250,
+          "range_high": 6800,
+          "driver": "간밤 미국 상장 한국 ETF -2.55%, SK하이닉스 예탁증서 -3.5%로 한국물만 이탈 + 개인 손실 만회 매도 잔량"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.46,
+        "target_pct": -2.5,
+        "invalidation": "760 종가 상회 시 하락 콜 폐기",
+        "comment": "코스닥도 31일 +11.63%로 700선을 회복했지만 이번 반등은 코스피 시가총액 상위 5종목에 83.6%가 집중된 대형주 장세입니다. 대형주 수급 레짐이 코스닥으로 그대로 번진다고 보지 않아 코스닥 자체 5일 추세(-3.80%) 방향에 낮은 확률을 부여했습니다.",
+        "prob_up": 0.42,
+        "prob_flat": 0.12,
+        "prob_down": 0.46,
+        "range_low": 650,
+        "range_high": 790,
+        "key_support": 660,
+        "key_resistance": 760,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.35,
+          "prob_flat": 0.1,
+          "prob_down": 0.55,
+          "expected_pct": -2.0,
+          "range_low": 690,
+          "range_high": 740,
+          "driver": "간밤 한국물 이탈과 개인 매도 잔량, 코스닥은 개인 비중이 높아 되돌림 강도가 더 큼"
+        }
+      },
+      "regime": "폭락 후 자본항복 반등 초기 / 외국인 매수 전환, 반도체 대형주 주도",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 1.62,
+            "scored_from": "next_day",
+            "brier": 0.735,
+            "conviction": null,
+            "settle_date": "2026-08-04"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.67,
+            "scored_from": "main_call",
+            "brier": 1.1634,
+            "conviction": 0.47,
+            "settle_date": "2026-08-10"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.88,
+            "scored_from": "next_day",
+            "brier": 0.735,
+            "conviction": null,
+            "settle_date": "2026-08-04"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 15.88,
+            "scored_from": "main_call",
+            "brier": 0.5624,
+            "conviction": 0.46,
+            "settle_date": "2026-08-10"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-02",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.55,
+        "target_pct": -3.0,
+        "invalidation": "6,700 종가 상회 시 하락 콜 폐기(야간선물 갭 메움 확인)",
+        "comment": "금요일 코스피는 하루에 17.91% 올라 사상 최대 상승률을 기록했지만, 그날 밤 코스피200 야간선물은 5.07% 급락했습니다. 밤에 형성된 가격이 더 최신 정보이고, 그 사이 미국의 이란 에너지시설 공습 승인 소식이 들어왔습니다. 월요일은 갭하락 출발 가능성이 높다고 봅니다. 다만 외국인이 이틀 연속, 역대 최대 규모로 사고 있어 하락 확신은 절제했습니다.",
+        "prob_up": 0.3,
+        "prob_flat": 0.15,
+        "prob_down": 0.55,
+        "range_low": 5950,
+        "range_high": 6750,
+        "key_support": 6000,
+        "key_resistance": 6600,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.22,
+          "prob_flat": 0.13,
+          "prob_down": 0.65,
+          "expected_pct": -2.8,
+          "range_low": 6200,
+          "range_high": 6700,
+          "driver": "코스피200 야간선물 978.40(-5.07%, 43,403계약)과 미국 상장 한국 ETF -2.55%, 주말 이란 에너지시설 공습 리스크"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -2.5,
+        "invalidation": "740 종가 상회 시 하락 콜 폐기",
+        "comment": "코스닥도 지수 동반 갭하락을 피하기 어렵습니다. 개인 자금 이탈로 거래대금이 6조원대까지 줄어 하방에 취약합니다. 다만 7월 31일부터 시행된 단일종목 레버리지 규제로 중소형주의 상대 매력은 개선되는 국면이라, 낙폭 자체는 코스피보다 작을 수 있습니다.",
+        "prob_up": 0.33,
+        "prob_flat": 0.15,
+        "prob_down": 0.52,
+        "range_low": 655,
+        "range_high": 765,
+        "key_support": 665,
+        "key_resistance": 760,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.25,
+          "prob_flat": 0.15,
+          "prob_down": 0.6,
+          "expected_pct": -2.2,
+          "range_low": 690,
+          "range_high": 735,
+          "driver": "지수 동반 갭하락과 개인 수급 이탈(예탁금 104.7조), 단일종목 레버리지 규제는 중장기 상대 매력 요인"
+        }
+      },
+      "regime": "폭락 후 기록적 반등 직후 / 야간선물 급락과 중동 확전 리스크로 되돌림 우위, 외국인 매수 전환은 하방 완충",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 1.62,
+            "scored_from": "next_day",
+            "brier": 1.0478,
+            "conviction": null,
+            "settle_date": "2026-08-04"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.67,
+            "scored_from": "main_call",
+            "brier": 1.115,
+            "conviction": 0.55,
+            "settle_date": "2026-08-10"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.88,
+            "scored_from": "next_day",
+            "brier": 0.945,
+            "conviction": null,
+            "settle_date": "2026-08-04"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 15.88,
+            "scored_from": "main_call",
+            "brier": 0.7418,
+            "conviction": 0.52,
+            "settle_date": "2026-08-10"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-03",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.46,
+        "target_pct": 3.5,
+        "invalidation": "6,024 종가 하회 시 강세 시나리오 폐기",
+        "comment": "7월 28~29일 이틀 연속 서킷브레이커라는 항복 뒤에 외국인이 금요일 하루 7조2,772억원을 순매수했습니다. 지수는 6월 고점 대비 여전히 27.6% 낮고 신용융자도 60일 최저권까지 줄어 강제청산이 대체로 소화됐습니다. 다만 간밤 미국장이 오르는 동안 한국물 ETF만 2.55% 빠져 금요일 폭등분의 되돌림이 시작된 흔적이 있습니다. 5일로는 위쪽을 보되 오늘 하루는 눌림을 기다리는 것이 맞다고 봅니다.",
+        "prob_up": 0.46,
+        "prob_flat": 0.15,
+        "prob_down": 0.39,
+        "range_low": 5900,
+        "range_high": 7300,
+        "key_support": 6024,
+        "key_resistance": 6756,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.34,
+          "prob_flat": 0.14,
+          "prob_down": 0.52,
+          "expected_pct": -1.8,
+          "range_low": 6270,
+          "range_high": 6850,
+          "driver": "간밤 한국물 ETF(EWY) -2.55%로 미국 지수 상승과 역행, 원/달러도 1,424원에서 1,436원대로 되돌림"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.47,
+        "target_pct": -3.0,
+        "invalidation": "765 종가 상회 시 약세 시나리오 폐기",
+        "comment": "코스닥은 7월에 21.4% 빠졌고 시가총액 미달로 관리종목 지정 우려 공시를 낸 상장사가 한 달간 30곳입니다. 금요일 반등은 외국인 자금이 삼성전자와 SK하이닉스에 79% 몰린 대형주 장세여서 코스닥으로 온기가 덜 왔습니다. 투자자예탁금도 두 달 만에 35조원 줄었습니다. 5일 추세를 그대로 따라 아래쪽으로 봅니다.",
+        "prob_up": 0.38,
+        "prob_flat": 0.15,
+        "prob_down": 0.47,
+        "range_low": 660,
+        "range_high": 790,
+        "key_support": 663,
+        "key_resistance": 765,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.34,
+          "prob_flat": 0.14,
+          "prob_down": 0.52,
+          "expected_pct": -2.0,
+          "range_low": 690,
+          "range_high": 745,
+          "driver": "대형 반도체 편중 반등의 낙수 효과 제한 + 개인 예탁금 이탈 지속"
+        }
+      },
+      "regime": "폭락 후 항복성 반등 직후 — 외국인 매수전환, 수급데이터 결측",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 1.62,
+            "scored_from": "next_day",
+            "brier": 0.7256,
+            "conviction": null,
+            "settle_date": "2026-08-04"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.67,
+            "scored_from": "main_call",
+            "brier": 1.0862,
+            "conviction": 0.46,
+            "settle_date": "2026-08-10"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.88,
+            "scored_from": "next_day",
+            "brier": 0.7256,
+            "conviction": null,
+            "settle_date": "2026-08-04"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 15.88,
+            "scored_from": "main_call",
+            "brier": 0.6278,
+            "conviction": 0.47,
+            "settle_date": "2026-08-10"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-04",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.42,
+        "target_pct": -2.2,
+        "invalidation": "6,650 종가 상회 시 콜 폐기",
+        "comment": "6월 고점 9,114에서 어제 6,257까지 내려왔습니다. 기업 실적이 나빠서가 아니라 빚으로 산 주식이 강제로 팔리면서 생긴 하락이라, 하루에 +17.9%도 오르고 -5.1%도 빠지는 극단적인 장세입니다. 어제 외국인이 다시 순매도로 돌아섰고 5~6일 추가 규제 회의가 예정돼 있어 5일 기준으로는 아래로 봅니다. 다만 확신은 낮게 두었고, 6,650을 종가로 넘으면 이 판단을 접겠습니다.",
+        "prob_up": 0.38,
+        "prob_flat": 0.2,
+        "prob_down": 0.42,
+        "range_low": 5750,
+        "range_high": 6850,
+        "key_support": 5900,
+        "key_resistance": 6600,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.46,
+          "prob_flat": 0.18,
+          "prob_down": 0.36,
+          "expected_pct": 0.8,
+          "range_low": 6150,
+          "range_high": 6450,
+          "driver": "간밤 미국 강세(나스닥 +2.13%, 다우 사상최고)와 유가 -5.44%. 다만 외국인 선물 매수가 현물로 이어지는지가 관건"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.4,
+        "target_pct": 1.5,
+        "invalidation": "700 종가 하회 시 콜 폐기",
+        "comment": "코스닥은 코스피와 다르게 봅니다. 이번 레버리지 규제가 삼성전자·SK하이닉스 같은 코스피 대형주에 집중돼 있어서, 갈 곳 없는 자금이 코스닥으로 옮겨가는 중입니다. 어제도 이틀 연속 올랐고 매수 사이드카까지 나왔습니다. 다만 코스피가 크게 흔들리면 같이 밀리므로 확신은 낮게 둡니다.",
+        "prob_up": 0.4,
+        "prob_flat": 0.22,
+        "prob_down": 0.38,
+        "range_low": 690,
+        "range_high": 800,
+        "key_support": 705,
+        "key_resistance": 775,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.48,
+          "prob_flat": 0.2,
+          "prob_down": 0.32,
+          "expected_pct": 1.0,
+          "range_low": 725,
+          "range_high": 760,
+          "driver": "이틀 연속 반등 + 매수 사이드카 발동. 레버리지 규제가 코스피 대형주에만 걸려 자금이 코스닥으로 이동"
+        }
+      },
+      "regime": "risk-off 공포(VKOSPI 84) / 레버리지 청산 후유증 — 제약바이오 방어주 주도, 반도체 소외",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 3.76,
+            "scored_from": "next_day",
+            "brier": 0.4536,
+            "conviction": null,
+            "settle_date": "2026-08-05"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -0.21,
+            "scored_from": "main_call",
+            "brier": 0.9608,
+            "conviction": 0.42,
+            "settle_date": "2026-08-11"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 2.42,
+            "scored_from": "next_day",
+            "brier": 0.4128,
+            "conviction": null,
+            "settle_date": "2026-08-05"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 9.88,
+            "scored_from": "main_call",
+            "brier": 0.5528,
+            "conviction": 0.4,
+            "settle_date": "2026-08-11"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-05",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.54,
+        "target_pct": 1.8,
+        "invalidation": "6,080 종가 하회 시 상승 시나리오 폐기",
+        "comment": "간밤 뉴욕에서 S&P500·다우가 사상 최고를 경신하고 필라델피아 반도체가 +6.55%, SK하이닉스 ADR이 +8.17% 올랐습니다. 그런데 어제 국내 반도체는 중국 CXMT 베이징 신공장 보도에 눌려 +0.2~0.6%에 그쳤습니다. 그 간격이 오늘 좁혀질 가능성에 무게를 둡니다. 시장 폭도 786대 95로 압도적이고 외국인 5일 순매수는 4조 1,300억원입니다. 다만 어제 하루는 외국인·기관이 순매도로 돌아섰고 변동성지수가 80대라 확신은 낮게 뒀습니다.",
+        "prob_up": 0.54,
+        "prob_flat": 0.16,
+        "prob_down": 0.3,
+        "range_low": 5950,
+        "range_high": 6850,
+        "key_support": 6080,
+        "key_resistance": 6390,
+        "premortem": "갭상승 시가에 외국인이 대량 매도로 대응해 장중 되밀리는 경우. 어제가 정확히 그 모양이었다(6,351 출발 → 6,080 하락 → 장 막판 회복)",
+        "evidence_tag": "데이터"
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.45,
+        "target_pct": 1.0,
+        "invalidation": "737 종가 하회 시 상승 시나리오 폐기",
+        "comment": "3거래일 동안 21% 올랐고 사상 처음으로 매수 사이드카가 3거래일 연속 발동했습니다. 단일종목 레버리지 규제로 반도체를 떠난 자금이 제약·바이오·로봇으로 옮겨온 순환매입니다. 자체 추세는 위지만 어제 외국인 2,700억·개인 2,500억이 순매도했고 기관만 샀습니다. 800선을 못 넘고 밀리면 순환매가 한 바퀴 돈 것으로 봅니다.",
+        "prob_up": 0.45,
+        "prob_flat": 0.18,
+        "prob_down": 0.37,
+        "range_low": 705,
+        "range_high": 860,
+        "key_support": 737,
+        "key_resistance": 800,
+        "premortem": "반도체가 오늘 강하게 반등하면 지난 3일간 코스닥을 밀어올린 순환매 자금이 역방향으로 빠져나간다",
+        "evidence_tag": "혼합"
+      },
+      "regime": "폭락 후 회복 랠리 초입 — 외국인 5일 순매수 전환·시장폭 압도적 개선(786대95), 단 변동성지수 80대 극단 유지. 간밤 미 반도체 폭등(SOX +6.55%)에 국내 반도체만 미반응(+0.2~0.6%)",
+      "has_next_day": {
+        "kospi": false,
+        "kosdaq": false
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -4.58,
+            "scored_from": "main_call",
+            "brier": 0.8072,
+            "conviction": 0.54,
+            "settle_date": "2026-08-06"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -0.29,
+            "scored_from": "main_call",
+            "brier": 1.0872,
+            "conviction": 0.54,
+            "settle_date": "2026-08-12"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.26,
+            "scored_from": "main_call",
+            "brier": 1.0118,
+            "conviction": 0.45,
+            "settle_date": "2026-08-06"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 7.42,
+            "scored_from": "main_call",
+            "brier": 0.4718,
+            "conviction": 0.45,
+            "settle_date": "2026-08-12"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-06",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.48,
+        "target_pct": 1.5,
+        "invalidation": "종가 6,400 하향 이탈 + 외국인 순매도 전환 동반 시 상승 시나리오 무효",
+        "comment": "외인 5일 +6.8조·breadth 2021:498·원화 강세 정렬 대 5일 +16.5% 되돌림 위험 — 상승 유지하되 확신 제한",
+        "prob_up": 0.48,
+        "prob_flat": 0.25,
+        "prob_down": 0.27,
+        "range_low": 6450,
+        "range_high": 6850,
+        "key_support": 6400,
+        "key_resistance": 6750,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.27,
+          "prob_flat": 0.28,
+          "prob_down": 0.45,
+          "expected_pct": -0.7,
+          "range_low": 6480,
+          "range_high": 6640,
+          "driver": "간밤 나스닥 -0.83%·SOX -1.4%·EWY -1.17% — 이틀 급등 뒤 숨고르기"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.42,
+        "target_pct": 1.0,
+        "invalidation": "780 하향 이탈 + 외국인 순매도 확대 시 무효",
+        "comment": "자체 5일 +20.7% 추세 순응이나 외인 3일 연속 순매도 — 낮은 확률의 상승",
+        "prob_up": 0.42,
+        "prob_flat": 0.28,
+        "prob_down": 0.3,
+        "range_low": 780,
+        "range_high": 830,
+        "key_support": 780,
+        "key_resistance": 810,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.3,
+          "prob_flat": 0.3,
+          "prob_down": 0.4,
+          "expected_pct": -0.5,
+          "range_low": 788,
+          "range_high": 806,
+          "driver": "미 기술주 조정 + 외국인 코스닥 3일 연속 순매도"
+        }
+      },
+      "regime": "폭락 후 급반등 회복 국면(5일 +16.5%) — risk-on이나 추격 과열 주의, 외국인 대량 순매수 지속",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -0.6,
+            "scored_from": "next_day",
+            "brier": 0.4538,
+            "conviction": null,
+            "settle_date": "2026-08-07"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 8.21,
+            "scored_from": "main_call",
+            "brier": 0.4058,
+            "conviction": 0.48,
+            "settle_date": "2026-08-13"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -0.36,
+            "scored_from": "next_day",
+            "brier": 0.74,
+            "conviction": null,
+            "settle_date": "2026-08-07"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 7.45,
+            "scored_from": "main_call",
+            "brier": 0.5048,
+            "conviction": 0.42,
+            "settle_date": "2026-08-13"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-07",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.46,
+        "target_pct": 1.5,
+        "prob_up": 0.46,
+        "prob_flat": 0.16,
+        "prob_down": 0.38,
+        "range_low": 5850,
+        "range_high": 6850,
+        "key_support": 6257,
+        "key_resistance": 6598,
+        "invalidation": "6,100 종가 하회 시 상승 시나리오 폐기",
+        "comment": "어제 지수는 4.58% 빠졌지만 오른 종목이 490개로 내린 종목 381개보다 많았습니다. 낙폭이 반도체 두 종목에 갇혀 있었다는 뜻입니다. 간밤 SK하이닉스 미국 예탁증서가 국내보다 5%포인트 덜 빠졌고 원화도 강세라 방향은 위로 봅니다. 다만 5일 누적이 이미 12.6% 올라온 자리라 확신은 낮게 잡았고, 6,100이 깨지면 이 판단을 접습니다.",
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.55,
+          "prob_flat": 0.15,
+          "prob_down": 0.3,
+          "expected_pct": 1.2,
+          "range_low": 6180,
+          "range_high": 6520,
+          "driver": "SK하이닉스 예탁증서 -4.97% vs 국내 -10.37%, 한국물 ETF -2.97%로 국내 낙폭의 3분의 2 — 갭 메우기 여지"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.44,
+        "target_pct": 1.0,
+        "prob_up": 0.44,
+        "prob_flat": 0.16,
+        "prob_down": 0.4,
+        "range_low": 740,
+        "range_high": 870,
+        "key_support": 781,
+        "key_resistance": 830,
+        "invalidation": "770 종가 하회 시 폐기",
+        "comment": "5거래일 연속 올라 5일 누적 24.3%입니다. 어제도 올랐지만 상승폭이 0.26%로 급격히 줄었고, 외국인은 4거래일 연속 순매도 중이라 기관 혼자 받치는 구조입니다. 추세는 위지만 연료가 줄고 있어 확률을 낮게 뒀습니다.",
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.47,
+          "prob_flat": 0.18,
+          "prob_down": 0.35,
+          "expected_pct": 0.3,
+          "range_low": 785,
+          "range_high": 825,
+          "driver": "반도체가 반등하면 자금이 대형주로 되돌아가 코스닥은 상대 약세 — 상승폭 둔화 국면"
+        }
+      },
+      "regime": "저점권 반등 중반 — 반도체 조정 + 코스닥 순환매, 위험회피 낮음",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.65,
+            "scored_from": "next_day",
+            "brier": 0.315,
+            "conviction": null,
+            "settle_date": "2026-08-10"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 11.49,
+            "scored_from": "main_call",
+            "brier": 0.4616,
+            "conviction": 0.46,
+            "settle_date": "2026-08-14"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 6.97,
+            "scored_from": "next_day",
+            "brier": 0.4358,
+            "conviction": null,
+            "settle_date": "2026-08-10"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 8.24,
+            "scored_from": "main_call",
+            "brier": 0.4992,
+            "conviction": 0.44,
+            "settle_date": "2026-08-14"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-08",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.43,
+        "target_pct": -1.5,
+        "invalidation": "6,500 종가 상회 시 하락 콜 폐기(삼성전자 주주환원 발표+외국인 순매수 전환 경로)",
+        "comment": "월요일 하루는 미국 사상최고 마감과 원화 강세 덕에 반등 우위로 봅니다. 다만 5일 시계로는 외국인이 아직 순매도(5일 -5.9조원)라 하락 우위를 유지합니다. 수요일 미국 CPI와 목요일 옵션 만기가 주 후반 변수입니다.",
+        "prob_up": 0.36,
+        "prob_flat": 0.21,
+        "prob_down": 0.43,
+        "range_low": 6050,
+        "range_high": 6550,
+        "key_support": 6100,
+        "key_resistance": 6500,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.48,
+          "prob_flat": 0.16,
+          "prob_down": 0.36,
+          "expected_pct": 0.6,
+          "range_low": 6180,
+          "range_high": 6380,
+          "driver": "미 S&P 사상최고(+0.62%)·SOX +2.56% 확정 종가+원화 1,407 강세 — 단 금요일에 같은 경로가 외인 매도에 꺾인 전례로 확신 절제"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.42,
+        "target_pct": 1.5,
+        "invalidation": "770 종가 하회 시 상승 콜 폐기",
+        "comment": "코스닥은 한 주 +10.98%로 대형주와 반대로 움직였습니다. 개인 자금 유입과 바이오·2차전지 순환매가 이어지는 한 추세를 존중하되, 급등 직후라 상승폭 기대는 낮게 잡습니다.",
+        "prob_up": 0.42,
+        "prob_flat": 0.2,
+        "prob_down": 0.38,
+        "range_low": 775,
+        "range_high": 835,
+        "key_support": 781,
+        "key_resistance": 830,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.46,
+          "prob_flat": 0.18,
+          "prob_down": 0.36,
+          "expected_pct": 0.4,
+          "range_low": 790,
+          "range_high": 812,
+          "driver": "미 위험선호 회복+개인 자금 유입 지속 — 단 금요일 6일 만의 차익실현로 상승폭 제한"
+        }
+      },
+      "regime": "저점권 순환매(risk-off 완화 국면) — 반도체 이탈 자금이 2차전지·바이오·태양광으로 이동, 외국인 미전환",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.73,
+            "scored_from": "next_day",
+            "brier": 0.4256,
+            "conviction": null,
+            "settle_date": "2026-08-11"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 9.05,
+            "scored_from": "main_call",
+            "brier": 0.6386,
+            "conviction": 0.43,
+            "settle_date": "2026-08-18"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.39,
+            "scored_from": "next_day",
+            "brier": 1.0136,
+            "conviction": null,
+            "settle_date": "2026-08-11"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -2.37,
+            "scored_from": "main_call",
+            "brier": 0.6008,
+            "conviction": 0.42,
+            "settle_date": "2026-08-18"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-10",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.48,
+        "target_pct": -1.5,
+        "invalidation": "6,400 종가 상회 또는 외국인 현물 2일 연속 순매수 전환 시 하락 시나리오 폐기",
+        "comment": "오늘 하루는 미국 사상최고와 모건스탠리 메모리 재진입 콜이 반영되며 반등 시도가 우세하다. 다만 주간으로는 외국인이 5일간 5.9조원을 판 매도 흐름이 아직 꺾이지 않았고 수요일 미국 CPI가 남아 있어 하락 쪽에 반 발을 더 둔다. 신규 매수는 소액 분할로 제한하라.",
+        "prob_up": 0.38,
+        "prob_flat": 0.14,
+        "prob_down": 0.48,
+        "range_low": 6020,
+        "range_high": 6480,
+        "key_support": 6100,
+        "key_resistance": 6400,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.48,
+          "prob_flat": 0.12,
+          "prob_down": 0.4,
+          "expected_pct": 0.8,
+          "range_low": 6150,
+          "range_high": 6420,
+          "driver": "금요일 미국 사상최고(S&P +0.62%, SOX +2.56%) 이틀째 미반영 + 모건스탠리 메모리 재진입 콜 + 원화 강세. 단 금요일에 같은 논리가 외인 매도(-1.1조)에 압도된 전례로 확률 억제"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.44,
+        "target_pct": 1.0,
+        "invalidation": "770 종가 이탈 시 폐기. 반도체 대형주 +3% 이상 반등 시 순환매 역류로 상대 약세 전환 주의",
+        "comment": "5일간 +11%의 자체 추세가 살아 있고 바이오 주도가 이어지고 있다. 다만 사흘 연속 매수 사이드카가 걸릴 만큼 과열돼 되돌림 폭이 클 수 있다. 추격보다 눌림 대응.",
+        "prob_up": 0.44,
+        "prob_flat": 0.14,
+        "prob_down": 0.42,
+        "range_low": 770,
+        "range_high": 830,
+        "key_support": 781,
+        "key_resistance": 830,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.46,
+          "prob_flat": 0.15,
+          "prob_down": 0.39,
+          "expected_pct": 0.4,
+          "range_low": 786,
+          "range_high": 812,
+          "driver": "자체 추세 순응 + 바이오 주도 지속. 반도체 반등 강도가 클수록 코스닥 상대 약세"
+        }
+      },
+      "regime": "반도체발 눌림목 + 비반도체 순환매(바이오/2차전지/조선) / 외국인 매도 미전환",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.73,
+            "scored_from": "next_day",
+            "brier": 0.4448,
+            "conviction": null,
+            "settle_date": "2026-08-11"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 9.05,
+            "scored_from": "main_call",
+            "brier": 0.6344,
+            "conviction": 0.48,
+            "settle_date": "2026-08-18"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.39,
+            "scored_from": "next_day",
+            "brier": 1.0862,
+            "conviction": null,
+            "settle_date": "2026-08-11"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -2.37,
+            "scored_from": "main_call",
+            "brier": 0.5496,
+            "conviction": 0.44,
+            "settle_date": "2026-08-18"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-11",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.5,
+        "target_pct": -1.5,
+        "invalidation": "6,400 종가 상회 시 하락 시나리오 폐기",
+        "comment": "간밤 SOX -2.94%·EWY -1.79% 하방 갭에 외국인 현물 매도 3일 연속(-4.57조), 8/12 미 CPI 관망 압력. 다만 기관·개인 흡수력(전일 1.47조)과 breadth 양호가 반증이라 확신은 0.50에 묶음. 5일 추세 +0.67%는 데드존이라 프라이어 미발동.",
+        "prob_up": 0.34,
+        "prob_flat": 0.16,
+        "prob_down": 0.5,
+        "range_low": 6080,
+        "range_high": 6450,
+        "key_support": 6200,
+        "key_resistance": 6400,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.33,
+          "prob_flat": 0.15,
+          "prob_down": 0.52,
+          "expected_pct": -0.7,
+          "range_low": 6180,
+          "range_high": 6360,
+          "driver": "SOX -2.94%·EWY -1.79% 하방 갭 + 외국인 매도 지속 + CPI 전야 관망"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.44,
+        "target_pct": 1.5,
+        "invalidation": "830 종가 이탈 시 상승 시나리오 폐기(전일 급등분 43% 반납)",
+        "comment": "외국인(+1,031억)·기관(+5,661억) 순매수 전환 + 자체 5일 추세 +15.88% 순응. 다만 급등 최상단 위치와 SOX 급락의 소부장 부담으로 확률은 낮게. 코스닥은 대형주 외인 레짐과 독립.",
+        "prob_up": 0.44,
+        "prob_flat": 0.14,
+        "prob_down": 0.42,
+        "range_low": 815,
+        "range_high": 900,
+        "key_support": 830,
+        "key_resistance": 880,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.43,
+          "prob_flat": 0.15,
+          "prob_down": 0.42,
+          "expected_pct": 0.2,
+          "range_low": 835,
+          "range_high": 875,
+          "driver": "외인·기관 코스닥 순매수 전환 지속 vs SOX -2.94% 소부장 부담"
+        }
+      },
+      "regime": "급락 후 되돌림 랠리 — 외국인 코스피 매도 지속 속 국내 자금 흡수, 변동성 고공 진정",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 3.68,
+            "scored_from": "next_day",
+            "brier": 0.7418,
+            "conviction": null,
+            "settle_date": "2026-08-12"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 1.98,
+            "scored_from": "main_call",
+            "brier": 0.7112,
+            "conviction": 0.5,
+            "settle_date": "2026-08-19"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.12,
+            "scored_from": "next_day",
+            "brier": 1.0838,
+            "conviction": null,
+            "settle_date": "2026-08-12"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -3.89,
+            "scored_from": "main_call",
+            "brier": 0.5496,
+            "conviction": 0.44,
+            "settle_date": "2026-08-19"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-12",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.52,
+        "target_pct": 1.5,
+        "invalidation": "6,180 종가 하회 시 상승 시나리오 폐기",
+        "comment": "8월 초 급락 후 이틀째 반등이고 어제 외국인과 기관이 함께 순매수로 돌아섰습니다. 간밤 SK하이닉스 ADR +4.7%로 반도체 반등이 이어질 가능성이 높지만, 오늘 밤 미국 CPI 결과 전까지는 분할 매수로 대응하는 것이 안전합니다.",
+        "prob_up": 0.52,
+        "prob_flat": 0.24,
+        "prob_down": 0.24,
+        "range_low": 6180,
+        "range_high": 6560,
+        "key_support": 6200,
+        "key_resistance": 6500,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.52,
+          "prob_flat": 0.24,
+          "prob_down": 0.24,
+          "expected_pct": 0.7,
+          "range_low": 6300,
+          "range_high": 6440,
+          "driver": "SK하이닉스 ADR +4.7%·EWY +2.53% 갭업 힌트 vs 미 선물 -0.3%·CPI 발표 전 관망"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.43,
+        "target_pct": 1.5,
+        "invalidation": "820 종가 하회 시 상승 시나리오 폐기",
+        "comment": "레버리지 규제 이후 자금이 돌아오며 7거래일에 30% 급등한 시장입니다. 추세는 위쪽이지만 사이드카 3회·개인 인버스 매수 증가가 보여주듯 과열 구간이라, 신규 진입은 눌림을 기다리고 이미 수익 난 종목은 분할 익절이 우선입니다.",
+        "prob_up": 0.43,
+        "prob_flat": 0.25,
+        "prob_down": 0.32,
+        "range_low": 810,
+        "range_high": 905,
+        "key_support": 820,
+        "key_resistance": 885,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.45,
+          "prob_flat": 0.24,
+          "prob_down": 0.31,
+          "expected_pct": 0.5,
+          "range_low": 843,
+          "range_high": 875,
+          "driver": "순환매 유동성 지속 vs 전일 +5.32% 급등 피로·차익실현 부담"
+        }
+      },
+      "regime": "급락 후 회복 초입(눌림목) / 반도체 바닥 다지기 + 코스닥 과열 순환매, CPI 이벤트 대기",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 3.56,
+            "scored_from": "next_day",
+            "brier": 0.3456,
+            "conviction": null,
+            "settle_date": "2026-08-13"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 4.16,
+            "scored_from": "main_call",
+            "brier": 0.3456,
+            "conviction": 0.52,
+            "settle_date": "2026-08-20"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 0.29,
+            "scored_from": "next_day",
+            "brier": 0.8762,
+            "conviction": null,
+            "settle_date": "2026-08-13"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -2.1,
+            "scored_from": "main_call",
+            "brier": 0.7098,
+            "conviction": 0.43,
+            "settle_date": "2026-08-20"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-19",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.53,
+        "target_pct": -2.5,
+        "invalidation": "7,000 종가 상회 시 하락 시나리오 폐기",
+        "comment": "간밤 야간선물이 -4.3% 급락해 오늘은 큰 폭 하락 출발이 유력합니다. 미 장기금리가 19년 만에 최고로 오르고 반도체가 급락한 영향입니다. 오늘은 사는 날이 아니라 지키는 날 - 신규 매수는 급락 진정 후 소액 분할로 제한하고, 7,000선을 회복하면 이 약세 판단은 폐기합니다.",
+        "prob_up": 0.25,
+        "prob_flat": 0.22,
+        "prob_down": 0.53,
+        "range_low": 6450,
+        "range_high": 6950,
+        "key_support": 6500,
+        "key_resistance": 7000,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.2,
+          "prob_flat": 0.1,
+          "prob_down": 0.7,
+          "expected_pct": -3.5,
+          "range_low": 6550,
+          "range_high": 6780,
+          "driver": "야간선물 9월물 -4.29% 실측(HTS 캡처) + SOX -4.98%·SK하이닉스 ADR -9.2% + 미 30년물 5.33% 19년 최고"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.5,
+        "target_pct": -2.0,
+        "invalidation": "868 종가 상회 시 폐기",
+        "comment": "코스닥은 코스피 급등에서 소외된 채 이미 5일간 -2.4% 약세였고 어제 -3.5% 급락했습니다. 외국인도 코스닥은 팔고 있어 반등 탄력이 약합니다. 빚투(신용융자)가 다시 늘어난 시장이라 하락 시 반대매매가 낙폭을 키울 수 있습니다.",
+        "prob_up": 0.25,
+        "prob_flat": 0.25,
+        "prob_down": 0.5,
+        "range_low": 780,
+        "range_high": 860,
+        "key_support": 800,
+        "key_resistance": 868,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.2,
+          "prob_flat": 0.12,
+          "prob_down": 0.68,
+          "expected_pct": -2.5,
+          "range_low": 805,
+          "range_high": 825,
+          "driver": "자체 5일 -2.37% 약세 추세 + 어제 -3.52% 급락 연장 + 외인 코스닥 5일 -0.68조 순매도"
+        }
+      },
+      "regime": "공포·경계(국면점수 90, 강세추격 k5 +9.05% 직후 간밤 급락) / 금리쇼크발 risk-off 전환 시도",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.89,
+            "scored_from": "next_day",
+            "brier": 1.14,
+            "conviction": null,
+            "settle_date": "2026-08-20"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 5.21,
+            "scored_from": "main_call",
+            "brier": 0.8918,
+            "conviction": 0.53,
+            "settle_date": "2026-08-26"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 1.99,
+            "scored_from": "next_day",
+            "brier": 1.1168,
+            "conviction": null,
+            "settle_date": "2026-08-20"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.29,
+            "scored_from": "main_call",
+            "brier": 0.875,
+            "conviction": 0.5,
+            "settle_date": "2026-08-26"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-27",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.39,
+        "target_pct": -1.0,
+        "invalidation": "6,887 종가 상회 시 하방 콜 폐기",
+        "comment": "엔비디아 서프라이즈와 야간선물 +0.64%는 상방 재료지만, 외국인 4일 연속 순매도와 풋 헤지 누적, 오전 금통위(인상 vs 동결 팽팽)가 겹쳐 방향 확신이 낮다. 신규 매수는 소액·분할, 갭업 추격 금지. 6,887을 종가로 넘으면 하방 판단을 접는다.",
+        "prob_up": 0.37,
+        "prob_flat": 0.24,
+        "prob_down": 0.39,
+        "range_low": 6600,
+        "range_high": 6950,
+        "key_support": 6704,
+        "key_resistance": 6887,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.44,
+          "prob_flat": 0.12,
+          "prob_down": 0.44,
+          "expected_pct": -0.2,
+          "range_low": 6720,
+          "range_high": 6940,
+          "driver": "야간선물 +0.64%(9308 캡처)·나스닥선물 +0.53% 갭업 힌트 vs 오전 금통위 결과가 종가 결정 — 상방/하방 동률, 단일 촉매(엔비디아) 상방 콜 금지 게이트로 상방 라벨 보류"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.43,
+        "target_pct": -1.2,
+        "invalidation": "832.2 종가 상회 시 하방 콜 폐기",
+        "comment": "어제 코스피 +0.97% 오르는 동안 코스닥은 -0.03%로 뒤졌고 거래 참여도 20일 평균의 0.77배로 식었다. 신용융자 급증분이 코스닥에 몰려 있어 금통위가 인상하면 타격면이 크다. 832.2 종가 상회 시 판단 폐기.",
+        "prob_up": 0.33,
+        "prob_flat": 0.24,
+        "prob_down": 0.43,
+        "range_low": 800,
+        "range_high": 845,
+        "key_support": 815.5,
+        "key_resistance": 832.2,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.36,
+          "prob_flat": 0.2,
+          "prob_down": 0.44,
+          "expected_pct": -0.3,
+          "range_low": 818,
+          "range_high": 836,
+          "driver": "코스피 대비 상대 약세 지속 + 신용융자 코스닥 집중(금리 이벤트 취약) + 거래 참여 감소"
+        }
+      },
+      "regime": "경계(caution 60·풋 강우위·외인 4일 연속 순매도) / 5일 +5.21% 반등 뒤 금통위·엔비디아 이벤트일",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -1.79,
+            "scored_from": "next_day",
+            "brier": 0.5216,
+            "conviction": null,
+            "settle_date": "2026-08-28"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -4.82,
+            "scored_from": "main_call",
+            "brier": 0.5666,
+            "conviction": 0.39,
+            "settle_date": "2026-09-03"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.09,
+            "scored_from": "next_day",
+            "brier": 0.9632,
+            "conviction": null,
+            "settle_date": "2026-08-28"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -5.66,
+            "scored_from": "main_call",
+            "brier": 0.4914,
+            "conviction": 0.43,
+            "settle_date": "2026-09-03"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-28",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.42,
+        "target_pct": 1.2,
+        "invalidation": "6,780 종가 하회 시 상방 폐기 (T+1 하방 뷰는 6,960 종가 상회 시 폐기)",
+        "comment": "오늘 하루는 야간선물 -0.73% 실측대로 소폭 하락 출발 우위. 다만 외국인이 이틀째 현물·선물을 함께 샀고 원화 강세·신용스프레드 축소로 시장 체력이 남아 있어, 5거래일로는 상승 쪽 확률을 근소하게 높게 뒀다. 오늘 밤 잭슨홀 연설이 다음주 방향을 정한다 — 7,000 돌파 시도는 그 뒤다.",
+        "prob_up": 0.42,
+        "prob_flat": 0.18,
+        "prob_down": 0.4,
+        "range_low": 6780,
+        "range_high": 7080,
+        "key_support": 6808,
+        "key_resistance": 7000,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.38,
+          "prob_flat": 0.16,
+          "prob_down": 0.46,
+          "expected_pct": -0.4,
+          "range_low": 6830,
+          "range_high": 6955,
+          "driver": "코스피200 야간선물 -0.73% 마감(저가 -2.1%에서 회복, 9308 화면 실측) + 잭슨홀 대기 — 외인 현·선물 동반 매수와 SOX +2.33%가 하방 제한"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.44,
+        "target_pct": 1.5,
+        "invalidation": "826 종가 하회 시 상방 폐기",
+        "comment": "2차전지 소재·바이오 테마 수급이 뜨겁고 어제 캔들도 상단 마감이라 대형주 갭다운의 전이가 제한적일 것으로 본다. 다만 신용잔고가 5일 +5.6% 늘어난 상태라 금리 인상 후 반대매매 압력이 시차를 두고 올 수 있다 — 826 이탈 시 뷰 폐기.",
+        "prob_up": 0.44,
+        "prob_flat": 0.15,
+        "prob_down": 0.41,
+        "range_low": 815,
+        "range_high": 865,
+        "key_support": 826,
+        "key_resistance": 845,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.42,
+          "prob_flat": 0.17,
+          "prob_down": 0.41,
+          "expected_pct": 0.2,
+          "range_low": 830,
+          "range_high": 845,
+          "driver": "2차전지·바이오 테마 순환매 지속 + 어제 상단 66% 마감 구조 vs 대형주 갭다운 전이"
+        }
+      },
+      "regime": "주의(40, 경계 완화) / 반도체·전력기기·2차전지 순환매, 잭슨홀 대기",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.46,
+            "scored_from": "next_day",
+            "brier": 1.0616,
+            "conviction": null,
+            "settle_date": "2026-08-31"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -1.5,
+            "scored_from": "main_call",
+            "brier": 0.5688,
+            "conviction": 0.42,
+            "settle_date": "2026-09-04"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -0.49,
+            "scored_from": "next_day",
+            "brier": 1.0334,
+            "conviction": null,
+            "settle_date": "2026-08-31"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -2.97,
+            "scored_from": "main_call",
+            "brier": 0.5642,
+            "conviction": 0.44,
+            "settle_date": "2026-09-04"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-08-31",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.52,
+        "target_pct": -1.5,
+        "invalidation": "종가가 6,912(08-21·08-27 이중 천장) 상회 시 하락 시나리오 폐기",
+        "comment": "코스피는 5일 추세가 아래를 향하고 외국인이 5거래일 8.3조원을 순매도했습니다. 다만 금요일 하락은 반도체 대형주가 혼자 만든 것이고 오른 종목이 640개로 내린 종목 238개보다 많았습니다. 무너지는 장이 아니라 주도주가 바뀌는 장으로 보고, 방향은 아래로 잡되 확신은 낮게 뒀습니다.",
+        "prob_up": 0.3,
+        "prob_flat": 0.18,
+        "prob_down": 0.52,
+        "range_low": 6560,
+        "range_high": 6980,
+        "key_support": 6622,
+        "key_resistance": 6912,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.3,
+          "prob_flat": 0.22,
+          "prob_down": 0.48,
+          "expected_pct": -0.4,
+          "range_low": 6700,
+          "range_high": 6860,
+          "driver": "금요일 미국장 반도체지수 -3.47%·엔비디아 -4.17%, 한국물 ETF -1.07%. 하루 방향은 간밤이 절반을 결정한다"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.45,
+        "target_pct": 0.8,
+        "invalidation": "종가가 819(20일선) 이탈 시 상승 시나리오 폐기",
+        "comment": "코스닥은 5일 수익률이 +4.55%로 코스피와 방향이 반대이고, 금요일 코스피가 1.79% 빠지는 동안 +0.09%로 버텼습니다. 외국인도 코스닥에서는 5일간 4,800억원을 순매수했습니다. 방향을 뒤집을 근거가 없어 추세 방향에 낮은 확률을 줍니다.",
+        "prob_up": 0.45,
+        "prob_flat": 0.21,
+        "prob_down": 0.34,
+        "range_low": 812,
+        "range_high": 872,
+        "key_support": 819,
+        "key_resistance": 851,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.33,
+          "prob_flat": 0.22,
+          "prob_down": 0.45,
+          "expected_pct": -0.3,
+          "range_low": 826,
+          "range_high": 848,
+          "driver": "간밤 미국 위험자산 약세가 개장 갭에 먼저 반영된다. 5일 추세(상승)와 하루 방향(하락)이 갈리는 구간"
+        }
+      },
+      "regime": "중립 — 반도체 약세 · 2차전지/건설/철강 순환매",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.23,
+            "scored_from": "next_day",
+            "brier": 0.9288,
+            "conviction": null,
+            "settle_date": "2026-09-01"
+          },
+          "h5": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 2.57,
+            "scored_from": "main_call",
+            "brier": 0.7928,
+            "conviction": 0.52,
+            "settle_date": "2026-09-07"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -1.56,
+            "scored_from": "next_day",
+            "brier": 0.4598,
+            "conviction": null,
+            "settle_date": "2026-09-01"
+          },
+          "h5": {
+            "dir": "up",
+            "hit": false,
+            "index_return_pct": -1.45,
+            "scored_from": "main_call",
+            "brier": 0.6822,
+            "conviction": 0.45,
+            "settle_date": "2026-09-07"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-09-01",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.45,
+        "target_pct": 0.8,
+        "invalidation": "6,633(20일선) 종가 하회 시 상방 폐기. 개장 전 판정: 유가 90달러 돌파+확전이면 보수 전환",
+        "comment": "5일 추세가 위이고, 어제 장중 -2.58%를 +0.46%로 되돌린 자사주 매수(기타법인 6거래일 연속 1조원대)가 실측으로 확인됐다. 다만 외국인이 5일간 -4.8조를 팔았고 옵션 풋/콜 미결제 1.618로 헤지가 쌓인 고점권이라 확신은 낮다. 신규 매수는 눌림에서 소액·분할로.",
+        "prob_up": 0.45,
+        "prob_flat": 0.16,
+        "prob_down": 0.39,
+        "range_low": 6650,
+        "range_high": 7000,
+        "key_support": 6633,
+        "key_resistance": 6912,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.36,
+          "prob_flat": 0.15,
+          "prob_down": 0.49,
+          "expected_pct": -0.3,
+          "range_low": 6700,
+          "range_high": 6890,
+          "driver": "SOX -2.92%·WTI +3.5%·미10y +8.6bp 갭하락 압력 vs 자사주 흡수 — 야간선물 실측 -0.31%(9308 캡처)가 줄다리기의 크기"
+        }
+      },
+      "kosdaq": {
+        "dir": "up",
+        "conviction": 0.43,
+        "target_pct": 0.6,
+        "invalidation": "825(20일선) 종가 하회 시 상방 폐기",
+        "comment": "코스닥 자체 5일 추세 +2.58%로 위이나, 어제 -0.49% 상대 약세에 미 소형주(러셀 -1.84%)·금리 부담이 겹쳐 오늘 하루는 하락 우위로 본다. 외국인이 코스닥은 5일 +0.09조 소폭 매수라 낙폭은 제한적일 것.",
+        "prob_up": 0.43,
+        "prob_flat": 0.18,
+        "prob_down": 0.39,
+        "range_low": 815,
+        "range_high": 858,
+        "key_support": 825,
+        "key_resistance": 850,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.33,
+          "prob_flat": 0.17,
+          "prob_down": 0.5,
+          "expected_pct": -0.5,
+          "range_low": 822,
+          "range_high": 843,
+          "driver": "러셀2000 -1.84%·금리 +8.6bp에 더 민감, 자사주 방패 부재 — 외인 코스닥 소폭 매수(+0.09조/5d)는 완충"
+        }
+      },
+      "regime": "중립~고점권 헤지 누적(자사주 흡수 vs 외인 매도) / 유가·금리 부담",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -3.99,
+            "scored_from": "next_day",
+            "brier": 0.4122,
+            "conviction": null,
+            "settle_date": "2026-09-02"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -2.1,
+            "scored_from": "next_day",
+            "brier": 0.3878,
+            "conviction": null,
+            "settle_date": "2026-09-02"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-09-02",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.55,
+        "target_pct": -2.0,
+        "invalidation": "코스피 종가 6,836(전일 종가) 상회 시 하락 콜 폐기",
+        "comment": "간밤 미·이란 교전 재개로 유가가 5% 급등하고 야간선물이 -3.5%로 마감해 큰 폭 갭하락 출발이 유력합니다. 다만 자사주 매수벽(6거래일 연속)이 낙폭을 일부 되살 수 있어 T+5 확률은 절제했습니다. 오늘은 신규 매수 최소, 손절선 아래 보유분 정리가 우선입니다.",
+        "prob_up": 0.27,
+        "prob_flat": 0.18,
+        "prob_down": 0.55,
+        "range_low": 6450,
+        "range_high": 6880,
+        "key_support": 6662,
+        "key_resistance": 6912,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.13,
+          "prob_flat": 0.12,
+          "prob_down": 0.75,
+          "expected_pct": -2.4,
+          "range_low": 6540,
+          "range_high": 6750,
+          "driver": "야간선물 -3.49% 실측([캡처 9308] 1,040.50, 지수 대비 -3.2%) + EWY -2.8% + WTI +5.7% + 미 10년물 4.80%"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.53,
+        "target_pct": -2.2,
+        "invalidation": "코스닥 종가 829(20일선) 회복 시 하락 콜 폐기",
+        "comment": "코스닥은 이미 20일선을 잃었고 5일 추세도 음수라 하락 콜이 추세 순응입니다. 나스닥 -1.03%·금리 급등은 고멀티플 성장주에 더 아프게 닿습니다. 802가 1차 지지입니다.",
+        "prob_up": 0.27,
+        "prob_flat": 0.2,
+        "prob_down": 0.53,
+        "range_low": 780,
+        "range_high": 835,
+        "key_support": 802,
+        "key_resistance": 829,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.14,
+          "prob_flat": 0.13,
+          "prob_down": 0.73,
+          "expected_pct": -2.3,
+          "range_low": 795,
+          "range_high": 815,
+          "driver": "나스닥 -1.03%·NQ선물 -1.27% + 고베타·헬스케어 주도주 균열(-2.43%) + 20일선 상실 상태"
+        }
+      },
+      "regime": "risk-off 전환 경계 — 미·이란 확전, 유가·금리 발작, 야간선물 -3.49% (caution 29.5 vs 공포 상충, 보수 채택)",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "down",
+            "hit": false,
+            "index_return_pct": 0.26,
+            "scored_from": "next_day",
+            "brier": 1.3538,
+            "conviction": null,
+            "settle_date": "2026-09-03"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "down",
+            "hit": true,
+            "index_return_pct": -1.71,
+            "scored_from": "next_day",
+            "brier": 0.1094,
+            "conviction": null,
+            "settle_date": "2026-09-03"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-09-03",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "neutral",
+        "conviction": 0.38,
+        "target_pct": 0.3,
+        "invalidation": "6,471(8/19 스윙 저점) 종가 하회 시 횡보 논지 폐기 — 하방 국면 전환",
+        "comment": "간밤 야간선물 +1.40%·미 증시 반등으로 오늘 갭상승 출발이 우위다. 다만 외국인이 4거래일 연속 현물을 팔고 있고 시장 폭이 무너진 상태라, 5일짜리 방향은 위(외인 매도)와 아래(자사주 매수벽)가 막는 6,400~6,780 박스로 본다. 외국인 순매수 전환이 실측되기 전까지 반등은 되돌림으로 취급.",
+        "prob_up": 0.37,
+        "prob_flat": 0.38,
+        "prob_down": 0.25,
+        "range_low": 6400,
+        "range_high": 6780,
+        "key_support": 6471,
+        "key_resistance": 6672,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.52,
+          "prob_flat": 0.18,
+          "prob_down": 0.3,
+          "expected_pct": 0.7,
+          "range_low": 6540,
+          "range_high": 6700,
+          "driver": "야간선물 +1.40% 확정 마감(1,043.60)·EWY +1.74%·원화 강세 — 브로드컴 시간외 -5%가 반도체 갭 제한, 장중 이란 헤드라인 리스크"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.47,
+        "target_pct": -1.5,
+        "invalidation": "830(20일선) 종가 회복 시 약세 콜 폐기",
+        "comment": "코스닥은 어제 투매(워시아웃)를 거치지 않았고 외국인 수급도 부재라 자체 5일 추세(-2.77%) 방향을 유지한다. 오늘 하루는 코스피 갭업에 동조하겠지만 5일로는 796 지지 재시험 가능성을 더 높게 본다.",
+        "prob_up": 0.33,
+        "prob_flat": 0.2,
+        "prob_down": 0.47,
+        "range_low": 780,
+        "range_high": 825,
+        "key_support": 796,
+        "key_resistance": 830,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.44,
+          "prob_flat": 0.2,
+          "prob_down": 0.36,
+          "expected_pct": 0.3,
+          "range_low": 798,
+          "range_high": 815,
+          "driver": "글로벌 반등 동조 갭업 — 자체 수급 공백·SOX +0.45%에 그쳐 상승폭 제한"
+        }
+      },
+      "regime": "risk-off / 급락 익일 — 게이트 공포 판정·상승콜 잠김, 야간선물 +1.40% 반등",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 1.64,
+            "scored_from": "next_day",
+            "brier": 0.3528,
+            "conviction": null,
+            "settle_date": "2026-09-04"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 2.95,
+            "scored_from": "next_day",
+            "brier": 0.4832,
+            "conviction": null,
+            "settle_date": "2026-09-04"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-09-04",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.46,
+        "target_pct": 2.0,
+        "invalidation": "6,439(9/3 장중 저가) 종가 하회 시 강세 시나리오 폐기",
+        "comment": "전일 -3.99% 급락 뒤 외국인이 현물·선물 모두 매수로 돌아섰고(현물 +2,922억 통합 기준·선물 +8,076억), 간밤 야간선물이 +1.85%로 마감해 반등 시도 우위로 본다. 다만 국면 게이트는 여전히 공포 판정이라 신규 매수는 소액·분할이 원칙이다. 6,439 종가 이탈이면 이 판단은 틀린 것이다.",
+        "prob_up": 0.46,
+        "prob_flat": 0.22,
+        "prob_down": 0.32,
+        "range_low": 6350,
+        "range_high": 6900,
+        "key_support": 6439,
+        "key_resistance": 6683,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.58,
+          "prob_flat": 0.14,
+          "prob_down": 0.28,
+          "expected_pct": 1.2,
+          "range_low": 6560,
+          "range_high": 6760,
+          "driver": "야간선물 +1.85%(9308 캡처 06:18)·미 3대지수 1%대 상승·원/달러 -1.2% vs 반도체 약세(SOX +0.1%, SK하이닉스 ADR -0.8%)가 갭 폭을 제한"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.42,
+        "target_pct": -1.5,
+        "invalidation": "816(9/3 장중 고가) 종가 상회 시 약세 시나리오 폐기",
+        "comment": "코스닥은 외국인·기관이 이틀 연속 팔고 개인만 받아내는 구조(9/3 외인 -1,324억·기관 -1,967억)에 하락 종목이 상승의 2배(1,108 대 530)라 5일 추세(-5.66%)를 따른다. 코스피 갭상승에 동조해 하루 반등은 가능하지만 5일 관점에서는 약세 우위. 816 종가 회복이면 판단을 접는다.",
+        "prob_up": 0.36,
+        "prob_flat": 0.22,
+        "prob_down": 0.42,
+        "range_low": 765,
+        "range_high": 815,
+        "key_support": 783,
+        "key_resistance": 816,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.46,
+          "prob_flat": 0.18,
+          "prob_down": 0.36,
+          "expected_pct": 0.5,
+          "range_low": 780,
+          "range_high": 805,
+          "driver": "코스피 갭상승 동조(RSI 30.7 과매도 반등) vs 외국인·기관 코스닥 연속 순매도·breadth 붕괴(9/3 상승 530 대 하락 1,108)"
+        }
+      },
+      "regime": "risk-off 완화 시도 / 급락(-3.99%) 후 외국인 1일 매수 전환 + 야간선물 +1.85% — 국면 게이트는 '공포' 운용(롱 축소·소액)",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 4.61,
+            "scored_from": "next_day",
+            "brier": 0.2744,
+            "conviction": null,
+            "settle_date": "2026-09-07"
+          }
+        },
+        "kosdaq": {
+          "h1": {
+            "dir": "up",
+            "hit": true,
+            "index_return_pct": 1.07,
+            "scored_from": "next_day",
+            "brier": 0.4536,
+            "conviction": null,
+            "settle_date": "2026-09-07"
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-09-07",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.48,
+        "target_pct": 0.8,
+        "invalidation": "6,687(9/4 종가) 아래에서 종가 마감 시 상승 논지 폐기 — 오늘 갭을 전량 반납한 것",
+        "comment": "금요일 미국 반도체 급등을 그대로 받아 6,910으로 갭상승 출발했습니다. 외국인이 현물과 선물을 동시에 사는 국면이라 방향은 위로 봅니다. 다만 5거래일 안에 국내 동시만기(9/10)와 미국 물가(9/11)가 들어 있어 확률은 낮게 잡았습니다. 오늘 시가를 쫓기보다 눌림을 기다리세요.",
+        "prob_up": 0.48,
+        "prob_flat": 0.22,
+        "prob_down": 0.3,
+        "range_low": 6550,
+        "range_high": 7150,
+        "key_support": 6690,
+        "key_resistance": 7050,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.45,
+          "prob_flat": 0.22,
+          "prob_down": 0.33,
+          "expected_pct": 0.3,
+          "range_low": 6780,
+          "range_high": 7020,
+          "driver": "오늘 미국이 노동절 휴장이라 내일 아침에도 새 해외 재료가 없다 — 오늘 종가 외국인 순매수 유지 여부가 유일한 판별점이고, +3%대 갭 다음날은 통상 소화 구간이라 상승폭을 작게 본다"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.4,
+        "target_pct": -0.8,
+        "invalidation": "830(20일선) 위에서 종가 마감 시 하락 논지 폐기",
+        "comment": "같은 재료인데 코스닥은 +1.3%에 그칩니다. 개장 전 시간외에서 외국인이 코스피는 사고 코스닥은 판 것이 결정적 차이입니다. 20일선 830이 여전히 위에 있어 그 선에서 막히면 다시 밀릴 수 있다고 봅니다.",
+        "prob_up": 0.35,
+        "prob_flat": 0.25,
+        "prob_down": 0.4,
+        "range_low": 780,
+        "range_high": 860,
+        "key_support": 799,
+        "key_resistance": 830,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.44,
+          "prob_flat": 0.23,
+          "prob_down": 0.33,
+          "expected_pct": 0.3,
+          "range_low": 810,
+          "range_high": 840,
+          "driver": "오늘 코스피 대비 1.9%p 덜 올라 단기 따라잡기 여지는 있으나, 20일선 830이 바로 위 저항이라 폭은 제한적으로 본다"
+        }
+      },
+      "regime": "risk-on 전환 초기 / 반도체 주도 갭상승, 코스닥은 소외",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": null,
+        "kosdaq": null
+      }
+    },
+    {
+      "date": "2026-09-08",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "up",
+        "conviction": 0.56,
+        "target_pct": 1.5,
+        "invalidation": "6,868(9/7 장중 저가) 아래에서 종가 마감 시 상승 논지 폐기 — 외인·기관 동반 매수 전환이 하루짜리였다는 뜻",
+        "comment": "어제 외국인 3.4조·기관 3.7조가 동시에 들어와 코스피가 4.6% 올랐고, 간밤 야간선물이 +1.2%로 마감해 오늘도 강세 출발이 유력하다. 다만 7,011(8/14 고점)이 바로 위 저항이고 9/10(목) 선물옵션 동시만기가 있어 변동성이 크다. 신규 매수는 분할로, 6,868 이탈 시 논지 폐기.",
+        "prob_up": 0.56,
+        "prob_flat": 0.16,
+        "prob_down": 0.28,
+        "range_low": 6800,
+        "range_high": 7250,
+        "key_support": 6868,
+        "key_resistance": 7011,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.55,
+          "prob_flat": 0.2,
+          "prob_down": 0.25,
+          "expected_pct": 0.8,
+          "range_low": 6950,
+          "range_high": 7120,
+          "driver": "야간선물 09월물 1,123.30(+13.55, +1.22%) 마감[캡처 9308] + 외인 현물 순매수 전환 연속성. 미국은 노동절 휴장이라 새 해외 재료 없음 — 야간선물이 유일한 간밤 축"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.42,
+        "target_pct": -0.8,
+        "invalidation": "831(20일선) 위에서 종가 마감 시 하락 논지 폐기 — 대형주 랠리가 중소형으로 확산된 것",
+        "comment": "코스닥은 어제 외국인·기관이 모두 팔았고 20일선(831) 아래에 있다. 5일 추세도 -1.5%로 하락이다. 오늘 하루는 대형주 갭상승에 묻어 소폭 오를 수 있지만 5일로는 자금이 대형 반도체로만 가는 쏠림이 이어질 가능성이 더 크다.",
+        "prob_up": 0.36,
+        "prob_flat": 0.22,
+        "prob_down": 0.42,
+        "range_low": 795,
+        "range_high": 845,
+        "key_support": 813,
+        "key_resistance": 831,
+        "next_day": {
+          "dir": "up",
+          "prob_up": 0.45,
+          "prob_flat": 0.25,
+          "prob_down": 0.3,
+          "expected_pct": 0.4,
+          "range_low": 815,
+          "range_high": 835,
+          "driver": "야간선물 +1.2% 갭상승 분위기가 하루는 코스닥에도 번진다. 단 20일선 831이 바로 위 저항이라 폭은 작게 본다 — T+1(간밤 갭)과 T+5(수급 소외 추세)의 방향이 다른 이유"
+        }
+      },
+      "regime": "risk-on 회복 국면 / 대형 반도체 주도, 외인·기관 동반 매수 전환. 코스닥은 소외",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": null,
+        "kosdaq": null
+      }
+    },
+    {
+      "date": "2026-09-09",
+      "_src_kind": "prediction",
+      "kospi": {
+        "dir": "down",
+        "conviction": 0.44,
+        "target_pct": -1.5,
+        "invalidation": "7,172(9/8 장중 고가) 위에서 종가 마감 시 하락 논지 폐기 — 갭 반납 캔들이 '고점'이 아니라 '눌림'이었다는 뜻",
+        "comment": "어제 코스피는 7,171까지 올랐다가 6,954로 밀려 상승분을 전부 반납했고, 오른 종목 231개 대 내린 종목 634개로 시장 폭이 무너졌다. 외국인·기관이 이틀째 샀지만 삼성전자·SK하이닉스 두 종목에 몰린 매수라 지수 전체의 힘이 아니다. 간밤 유가가 100달러에 근접하고 연준 금리 인상 확률이 60%로 올라온 데다 내일(9/10)이 선물·옵션 동시만기라 5일로는 하락 쪽을 조금 더 본다. 다만 20일선 6,760과 9/7 저가 6,868이 아래에 있어 폭은 -1.5% 정도로 제한한다.",
+        "prob_up": 0.34,
+        "prob_flat": 0.22,
+        "prob_down": 0.44,
+        "range_low": 6700,
+        "range_high": 7150,
+        "key_support": 6868,
+        "key_resistance": 7172,
+        "next_day": {
+          "dir": "neutral",
+          "prob_up": 0.34,
+          "prob_flat": 0.4,
+          "prob_down": 0.26,
+          "expected_pct": 0.2,
+          "range_low": 6900,
+          "range_high": 7050,
+          "driver": "야간선물 09월물 1,105.00(+6.60, +0.60%) 마감[캡처 9308] — 22:50 의 +1.51% 에서 절반 이상 반납. 필라델피아 반도체 +1.3%(인텔 +9%)는 위, 미 3대 지수 하락·WTI +3%·미10년물 4.81% 는 아래. 상쇄가 실재해 익일은 ±0.5% 안에 둔다. 만기(9/10) 전날이라 장 막판 프로그램 매물 경계"
+        }
+      },
+      "kosdaq": {
+        "dir": "down",
+        "conviction": 0.48,
+        "target_pct": -1.5,
+        "invalidation": "830(20일선 829) 위에서 종가 마감 시 하락 논지 폐기 — 대형주 자금이 중소형으로 번진 것",
+        "comment": "코스닥은 어제 825에서 출발해 저가와 같은 811.88로 마감했고(-1.25%), 5일 추세도 -1.14%로 하락이다. 기관이 -2,292억을 팔았고 코스닥 헬스케어 업종은 20일 -19%로 가장 약하다. 외국인 매수는 코스피 대형 반도체에만 간다. 799(9/4 저가)가 마지막 지지다.",
+        "prob_up": 0.3,
+        "prob_flat": 0.22,
+        "prob_down": 0.48,
+        "range_low": 785,
+        "range_high": 830,
+        "key_support": 799,
+        "key_resistance": 829,
+        "next_day": {
+          "dir": "down",
+          "prob_up": 0.28,
+          "prob_flat": 0.3,
+          "prob_down": 0.42,
+          "expected_pct": -0.3,
+          "range_low": 803,
+          "range_high": 822,
+          "driver": "어제 저가=종가 마감 + 기관 -2,292억 분배[캡처 0254 코스닥 통합]. 야간선물 +0.6% 는 코스피200 대형주 재료라 코스닥에 번지는 폭이 작다. 사흘째 '반등마다 매도' 패턴 연장에 무게"
+        }
+      },
+      "regime": "공포·주의 국면(시장폭 붕괴 231:634, 옵션 풋 우위) / 외인·기관 이틀째 대형주만 매수, 유가 100달러 근접·만기 전날 — 신규 롱 축소, 숏 우대",
+      "has_next_day": {
+        "kospi": true,
+        "kosdaq": true
+      },
+      "scored": {
+        "kospi": null,
+        "kosdaq": null
+      }
+    }
+  ]
+}
